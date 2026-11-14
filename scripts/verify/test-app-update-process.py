@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 ROOT=Path(__file__).resolve().parents[2]
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--host-dir',type=Path,required=True)
-parser.add_argument('--report',type=Path,required=True)
+parser.add_argument('--report',type=Path,default=ROOT/'tmp/verification-updates/update-process.json',help='verification report under tmp/')
 parser.add_argument('--online',action='store_true',help='exercise public feed/download through host check/apply API')
 args=parser.parse_args()
 binaries=args.host_dir.resolve()

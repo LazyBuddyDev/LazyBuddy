@@ -46,10 +46,10 @@ try{
  await page.getByRole('button',{name:'卸载',exact:true}).click();await until(async()=>await page.getByRole('button',{name:'卸载',exact:true}).count()===0);
  assert.equal(run('modules','list').length,0);assert.equal(await page.getByLabel('选择功能').isDisabled(),true);
  assert.equal(run('host',JSON.stringify({version:1,command:'status',args:{}})).data.backend,'web');
- await mkdir(path.join(root,'target/verification-web-host'),{recursive:true});
- await page.screenshot({path:path.join(root,'target/verification-web-host/modules.png')});
+ await mkdir(path.join(root,'tmp/verification-web-host'),{recursive:true});
+ await page.screenshot({path:path.join(root,'tmp/verification-web-host/modules.png')});
  const report={passed:true,installed_news_api:true,cached_news_no_network:true,news_rows:catalog.data.length*10,stale_fetch_rejected:true,theme_survives_reload:true,shortcut_capture_and_restore:true,left_right_docking:true,circular_hit_region:true,hidden_requests_unchanged:true,live_uninstall:true,cli_web_status:true,real_account_used:false};
- await writeFile(path.join(root,'target/verification-web-host/host.json'),JSON.stringify(report,null,2));console.log(report);
+ await writeFile(path.join(root,'tmp/verification-web-host/host.json'),JSON.stringify(report,null,2));console.log(report);
 }catch(error){if(page)console.error({notice:await page.locator('.notice').textContent(),state:await invoke('snapshot')});throw error;}
 finally{
  if(page)await invoke('window_action',{action:'quit'}).catch(()=>{});await browser?.close().catch(()=>{});
