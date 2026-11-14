@@ -4,13 +4,19 @@
 
 上班摸鱼的桌面搭子。Windows x64 主程序负责界面和窗口，新闻、红果短剧及以后新增的功能按需安装；未使用的功能停止工作，卸载后回收无引用的运行时。
 
-**2.0 正在重构，尚未发布稳定版本。** 基础宿主、独立服务、模块安装事务和媒体共享纹理已有隔离验证；视频内控件、窗口贴边和隔离生命周期已迁移；预览版已提供签名模块目录，真实账号的新入口仍待验收。范围与证据见 [TASKS.md](TASKS.md)。旧 BriefDock 不再作为开发入口，不提供旧数据迁移。
+**2.0 正在重构，尚未发布稳定版本。** main已纳入用户认可的Tauri/Svelte Web宿主及红果浏览器资源接入代码，真实扫码、有限播放及收藏同步有分项验证；完整迁移和偶发故障定位仍待完成。代码入主线不代表软件正式发版。范围与证据见 [TASKS.md](TASKS.md)。旧 BriefDock 不再作为开发入口，不提供旧数据迁移。
 
 ## 下载使用
+
+当前已发布预览包仍使用Iced，不包含main最新Web宿主；本次源码整合没有更新Release、签名模块目录或应用更新源。
 
 下载 [Windows x64 预览版](https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v2.0.0-preview.1)，解压后运行 `lazybuddy.exe`。在顶部「功能」中安装新闻或红果，再从「选择功能」进入；红果的两个运行时自动安装。不使用的功能可直接卸载。保留 EXE 同目录的可信源配置，无需安装 Python、Go 或 GStreamer。启动后自动检查并准备应用更新，点击「重启更新」即可应用；测试包即使版本号相同也能识别覆盖更新，见[应用更新](docs/app-updates.md)。
 
 ## 本地开发
+
+Web宿主源码位于`apps/shell-prototype`（沿用原目录名，现已纳入main维护），需要Node.js、Rust/MSVC及WebView2。构建/启动使用`scripts/run-shell-prototype.ps1 -ServicePackages <独立服务包目录>`；当前本机已构建的真实服务入口可双击`start_preview.bat`，不重复编译或下载依赖。服务包必须先由独立仓库构建，再显式传入路径；源码不依赖相邻服务仓库。数据/账号与已发布宿主隔离，使用方式及验收边界见 [Web宿主集成](docs/shell-design-evaluation.md)。
+
+以下命令继续构建已发布路线的Iced宿主：
 
 需要 Windows x64、Rust/MSVC 工具链和 Windows SDK。首次获取 Cargo 依赖后：
 
@@ -39,6 +45,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-and-run.ps
 | 目录 | 职责 |
 | --- | --- |
 | `apps/desktop` | Iced 界面、页面调度、窗口与通用设置 |
+| `apps/shell-prototype` | main维护的Tauri/Svelte Web宿主与浏览器播放器，独立开发入口 |
 | `apps/cli` | 模块管理、宿主控制和独立服务调用 |
 | `crates/module-contract` | 功能清单、依赖、页面描述和生命周期代数 |
 | `crates/module-manager` | 签名目录、包校验、原子安装更新及卸载 |

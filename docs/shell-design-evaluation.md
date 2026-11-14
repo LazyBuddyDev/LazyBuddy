@@ -46,7 +46,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-shell-prototyp
 
 验证脚本apps/shell-prototype/tests/browser-media.mjs使用模拟账号，已验证二维码显示/取消、全局设置终止扫码、登录搜索播放、退出账号、功能页返回内容、暂停seek及隐藏恢复3.1秒/1.5倍速。前端6项、Rust播放桥3项、服务33项受影响单元通过。证据target/verification-browser-video/browser-media.json；没有使用真实账号、真实扫码或上游节目，因此真实网络/权限/音画同步留给用户手动验收。
 
-复现时先在独立服务仓库构建包，再用其stage-browser-fixture.py的--runtime-packages显式选择生成包目录。原型侧设置LAZYBUDDY_BROWSER_PACKAGES为样例包目录、LAZYBUDDY_BROWSER_FIXTURE_FILE为至少4秒且不超过8MB的自制合成MP4；构建后运行`node apps/shell-prototype/tests/browser-media.mjs <候选exe绝对路径>`。驱动只关闭自身实例和临时WebView配置；固定样例入口不放进正式服务包。代码CI：宿主e0e950d运行43587778472、服务554ab6a运行43587786151均成功。源码仅在独立分支，不通过更新源覆盖生产。
+复现时先在独立服务仓库构建包，再用其stage-browser-fixture.py的--runtime-packages显式选择生成包目录。原型侧设置LAZYBUDDY_BROWSER_PACKAGES为样例包目录、LAZYBUDDY_BROWSER_FIXTURE_FILE为至少4秒且不超过8MB的自制合成MP4；构建后运行`node apps/shell-prototype/tests/browser-media.mjs <候选exe绝对路径>`。驱动只关闭自身实例和临时WebView配置；固定样例入口不放进正式服务包。初轮代码CI：宿主e0e950d运行43587778472、服务554ab6a运行43587786151均成功。源码现已依用户授权纳入main维护，仍不通过更新源覆盖生产。
 
 ## 历史原生视频实验（独立分支）
 
