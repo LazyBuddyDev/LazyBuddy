@@ -26,4 +26,6 @@ test('episode navigation follows only the confirmed available list',()=>{
 test('playback failures stay readable when wrapped as Error objects',()=>{
   assert.equal(message(new Error('app_playback_empty_response')),'App 播放接口返回空内容（HTTP 200），尚未获取视频资源');
   assert.equal(message(new Error('app_access_denied')),'当前账号无法访问该媒体');
+  assert.equal(message(new Error('media_redirect_target_rejected')),'媒体跳转被拒：目标不在允许范围');
+  assert.equal(message(new Error('media_redirect_limit')),'媒体服务器连续跳转超过上限');
 });

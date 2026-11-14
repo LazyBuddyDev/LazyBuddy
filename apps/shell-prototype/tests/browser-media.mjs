@@ -77,11 +77,14 @@ try{
   await page.waitForFunction(()=>document.querySelector('video')?.currentTime>.3);
   await page.locator('video').evaluate(v=>{v.pause();v.src='http://sample.localhost/not-a-video';v.load();});
   await page.waitForFunction(()=>document.querySelector('video')?.error!==null);
-  await page.getByRole('button',{name:'播放视频',exact:true}).click();
+  await page.getByRole('button',{name:'重试播放',exact:true}).click();
   await page.waitForFunction(()=>{const v=document.querySelector('video');return v&&!v.error&&!v.paused&&v.currentTime>.3;});
   assert.equal(await page.getByLabel('清晰度').inputValue(),'360p');
   await page.getByRole('button',{name:'返回列表',exact:true}).click();
   await page.getByRole('button',{name:'播放另一部短剧',exact:true}).click();
+  await page.getByRole('button',{name:'重试播放',exact:true}).waitFor();
+  assert.match(await page.locator('.notice').textContent(),/另一部短剧 第1集/);
+  await page.getByRole('button',{name:'重试播放',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('video')?.currentTime>.3);
   await page.getByRole('button',{name:'返回列表',exact:true}).click();
   await page.getByRole('button',{name:'播放测试短剧',exact:true}).click();

@@ -15,6 +15,7 @@
   let source=$state<string>();let lease:number|undefined;let video=$state<HTMLVideoElement>(undefined!);
   let playing=$state(false);let position=$state(0);let duration=$state(0);let muted=$state(true);let volume=$state(.5);let speed=$state(1);
   let playerLoading=$state(false);let seeking=$state<number|null>(null);
+  let playbackError=$state(false);
   let watched=0;let lastCheckpoint=0;let epoch=0;let playRequest=0;let live=false;let timer:ReturnType<typeof setTimeout>|undefined;let frame:number|undefined;
   let cancelMetadata:(()=>void)|undefined;let history:Record<string,{episode:number;time:number}>={};
   let opening:Promise<Playback>|undefined;
@@ -88,7 +89,7 @@
       account=data;
       if(data.state!=='signed_in'){favorites=[];favoritesReady=false;}
       if(data.state==='signed_in')await signedIn(ticket);else if(data.error)notice(message(data.error));else notice('红果账号未登录');
-    }catch(error){if(valid(ticket)){lease=undefined;warn(error);}}finally{if(valid(ticket))busy=false;}
+    }catch(error){if(valid(ticket)){lease=undefined;if(mode==='player')playbackError=true;warn(error);}}finally{if(valid(ticket))busy=false;}
   }
   $effect(()=>{const enabled=active;const retain=showing&&!accountOnly;untrack(()=>{if(enabled){void activate();}else{void suspend(retain);}});});
   onDestroy(()=>{void suspend(false);});
@@ -156,7 +157,7 @@
   async function open(item:Item){if(selected?.id!==item.id)episodes=[];selected=item;episode=history[item.id]?.episode??1;position=history[item.id]?.time??0;watched=position;duration=0;mode='player';await tick();await load(true);}
   async function load(autoplay:boolean){
     if(!selected||!live)return;
-    const request=++playRequest;playerLoading=true;quality=requestedQuality;const ticket=epoch;const current=()=>valid(ticket)&&request===playRequest;detach();lease=undefined;qualities=[];
+    const request=++playRequest;playerLoading=true;playbackError=false;quality=requestedQuality;const ticket=epoch;const current=()=>valid(ticket)&&request===playRequest;detach();lease=undefined;qualities=[];
     try{
       const pending=raw<Playback>('playback.open',{series:selected.id,episode,quality:requestedQuality,origin:location.origin});opening=pending;
       let data=await pending;if(opening===pending)opening=undefined;if(!current())return;lease=data.session;
@@ -168,11 +169,11 @@
       await attach(data,ticket);if(!current())return;
       if(autoplay){await video.play();if(!current())return;}
       notice(`${selected.title} 第${episode}集`);
-    }catch(error){if(current())warn(error);}finally{if(current())playerLoading=false;}
+    }catch(error){if(current()){playbackError=true;notice(`${selected.title} 第${episode}集：${message(error)}`);}}finally{if(current())playerLoading=false;}
   }
   export async function toggle(){
-    if(!live||mode!=='player')return;
-    if(!source||video.error){await load(true);return;}
+    if(!live||mode!=='player'||playerLoading)return;
+    if(playbackError||!source||video.error){await load(true);return;}
     if(video.paused){try{await video.play();}catch(error){warn(error);}}
     else{video.pause();void checkpoint(true).catch(warn);}
   }
@@ -180,7 +181,7 @@
   export function seekRelative(delta:number){if(video&&source){frameTarget=Math.max(0,Math.min(duration,video.currentTime+delta));frames();video.currentTime=frameTarget;}}
   async function videoError(){
     if(!live||!source||!video?.error)return;
-    playing=false;stopFrames();
+    playing=false;playbackError=true;stopFrames();
     const ticket=epoch;const request=playRequest;const code=video.error.code;
     try{const data=await raw<Playback>('playback.status');if(!valid(ticket)||request!==playRequest)return;
       if(data.error)warn(data.error);else notice(code===4?'浏览器不支持该视频编码或封装':code===3?'视频解码失败':'媒体读取失败');
@@ -202,7 +203,7 @@
     <section class="player-page"><div class="video-stage" class:paused={!playing}>
       <video bind:this={video} src={source} preload="metadata" crossorigin="anonymous" playsinline bind:muted bind:volume ontimeupdate={()=>{if(video.readyState>0&&seeking===null)position=video.currentTime;}} onplay={()=>{if(!live){video.pause();return;}playing=true;frames();}} onpause={()=>{playing=false;stopFrames();}} onended={ended} onerror={videoError} aria-label="红果短剧视频"><track kind="captions"/></video>
       <div class="video-top"><button class="video-back" aria-label="返回列表" onclick={leavePlayer}><Icon name="arrow" size={17}/></button><span class="video-title">{selected?.title} 第{episode}集</span><button class="video-favorite" aria-label={isFavorite(selected?.id)?'取消收藏':'收藏'} onclick={()=>selected&&favorite(selected)} disabled={account.operation==='pending'}><Icon name="star" filled={isFavorite(selected?.id)}/></button></div>
-      {#if !playing}<button class="center-play" aria-label={playerLoading?'加载中':'播放视频'} disabled={playerLoading} onclick={toggle}><Icon name="play" size={28}/></button>{/if}
+      {#if !playing}<button class="center-play" aria-label={playerLoading?'加载中':playbackError?'重试播放':'播放视频'} disabled={playerLoading} onclick={toggle}><Icon name={playbackError?'refresh':'play'} size={28}/></button>{/if}
       <div class="video-bottom"><input class="seek" aria-label="播放进度" type="range" min="0" max={duration||1} step=".05" value={seeking??position} disabled={!source} oninput={event=>seeking=Number(event.currentTarget.value)} onchange={()=>{if(seeking!==null){frameTarget=seeking;frames();video.currentTime=seeking;}seeking=null;}}/><div class="video-controls">
         <button aria-label="上一集" disabled={adjacent(episodes,episode,-1)===undefined} onclick={()=>{const value=adjacent(episodes,episode,-1);if(value!==undefined)void changeEpisode(value);}}><Icon name="previous"/></button>
         <button aria-label={playing?'暂停':'播放'} disabled={playerLoading} onclick={toggle}><Icon name={playing?'pause':'play'}/></button>

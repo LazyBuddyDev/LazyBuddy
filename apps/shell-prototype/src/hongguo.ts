@@ -19,5 +19,7 @@ export function message(error:unknown):string {
     app_access_denied:'当前账号无法访问该媒体',episode_unavailable:'当前集不可播放',quality_unavailable:'当前清晰度不可用',
     app_playback_unavailable:'App 播放接口暂不可用，尚未获取视频资源',app_playback_empty_response:'App 播放接口返回空内容（HTTP 200），尚未获取视频资源',
     media_access_denied:'媒体访问被拒绝',media_network_error:'媒体网络请求失败',app_source_network_error:'取源网络请求失败',
+    media_redirect_rejected:'媒体跳转校验失败',media_redirect_target_rejected:'媒体跳转被拒：目标不在允许范围',
+    media_redirect_https_required:'媒体跳转被拒：目标不是 HTTPS',media_redirect_missing_location:'媒体服务器未提供跳转地址',media_redirect_limit:'媒体服务器连续跳转超过上限',
     app_source_timeout:'取源超时',playback_service_unavailable:'红果服务连接已断开，请重试'} as Record<string,string>)[value]??value;
 }
