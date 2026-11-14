@@ -32,7 +32,7 @@ $env:LAZYBUDDY_DATA_DIR=(Join-Path (Get-Location) 'tmp/profiles/local-qa')
 .\target\debug\lazybuddy-cli.exe modules uninstall <ID>
 ```
 
-宿主运行时使用功能页，CLI 拒绝直接修改包。开发时先安装精确依赖，再安装功能包；红果 Web 入口要求 0.2.1 以上服务（当前验证 0.2.5）和其声明的 Python 运行时。Web 宿主不使用 media-runtime。更新/卸载会先停止对应服务并等账号事务正常收尾，包完整准备后原子激活；失败保留已安装状态。
+宿主运行时使用功能页，CLI 拒绝直接修改包。开发时先安装精确依赖，再安装功能包；红果 Web 入口要求 0.2.1 以上服务（当前分发 0.2.6）和其声明的 Python 运行时。Web 宿主不使用 media-runtime。更新/卸载会先停止对应服务并等账号事务正常收尾，包完整准备后原子激活；失败保留已安装状态。
 
 随 EXE 提供 `module-catalog.json` 和 `app-update-source.json`，使用维护者公钥验签。不能把未签名本地包作为线上下载失败的回退。
 

@@ -1,4 +1,4 @@
 # Catalog signatures cover exact bytes; Git must not normalize their line endings.
-/docs/modules/catalog.json -text
-/docs/updates/*.json -text
+/docs/modules/*.json -text whitespace=trailing-space,space-before-tab,cr-at-eol
+/docs/updates/*.json -text whitespace=trailing-space,space-before-tab,cr-at-eol
 *.sig -text

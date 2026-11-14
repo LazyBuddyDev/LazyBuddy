@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "target": "windows-x86_64",
+  "version": "2.0.0",
+  "build": "0859356d6f8a70ac825d8d1587080721b4ea6a3099cecc3e52a160f6fb95c28a",
+  "url": "https://github.com/LazyBuddyDev/LazyBuddy/releases/download/v2.0.0-preview.1/LazyBuddy-windows-x86_64.zip",
+  "bytes": 5018838,
+  "sha256": "84f1146211d58a48de1c580b48d7f5b43712e4a2bdbe792f795c997007fd7ec4",
+  "host_sha256": "58c89cdec21d8c214e3d0ddb8ff38f87b2073334a6d52906306cf64b8fe038da"
+}

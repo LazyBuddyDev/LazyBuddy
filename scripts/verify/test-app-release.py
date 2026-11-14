@@ -26,13 +26,15 @@ class Release(unittest.TestCase):
             self.assertEqual([record['name'] for record in records],['runtime'])
             self.assertEqual((root/'licenses/runtime-1.2.3/LICENSE').read_text(encoding='utf-8'),'license evidence')
     def test_published_manifest_signature_uses_shipped_public_key(self):
-        path=ROOT/'docs/updates/windows-x86_64.json'
-        if not path.is_file():
-            self.skipTest('first application feed has not been prepared')
+        paths=sorted((ROOT/'docs/updates').glob('*.json'))
+        if not paths:
+            self.skipTest('application feeds have not been prepared')
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         source=json.loads((ROOT/'app-update-source.json').read_text(encoding='utf-8'))
-        Ed25519PublicKey.from_public_bytes(bytes(source['public_key'])).verify(
-            path.with_name(path.name+'.sig').read_bytes(),path.read_bytes())
+        key=Ed25519PublicKey.from_public_bytes(bytes(source['public_key']))
+        for path in paths:
+            with self.subTest(feed=path.name):
+                key.verify(path.with_name(path.name+'.sig').read_bytes(),path.read_bytes())
 
     def bundle(self, directory, marker, missing=False, corrupt=False):
         names = ['lazybuddy.exe', 'lazybuddy-cli.exe', 'lazybuddy-updater.exe', 'app-update-source.json', 'module-catalog.json']

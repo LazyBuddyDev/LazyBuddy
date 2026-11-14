@@ -19,9 +19,12 @@ class SigningKey(unittest.TestCase):
     def test_shipped_catalog_matches_trusted_public_key(self):
         root = Path(__file__).resolve().parents[2]
         source = json.loads((root / 'module-catalog.json').read_text(encoding='utf-8'))
-        Ed25519PublicKey.from_public_bytes(bytes(source['public_key'])).verify(
-            (root / 'docs/modules/catalog.json.sig').read_bytes(),
-            (root / 'docs/modules/catalog.json').read_bytes())
+        paths=sorted((root/'docs/modules').glob('*.json'))
+        self.assertTrue(paths, 'published catalog is missing')
+        key=Ed25519PublicKey.from_public_bytes(bytes(source['public_key']))
+        for path in paths:
+            with self.subTest(catalog=path.name):
+                key.verify(path.with_name(path.name+'.sig').read_bytes(),path.read_bytes())
 
     def test_reuse_and_reject_overwrite_or_corruption(self):
         with tempfile.TemporaryDirectory(prefix='lazybuddy-signing-test-',dir=TMP) as directory:

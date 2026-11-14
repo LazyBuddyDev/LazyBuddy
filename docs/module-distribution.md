@@ -4,7 +4,7 @@
 
 ## 分发边界
 
-当前Web源码的签名模块分发尚待执行，交付状态见[TASKS](../TASKS.md)。已有`modules-v0.1.0`及`v2.0.0-preview.1`属于旧原生路线，不能作为当前Web包的验收结果；既有`docs/modules/catalog.json`与签名保留原字节，防止破坏旧客户端下载。
+Web测试包复用`v2.0.0-preview.1`入口，浏览器模块在既有`modules-v0.1.0`中追加发布；Web可信目录为`docs/modules/web-catalog.json`及对应签名，随宿主配置该地址。旧`catalog.json`与原生包保留给旧客户端，不能混用。当前组合为news0.1.0、hongguo0.2.6、python-runtime0.1.0；在线验收及正式发布状态见[TASKS](../TASKS.md)。
 
 新闻包由新闻仓库构建，红果及其运行时包由红果仓库构建，宿主不导入服务源码。浏览器路线默认需要news、hongguo与精确匹配的python-runtime；`media-runtime`是红果独立服务的可选原生能力，当前Web宿主不使用。以每个实际清单的依赖闭包为准，不能混用旧包。
 
@@ -19,8 +19,8 @@
 以下为发布操作参考，执行前核对当前授权、实际ZIP与来源提交。占位参数须替换；目录JSON、签名和可信配置的输出文件必须尚不存在，使用新暂存位置，不覆盖未经核对的旧产物。
 
 ```powershell
-python -B scripts/assemble-catalog.py --packages <news.zip> <hongguo.zip> <python-runtime.zip> --base-url <HTTPS模块资源目录> --output target/packages/catalog/catalog.json
-.\target\tools\release\Scripts\python.exe -B scripts/sign-catalog.py --catalog target/packages/catalog/catalog.json --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi" --source target/packages/catalog/module-catalog.json --url <HTTPS目录地址>
+python -B scripts/assemble-catalog.py --packages <news.zip> <hongguo.zip> <python-runtime.zip> --base-url <HTTPS模块资源目录> --output target/packages/catalog/web-catalog.json
+.\target\tools\release\Scripts\python.exe -B scripts/sign-catalog.py --catalog target/packages/catalog/web-catalog.json --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi" --source target/packages/catalog/module-catalog.json --url <HTTPS目录地址>
 .\build_and_run.bat -BuildOnly -Release
 python -B scripts/package_base.py --output target/packages/base
 ```
