@@ -212,6 +212,16 @@ fn toggle_pin(window: tauri::WebviewWindow) -> Result<bool, String> {
     Ok(pinned)
 }
 #[tauri::command]
+fn open_logs() -> Result<(), String> {
+    let path = playback::data_directory()?.join("logs");
+    std::fs::create_dir_all(&path).map_err(|_| "无法创建日志目录")?;
+    std::process::Command::new("explorer.exe")
+        .arg(path)
+        .spawn()
+        .map_err(|_| "无法打开日志目录")?;
+    Ok(())
+}
+#[tauri::command]
 fn resize(width: u32, height: u32, window: tauri::WebviewWindow) -> Result<(), String> {
     if dock::is_docked(&window) {
         return Err("expand before resizing".into());
@@ -328,6 +338,7 @@ fn main() {
             window_action,
             resize,
             toggle_pin,
+            open_logs,
             playback::playback_call
         ])
         .register_uri_scheme_protocol("sample", |_, request| clip_response(&request))

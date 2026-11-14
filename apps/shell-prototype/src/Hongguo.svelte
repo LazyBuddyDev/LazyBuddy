@@ -4,7 +4,7 @@
   import Icon from './Icon.svelte';
   import Switch from './Switch.svelte';
   import {formatTime} from './lifecycle';
-  import {loginPending,adjacent,message,qualityLabels,favoriteValue,type Account,type Item,type Playback} from './hongguo';
+  import {loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails,type Account,type Item,type Playback} from './hongguo';
   let {active,showing,accountOnly,notice,navigation}: {active:boolean;showing:boolean;accountOnly:boolean;notice:(text:string)=>void;navigation:Snippet}=$props();
   let account=$state<Account>({state:'idle',name:''});
   let tab=$state<'search'|'favorites'>('search');
@@ -33,6 +33,7 @@
   }
   const valid=(ticket:number)=>live&&active&&ticket===epoch;
   function warn(error:unknown){const value=String(error);if(!/stale_|inactive_|页面已暂停/.test(value))notice(message(error));}
+  function playerError(error:unknown,stage:string){notice(playbackDetails(error,{title:selected?.title??'当前短剧',episode,quality:requestedQuality,direct,stage}));}
   function stopFrames(){if(video&&frame!==undefined)video.cancelVideoFrameCallback(frame);frame=undefined;}
   function frames(){
     stopFrames();const ticket=epoch;
@@ -158,6 +159,7 @@
   async function load(autoplay:boolean){
     if(!selected||!live)return;
     const request=++playRequest;playerLoading=true;playbackError=false;quality=requestedQuality;const ticket=epoch;const current=()=>valid(ticket)&&request===playRequest;detach();lease=undefined;qualities=[];
+    let stage='取源与媒体准备';
     try{
       const pending=raw<Playback>('playback.open',{series:selected.id,episode,quality:requestedQuality,origin:location.origin});opening=pending;
       let data=await pending;if(opening===pending)opening=undefined;if(!current())return;lease=data.session;
@@ -166,10 +168,10 @@
       if(!current())return;
       if(data.error)throw new Error(data.error);
       if(!data.prepared){await raw('playback.close',{session:lease});lease=undefined;throw new Error('媒体资源准备超时');}
-      await attach(data,ticket);if(!current())return;
+      stage='浏览器加载媒体';await attach(data,ticket);if(!current())return;
       if(autoplay){await video.play();if(!current())return;}
       notice(`${selected.title} 第${episode}集`);
-    }catch(error){if(current()){playbackError=true;notice(`${selected.title} 第${episode}集：${message(error)}`);}}finally{if(current())playerLoading=false;}
+    }catch(error){if(current()){playbackError=true;playerError(error,stage);}}finally{if(current())playerLoading=false;}
   }
   export async function toggle(){
     if(!live||mode!=='player'||playerLoading)return;
@@ -183,8 +185,9 @@
     if(!live||!source||!video?.error)return;
     playing=false;playbackError=true;stopFrames();
     const ticket=epoch;const request=playRequest;const code=video.error.code;
+    if(lease!==undefined)await raw('playback.report_error',{session:lease,code}).catch(()=>{});
     try{const data=await raw<Playback>('playback.status');if(!valid(ticket)||request!==playRequest)return;
-      if(data.error)warn(data.error);else notice(code===4?'浏览器不支持该视频编码或封装':code===3?'视频解码失败':'媒体读取失败');
+      playerError(data.error??(code===4?'browser_format_unsupported':code===3?'browser_decode_failed':'media_network_error'),'浏览器播放');
     }catch(error){if(valid(ticket))warn(error);}
   }
   async function leavePlayer(){playRequest++;pause();const pending=opening;await checkpoint(true).catch(warn);detach();const old=lease;lease=undefined;mode='list';

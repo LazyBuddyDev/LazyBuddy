@@ -47,6 +47,17 @@ fn direct_environment() -> Vec<(String, String)> {
     .map(|(key, value)| (key.into(), value.into()))
     .collect()
 }
+pub fn data_directory() -> Result<PathBuf, String> {
+    let base = PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or("local_data_unavailable")?)
+        .join("LazyBuddyShellPreview");
+    if std::env::var_os("LAZYBUDDY_BROWSER_FIXTURE_FILE").is_some() {
+        Ok(std::env::var_os("LAZYBUDDY_PROTOTYPE_DATA_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| base.join("fixture-hongguo")))
+    } else {
+        Ok(base.join("hongguo"))
+    }
+}
 fn connect(direct: bool) -> Result<Session, String> {
     // Explicit development package directory; never load sibling service source.
     let root = PathBuf::from(
@@ -87,12 +98,7 @@ fn connect(direct: bool) -> Result<Session, String> {
                 ("LAZYBUDDY_CREDENTIAL_SCOPE".into(), "shell-preview".into()),
                 (
                     "LAZYBUDDY_DATA_DIR".into(),
-                    PathBuf::from(
-                        std::env::var_os("LOCALAPPDATA").ok_or("local_data_unavailable")?,
-                    )
-                    .join("LazyBuddyShellPreview/hongguo")
-                    .to_string_lossy()
-                    .into_owned(),
+                    data_directory()?.to_string_lossy().into_owned(),
                 ),
                 ("LAZYBUDDY_PLAYER_REAL".into(), "1".into()),
                 ("LAZYBUDDY_SEARCH_REAL".into(), "1".into()),
@@ -183,6 +189,7 @@ fn allowed(method: &str) -> bool {
     matches!(
         method,
         "playback.open"
+            | "playback.report_error"
             | "playback.status"
             | "playback.close"
             | "playback.suspend"

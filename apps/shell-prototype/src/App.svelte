@@ -256,5 +256,5 @@
       {/if}
     {/if}
   </main>
-  <footer class="info-bar" aria-live="polite"><span class="status-dot"></span><span class="notice">{notice}</span><span class="footer-detail">{bridge ? '就绪' : '连接中'}<span>·</span>界面原型</span></footer>
+  <footer class="info-bar" aria-live="polite"><span class="status-dot"></span><details class="runtime-notice"><summary class="notice" title="展开运行信息">{notice.split('\n')[0]}</summary><pre>{notice}</pre></details>{#if servicePlayback}<button class="log-button" onclick={()=>call('open_logs').catch(error=>notice=String(error))}>日志</button>{/if}<span class="footer-detail">{bridge ? '就绪' : '连接中'}</span></footer>
 </div>

@@ -439,6 +439,12 @@ li button:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.info-bar { height: auto; min-height: 32px; align-items: flex-start; padding-top: 7px; padding-bottom: 7px; }
+.runtime-notice { flex: 1; min-width: 0; }
+.runtime-notice summary { cursor: pointer; }
+.runtime-notice pre { margin: 6px 0 0; max-height: 120px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; line-height: 1.45; color: var(--text); }
+.info-bar .status-dot { margin-top: 3px; }
+.info-bar .log-button { min-height: 18px; padding: 0 5px; font-size: 10px; }
 .footer-detail {
   display: flex;
   gap: 8px;

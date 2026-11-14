@@ -1,6 +1,13 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {loginPending,adjacent,message,qualityLabels,favoriteValue} from '../src/hongguo.ts';
+import {loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails} from '../src/hongguo.ts';
+test('error details explain the failure without echoing raw transport secrets',()=>{
+  const context={title:'测试短剧',episode:3,quality:'720p',direct:true,stage:'取源'};
+  const detail=playbackDetails(new Error('media_redirect_limit'),context);
+  assert.match(detail,/测试短剧 第3集/);assert.match(detail,/连续跳转超过上限/);assert.match(detail,/请求清晰度：720p/);assert.match(detail,/直连/);
+  const unknown=playbackDetails(new Error('https://private.invalid/secret?token=SECRET'),context);
+  assert.ok(!unknown.includes('SECRET'));assert.ok(!unknown.includes('https://'));
+});
 test('favorite feedback rolls back to confirmed list and never crosses items',()=>{
   const items=[{id:'1',title:'fixture',episodes:1}];
   assert.equal(favoriteValue(items,null,'1'),true);
