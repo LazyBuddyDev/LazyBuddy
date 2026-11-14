@@ -12,12 +12,34 @@
 - 棘手问题先调查官方文档和可核查的上游实现，确认版本、许可和适用条件，先验证最小闭环，再接正式页面；不为未验证路线先完成整套界面。
 - 新增功能同时编写该功能的单元测试；修改只运行新增/受影响的测试与必要构建，不默认执行全工作区、全量界面或全量功能回归。仅共享边界受影响或出现失败证据时扩大到关联测试；全量测试须用户明确要求。用户明确不测试时服从本轮范围，不能把构建通过写成功能通过。
 - 优先CLI、连接器和文件操作；仅真实界面、焦点或窗口行为需要时才用computer-use，集中完成必要交互。后台构建、下载、CI跟踪不反复截图，不占前台，不停止用户实例来腾出文件占用。
-- 验证素材、隔离配置与临时测试环境统一放tmp，退出后及时清理；不再创建target/qa-*目录。测试安装包放target/packages，维护者发布工具环境放target/tools/release。清理前核对用途、引用、占用、绝对路径和链接边界，不删除未跟踪源码、用户配置、凭据或私有SDK；禁止cargo clean及整体清空target，只清理核实后的子目录，忽略规则不能代替实际清理。
-- 验证报告、验收截图和录屏统一输出到已忽略的tmp目录，按用途放入tmp/verification-*等子目录；不再创建target/verification-*。长期有效结论归并到docs或对应TASKS条目，临时证据可按用户要求清理。
-- 宿主构建统一使用标准target/debug与target/release，不沿用原型qa-*构建目录。功能服务的私有工具链、SDK、下载缓存由所属独立仓库管理，分别放target/toolchains、target/sdks、target/downloads与target/cache，不在宿主内混放业务构建环境。
+- 构建、工具和验证文件按下方「目录用途与命名」归位，临时环境退出后及时清理。清理前核对用途、引用、占用、绝对路径和链接边界，不删除未跟踪源码、用户配置、凭据或私有SDK；禁止cargo clean及整体清空target，只清理核实后的子目录，忽略规则不能代替实际清理。
 - 同一Windows用户下，开发版与安装版默认共用%LOCALAPPDATA%/LazyBuddy/modules中的已安装功能与运行时，不按EXE位置重复安装，也不依赖工作区SDK才能运行。隔离验证显式指定独立实例、数据目录与凭据scope；安装包保留可信目录配置，模块仍通过校验后按需安装。
 - target/service-exports中已初始化的独立Git仓库属于待交付源码；清理前核对其提交与远端状态，不把尚未推送的仓库当作可重建包体删除。源码重新导出只使用新目录，不覆盖已初始化仓库。
 - 用户暂不在场且授权自主推进时，普通取舍由执行端决定；确需人决定的问题写tmp/lazybuddy-decisions.md，继续其他可推进工作，不把可逆实现选择升级为阻塞。
+
+## 目录用途与命名
+
+路径相对各自所属仓库；按需创建，不为空用途预建目录。新增脚本、CI与文档示例必须使用同一约定。
+
+| 用途 | 固定位置 |
+| --- | --- |
+| 宿主编译产物 | `target/debug/`、`target/release/`，遵循Cargo工作区默认位置 |
+| 验证素材 | `tmp/fixtures/<用途>/`，媒体样例为`tmp/fixtures/media/` |
+| 隔离配置、WebView用户数据 | `tmp/profiles/<验证入口>/` |
+| Rust/Python临时测试数据 | `tmp/`下带用途前缀的临时目录，收尾删除 |
+| 验证报告、截图、录屏 | `tmp/verification-<用途>/` |
+| 测试安装包、解包目录及校验信息 | `target/packages/<用途>/`，宿主基础包为`target/packages/base/` |
+| 维护者工具及其独立环境 | `target/tools/<工具>/`，发布工具Python环境为`target/tools/release/` |
+| 功能服务私有工具链 | 所属服务仓库的`target/toolchains/<工具>/`，如`go`、`python` |
+| 可选SDK | 所属服务仓库的`target/sdks/<SDK>/`，如`gstreamer` |
+| 下载缓存、wheel与安装源 | 所属服务仓库的`target/downloads/`，如`python-wheels/`、`runtime/` |
+| 构建缓存 | 所属仓库的`target/cache/<工具>/`，如`go/`；Cargo缓存保持默认结构 |
+| 已安装功能和运行时 | 同一Windows用户共享`%LOCALAPPDATA%/LazyBuddy/modules/`，不放在工作区SDK或EXE目录中 |
+
+- 目录使用表明用途的英文小写kebab-case名称；固定用途复用稳定名称，不按实验阶段、日期或流水号另建同类目录。并行临时实例可加唯一标识，包协议要求的不可变版本目录照常保留。
+- 禁止新建或恢复`target/qa-*`、`target/verification-*`、`target/release-tools`和混合工具链的`native-player-sdk`目录。调整位置时同时更新生成脚本、CI、示例和清理逻辑；Python虚拟环境须验证解释器、入口脚本及依赖，不能只移动文件夹。
+- `tmp/`与`target/`保持Git忽略；验证报告和截图不提交，长期结论归并到docs或对应TASKS条目。历史任务中的旧路径可作为当时证据保留，不作为新脚本入口。
+- 服务工具链和SDK只归所属独立仓库管理，宿主不能隐式读取相邻服务源码或开发机工具路径；工具环境不包含维护者私钥、认证文件或用户数据。
 
 ## 模块与文件边界
 
