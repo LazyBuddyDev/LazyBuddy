@@ -17,7 +17,7 @@ Windows x64 桌面搭子。Tauri 2 + Svelte 5 Web 宿主负责界面、窗口和
 
 在「功能」中按需安装、更新、卸载；根页面下拉只显示已安装功能。新闻、账号和媒体请求仅在对应可见页面执行，隐藏停止读取视频，恢复后不自动播放。
 
-当前[Windows测试包](https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v2.0.0-preview.1)已切换到Web宿主，内置可信Web模块目录，可安装新闻0.1.0与红果0.2.6（自动安装Python依赖）。应用通过独立签名源 `updates/web-windows-x86_64.json` 获取后续更新；旧客户端清单提供一次引导升级。仍为稳定版发布前的测试分发，真实节目验收和已知边界见[TASKS](TASKS.md)。
+当前正式版为[LazyBuddy 2.0.0](https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v2.0.0)，内置可信Web模块目录，可安装新闻0.1.0与红果0.2.6（自动安装Python依赖）。应用通过签名源 `updates/web-windows-x86_64.json` 获取更新；旧客户端清单提供一次引导升级。首次播放默认有声，主动静音会保留，拖动进度只在松手时提交。真实播放已由用户验收，已知上游起播错误与资源测量边界见[TASKS](TASKS.md)和发布说明。
 
 ## 开发边界
 

@@ -8,7 +8,7 @@
       "version": "0.1.0",
       "target": "windows-x86_64",
       "dependencies": [],
-      "url": "https://github.com/LazyBuddyDev/LazyBuddy/releases/download/modules-v0.1.0/news-0.1.0-windows-x86_64.zip",
+      "url": "https://github.com/LazyBuddyDev/LazyBuddy/releases/download/modules-v2.0.0/news-0.1.0-windows-x86_64.zip",
       "sha256": "f48a1f9359788353d298135fcc9a93c212b3b1cbcfc54de97da9f159ae0c3ec7",
       "bytes": 1235833
     },
@@ -24,7 +24,7 @@
           "version": "0.1.0"
         }
       ],
-      "url": "https://github.com/LazyBuddyDev/LazyBuddy/releases/download/modules-v0.1.0/hongguo-0.2.6-windows-x86_64.zip",
+      "url": "https://github.com/LazyBuddyDev/LazyBuddy/releases/download/modules-v2.0.0/hongguo-0.2.6-windows-x86_64.zip",
       "sha256": "2ef6a734965468abc76119b47baa46e074de21bd0b38d42087aa04e07d3c42d3",
       "bytes": 22140830
     },
@@ -35,7 +35,7 @@
       "version": "0.1.0",
       "target": "windows-x86_64",
       "dependencies": [],
-      "url": "https://github.com/LazyBuddyDev/LazyBuddy/releases/download/modules-v0.1.0/python-runtime-0.1.0-windows-x86_64.zip",
+      "url": "https://github.com/LazyBuddyDev/LazyBuddy/releases/download/modules-v2.0.0/python-runtime-0.1.0-windows-x86_64.zip",
       "sha256": "30980f93517a1adcd99a2162104e8880914a9088ac748502c4f81da7d26186ef",
       "bytes": 11147854
     }

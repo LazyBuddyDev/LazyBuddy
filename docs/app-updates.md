@@ -2,7 +2,7 @@
 
 默认在启动时和每15分钟后台检查、下载并准备应用更新；这是全局能力，切换新闻/红果、进入设置或隐藏窗口不会停止它。隔离实例默认不自动联网。系统设置可关闭自动检查，也可随时手动检查。准备好后底部显示「重启更新」，点击后正常保存、退出并替换程序；不会自动打断播放或强行重启。
 
-Web测试包使用独立签名源`web-windows-x86_64.json`。旧`windows-x86_64.json`同步指向新版包供旧客户端引导迁移；更新后的客户端从包内配置切到Web源，不回退下载旧Iced宿主。稳定版发布状态和在线验收证据见[TASKS](../TASKS.md)。
+Web宿主使用独立签名源`web-windows-x86_64.json`，当前指向正式`v2.0.0`不可变包。旧`windows-x86_64.json`同步指向新版包供旧客户端引导迁移；更新后的客户端从包内配置切到Web源，不回退下载旧Iced宿主。稳定版发布状态和在线验收证据见[TASKS](../TASKS.md)。
 
 ## 测试包与信任
 
@@ -22,11 +22,11 @@ Web测试包使用独立签名源`web-windows-x86_64.json`。旧`windows-x86_64.
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-and-run.ps1 -BuildOnly -Release
-python -B scripts/package_base.py --output target/packages/base
+python -B scripts/package_base.py --output target/packages/base --download-url <HTTPS正式不可变包地址>
 .\target\tools\release\Scripts\python.exe -B scripts/sign-update.py --manifest target/packages/base/app-update.json --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi" --output docs/updates/web-windows-x86_64.json --replace
 ```
 
-基础包输出目录须为新目录或已核实清理的旧目录，不能覆盖未经核对的文件。package_base生成基础ZIP、package.json和未签名app-update.json；默认URL仍是当前测试包，稳定发版时显式传--download-url。签署目录后先覆盖上传ZIP/校验值，再推送docs/updates原文与签名到Pages；.gitattributes禁止对已签名JSON换行转换。短暂目录/包不同步时校验失败并保留现有应用，可稍后检查，绝不关闭校验或回退到未签名更新。
+基础包输出目录须为新目录或已核实清理的旧目录，不能覆盖未经核对的文件。package_base生成基础ZIP、package.json和未签名app-update.json；默认URL仍是测试包，稳定发版须显式传--download-url。正式快照不可覆盖，Web线上清单只指向经确认的正式构建；后续测试包使用独立配置与清单，不将测试更新推给稳定客户端。签署目录后先覆盖上传ZIP/校验值，再推送docs/updates原文与签名到Pages；.gitattributes禁止对已签名JSON换行转换。短暂目录/包不同步时校验失败并保留现有应用，可稍后检查，绝不关闭校验或回退到未签名更新。
 
 仅在首次启用自动更新的旧客户端需要引导安装；启用后未来测试包覆盖会自动获取，用户只需点击重启更新。模块仍由功能管理按独立签名目录更新。
 
