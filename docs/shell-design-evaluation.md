@@ -4,7 +4,7 @@
 
 ## 当前结论
 
-当前主线实现：服务提供受控、可供浏览器读取的媒体资源，前端使用HTML video解码、同步及绘制控件，复用现有私有Range MP4输入层。真实扫码、搜索、收藏、播放及指定节目取源已有分项证据；单部收藏取消/加回经官方读回及手机确认。首次格式错误与偶发重定向仍按日志定位，不能外推所有节目/音画验收。原生D3D12实验仅保留独立分支，不合入main。
+当前主线实现：服务提供受控、可供浏览器读取的媒体资源，前端使用HTML video解码、同步及绘制控件，复用现有私有Range MP4输入层。真实扫码、搜索、收藏、播放及指定节目取源已有分项证据；单部收藏取消/加回经官方读回及手机确认。首次格式错误与偶发重定向仍按日志定位，不能外推所有节目/音画验收。原生D3D12实验不合入main，已在删除历史分支前归档本机Git bundle。
 
 现有Rust模块协议继续使用。后续完整替换仍需新闻真实API、模块管理和通用系统能力接线，以及剩余节目/音画与资源预算验收；本轮main合入不将这些未完成项标为已交付。
 
@@ -48,9 +48,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-shell-prototyp
 
 复现时先在独立服务仓库构建包，再用其stage-browser-fixture.py的--runtime-packages显式选择生成包目录。原型侧设置LAZYBUDDY_BROWSER_PACKAGES为样例包目录、LAZYBUDDY_BROWSER_FIXTURE_FILE为至少4秒且不超过8MB的自制合成MP4；构建后运行`node apps/shell-prototype/tests/browser-media.mjs <候选exe绝对路径>`。驱动只关闭自身实例和临时WebView配置；固定样例入口不放进正式服务包。初轮代码CI：宿主e0e950d运行43587778472、服务554ab6a运行43587786151均成功。源码现已依用户授权纳入main维护，仍不通过更新源覆盖生产。
 
-## 历史原生视频实验（独立分支）
+## 历史原生视频实验（本机归档）
 
-以下实现及原生命令只对应codex/lazybuddy-native-web-video（6a7d88a），不适用于当前浏览器路线分支。服务暂停帧实验在codex/lazybuddy-paused-video（a1e665d）。初轮暂停preroll缺口后来在服务子类中补齐并以红→绿实际像素验证；最后新增的EOS后重播回归仍超时，未宣称完整原生播放器交付。这些实验不发布为默认模块。
+以下实现及原生命令来自历史codex/lazybuddy-native-web-video（6a7d88a）和服务codex/lazybuddy-paused-video（a1e665d），不适用于当前main。用户要求清理后，这两个实验及已合入的浏览器分支均已删除本地/远端引用；仅main继续开发。实验完整历史已验证保存在本机忽略目录tmp/git-history-backup/lazybuddy-native-experiment.bundle及hongguo-paused-video-experiment.bundle；文件不上传，其他执行端需先取得bundle再恢复实验。初轮暂停preroll缺口曾补齐并以红→绿实际像素验证；最后EOS后重播回归仍超时，未宣称完整原生播放器交付。这些实验不发布为默认模块。
 
 原生候选使用现有独立media-runtime包及service-client。GStreamer仍在所属Windows Job的外部进程解码；media-ipc接收D3D12共享句柄与fence，按生产端LUID选择相同适配器，GPU复制到宿主保留纹理，完成后才确认生产端释放。wgpu27将该纹理绘入DirectComposition交换链，放在透明WebView子窗口下；Svelte只画覆盖控件。正常路径无逐帧JavaScript像素、CPU图片或GStreamer链接，也不依赖ExperimentalTextureStream。
 
