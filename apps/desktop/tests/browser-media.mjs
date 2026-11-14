@@ -13,7 +13,7 @@ assert.ok(process.env.LAZYBUDDY_BROWSER_PACKAGES,'explicit external fixture pack
 const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
 assert.ok(process.argv[2],'explicit candidate executable required');
 const exe=path.resolve(process.argv[2]);
-const child=spawn(exe,[],{windowsHide:true,stdio:'ignore',env:{...process.env,LAZYBUDDY_INSTANCE:`qa-web-${process.pid}`,LAZYBUDDY_DATA_DIR:path.join(profile,"host-data"),LAZYBUDDY_PROTOTYPE_DATA_DIR:path.join(profile,'service-data'),LAZYBUDDY_PROTOTYPE_PROBE:'1',WEBVIEW2_USER_DATA_FOLDER:profile,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`}});
+const child=spawn(exe,[],{windowsHide:true,stdio:'ignore',env:{...process.env,LAZYBUDDY_INSTANCE:`qa-web-${process.pid}`,LAZYBUDDY_DATA_DIR:path.join(profile,"host-data"),LAZYBUDDY_PROTOTYPE_DATA_DIR:path.join(profile,'service-data'),LAZYBUDDY_PROTOTYPE_PROBE:'1',WEBVIEW2_USER_DATA_FOLDER:profile,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port} --mute-audio`}});
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(fn,timeout=25000){const end=Date.now()+timeout;while(Date.now()<end){if(child.exitCode!==null)throw Error('owned prototype exited');if(await fn())return;await delay(80);}throw Error('browser media timeout');}
 let browser,page,report;
@@ -42,6 +42,7 @@ try{
   assert.equal(knob.width,36);assert.equal(knob.height,20);assert.ok(knob.offset<=4);
   await page.screenshot({path:path.join(output,'browser-settings.png')});
   assert.equal(await page.evaluate(()=>localStorage.getItem('lazybuddy.hongguo.direct')),'false');
+  await page.evaluate(()=>{const key='lazybuddy.hongguo.player',saved=JSON.parse(localStorage.getItem(key));saved.mute=true;delete saved.muteChosen;localStorage.setItem(key,JSON.stringify(saved));});
   await page.reload();await page.waitForSelector('[data-events-ready=true]');
   await page.getByLabel('选择功能').selectOption('hongguo');
   await page.getByRole('button',{name:'设置',exact:true}).click();
@@ -75,6 +76,9 @@ try{
   await page.getByLabel('搜索短剧').fill('测试');await page.getByRole('search').getByRole('button',{name:'搜索',exact:true}).click();
   await page.getByRole('button',{name:'播放测试短剧',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('video')?.currentTime>.3);
+  assert.equal(await page.locator('video').evaluate(v=>v.muted),false,'first playback must default to unmuted');
+  await page.getByRole('button',{name:'静音',exact:true}).click();
+
   await page.locator('video').evaluate(v=>{v.pause();v.src='http://sample.localhost/not-a-video';v.load();});
   await page.waitForFunction(()=>document.querySelector('video')?.error!==null);
   await page.getByRole('button',{name:'重试播放',exact:true}).click();
@@ -102,6 +106,21 @@ try{
   assert.equal((await read()).rate,1);assert.ok((await read()).position-heldPosition<1,'long right hold must not also seek');
   const initial=await read();assert.ok(initial.width>0&&initial.height>0);assert.equal(initial.error,null);
   await page.getByRole('button',{name:'暂停',exact:true}).click();await delay(150);
+  const drag=await page.evaluate(async()=>{
+    const video=document.querySelector('video'),slider=document.querySelector('input.seek');
+    const descriptor=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'currentTime');
+    const writes=[];Object.defineProperty(video,'currentTime',{configurable:true,get(){return descriptor.get.call(this);},set(value){writes.push(value);descriptor.set.call(this,value);}});
+    const preview=2.4;slider.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0}));
+    for(const target of [.8,1.6,preview]){slider.value=String(target);slider.dispatchEvent(new Event('input',{bubbles:true}));await new Promise(r=>requestAnimationFrame(r));}
+    const during=Number(slider.value);const writesDuring=writes.length;
+    slider.dispatchEvent(new Event('change',{bubbles:true}));await Promise.resolve();await Promise.resolve();
+    const committed=Number(slider.value);slider.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0}));
+    delete video.currentTime;
+    return {during,committed,writesDuring,writes,preview};
+  });
+  assert.equal(drag.during,drag.preview);assert.equal(drag.writesDuring,0,'dragging previews without seeking');
+  assert.deepEqual(drag.writes,[drag.preview],'release commits once');
+  assert.equal(drag.committed,drag.preview,'release must not snap back to the old position');
   await page.locator('video').evaluate(v=>v.currentTime=3);
   await page.waitForFunction(()=>{const v=document.querySelector('video');return !v.seeking&&v.currentTime>=3;});
   const mediaTime=await page.locator('video').evaluate(v=>new Promise(resolve=>{v.requestVideoFrameCallback((_,m)=>resolve(m.mediaTime));v.currentTime=3.1;}));
@@ -122,7 +141,7 @@ try{
   await page.getByRole('button',{name:'登录',exact:true}).waitFor();
   const logged=(await readFile(path.join(profile,'host-data/services/hongguo/logs/media.log'),'utf8')).trim().split('\n').map(x=>JSON.parse(x));
   assert.ok(logged.some(row=>row.event==='browser_media_error'&&row.browser_code===4));
-  report={initial,seek,mediaTime,restored,structured_error_log:true,expandable_error_details:true,favorites_cached:true,yellow_filled_star:true,pin_toggle:true,direct_setting_persists:true,numeric_qualities_and_series_switch:true,media_error_retry:true,module_back:'content',qr_cancel:true,qr_stopped_in_global_settings:true,account_logout:true,scope:'fixture QR/account workflow and browser resource; no real account or upstream network'};
+  report={initial,seek,mediaTime,restored,drag_seek_stable:true,default_unmuted:true,legacy_default_mute_cleared:true,structured_error_log:true,expandable_error_details:true,favorites_cached:true,yellow_filled_star:true,pin_toggle:true,direct_setting_persists:true,numeric_qualities_and_series_switch:true,media_error_retry:true,module_back:'content',qr_cancel:true,qr_stopped_in_global_settings:true,account_logout:true,scope:'fixture QR/account workflow and browser resource; no real account or upstream network'};
   await invoke('window_action',{action:'quit'});
   await new Promise((resolve,reject)=>{if(child.exitCode!==null)return resolve();const timer=setTimeout(()=>reject(Error('prototype exit timeout')),15000);child.once('exit',()=>{clearTimeout(timer);resolve();});});
   await writeFile(path.join(output,'browser-media.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));

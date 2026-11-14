@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails,playerPreferences} from '../src/hongguo.ts';
 test('player preferences preserve mute independently of volume and reject damaged storage',()=>{
-  assert.deepEqual(playerPreferences({volume:0,mute:false,speed:1.5,quality:'1080p',favorites:true}),{volume:0,mute:false,speed:1.5,quality:'1080p',favorites:true});
+  assert.deepEqual(playerPreferences({volume:0,mute:false,muteChosen:true,speed:1.5,quality:'1080p',favorites:true}),{volume:0,mute:false,muteChosen:true,speed:1.5,quality:'1080p',favorites:true});
   assert.deepEqual(playerPreferences({volume:2,speed:NaN,quality:720}),playerPreferences(null));
 });
 test('error details explain the failure without echoing raw transport secrets',()=>{
@@ -39,4 +39,13 @@ test('playback failures stay readable when wrapped as Error objects',()=>{
   assert.equal(message(new Error('app_access_denied')),'当前账号无法访问该媒体');
   assert.equal(message(new Error('media_redirect_target_rejected')),'媒体跳转被拒：目标不在允许范围');
   assert.equal(message(new Error('media_redirect_limit')),'媒体服务器连续跳转超过上限');
+});
+
+test('first playback is audible and explicit mute remains independent of volume',()=>{
+  assert.equal(playerPreferences(null).mute,false);
+  assert.equal(playerPreferences({mute:true,volume:.7}).mute,false,'old implicit mute must not override the new default');
+  assert.equal(playerPreferences({mute:'true'}).mute,false);
+  assert.equal(playerPreferences(null).volume,.5);
+  assert.equal(playerPreferences({mute:true,muteChosen:true,volume:.7}).mute,true);
+  assert.equal(playerPreferences({mute:false,muteChosen:true,volume:0}).mute,false);
 });

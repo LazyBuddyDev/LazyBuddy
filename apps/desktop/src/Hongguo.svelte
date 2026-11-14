@@ -16,6 +16,7 @@
   let selected=$state<Item>();let episode=$state(1);let episodes=$state<number[]>([]);let quality=$state('720p');let qualities=$state<string[]>([]);
   let source=$state<string>();let lease:number|undefined;let video=$state<HTMLVideoElement>(undefined!);
   let playing=$state(false);let position=$state(0);let duration=$state(0);let muted=$state(saved.mute);let volume=$state(saved.volume);let speed=$state(saved.speed);
+  let muteChosen=$state(saved.muteChosen);
   let playerLoading=$state(false);let seeking=$state<number|null>(null);
   let playbackError=$state(false);
   let watched=0;let lastCheckpoint=0;let epoch=0;let playRequest=0;let live=$state(false);let timer:ReturnType<typeof setTimeout>|undefined;let frame:number|undefined;
@@ -25,7 +26,7 @@
   let favoriteChange=$state<{id:string;value:boolean}|null>(null);
   function isFavorite(id:string|undefined){return favoriteValue(favorites,favoriteChange,id);}
   let requestedQuality=$state(saved.quality);
-  $effect(()=>{localStorage.setItem('lazybuddy.hongguo.player',JSON.stringify({volume,mute:muted,speed,quality:requestedQuality,favorites:defaultFavorites}));});
+  $effect(()=>{localStorage.setItem('lazybuddy.hongguo.player',JSON.stringify({volume,mute:muted,muteChosen,speed,quality:requestedQuality,favorites:defaultFavorites}));});
   let direct=$state(localStorage.getItem('lazybuddy.hongguo.direct')!=='false');
   let frameTarget:number|null=null;
   let boostTimer:ReturnType<typeof setTimeout>|undefined;let boosted=false;
@@ -49,7 +50,7 @@
       if(frameTarget!==null&&Math.abs(metadata.mediaTime-frameTarget)>.2){frame=video.requestVideoFrameCallback(next);return;}
       frameTarget=null;
       watched=metadata.mediaTime;
-      if(video.currentTime>=0)position=video.currentTime;
+      if(seeking===null&&video.currentTime>=0)position=video.currentTime;
       if(playing&&performance.now()-lastCheckpoint>15000){lastCheckpoint=performance.now();void checkpoint(false);}
       if(!video.paused)frame=video.requestVideoFrameCallback(next);
     };
@@ -60,7 +61,7 @@
     const data=await raw<Playback>('playback.checkpoint',{session:lease,position:watched,duration,final});
     if(data.progress_error)notice('观看进度保存失败');
   }
-  function detach(){resetBoost();cancelMetadata?.();stopFrames();frameTarget=null;playing=false;if(video){video.pause();video.removeAttribute('src');video.load();}source=undefined;}
+  function detach(){seeking=null;resetBoost();cancelMetadata?.();stopFrames();frameTarget=null;playing=false;if(video){video.pause();video.removeAttribute('src');video.load();}source=undefined;}
   export async function suspend(retain=false){
     const wasLive=live;resetBoost();live=false;epoch++;playRequest++;clearTimeout(timer);timer=undefined;
     if(favoritesPending){favoritesReady=false;favoritesPending=false;favoriteChange=null;}
@@ -186,8 +187,12 @@
     if(video.paused){try{await video.play();}catch(error){warn(error);}}
     else{video.pause();void checkpoint(true).catch(warn);}
   }
-  export function pause(){resetBoost();if(video)video.pause();stopFrames();playing=false;}
-  export function seekRelative(delta:number){if(video&&source){frameTarget=Math.max(0,Math.min(duration,video.currentTime+delta));frames();video.currentTime=frameTarget;}}
+  export function pause(){seeking=null;resetBoost();if(video)video.pause();stopFrames();playing=false;}
+  function seekTo(target:number){
+    position=target;frameTarget=target;seeking=null;frames();video.currentTime=target;
+  }
+  function commitSeek(){if(seeking!==null&&source)seekTo(seeking);}
+  export function seekRelative(delta:number){if(video&&source)seekTo(Math.max(0,Math.min(duration,video.currentTime+delta)));}
   async function videoError(){
     if(!live||!source||!video?.error)return;
     playing=false;playbackError=true;stopFrames();
@@ -212,10 +217,10 @@
     <section class="account-login"><button onclick={login} disabled={!active||!live||busy||loginPending(account.state)}>登录</button></section>
   {:else if mode==='player'}
     <section class="player-page"><div class="video-stage" class:paused={!playing}>
-      <video onpointerdown={hold} onpointerup={release} onpointercancel={resetBoost} onlostpointercapture={resetBoost} oncontextmenu={event=>event.preventDefault()} bind:this={video} src={source} preload="metadata" crossorigin="anonymous" playsinline bind:muted bind:volume ontimeupdate={()=>{if(video.readyState>0&&seeking===null)position=video.currentTime;}} onplay={()=>{if(!live){video.pause();return;}playing=true;frames();}} onpause={()=>{resetBoost();playing=false;stopFrames();}} onended={ended} onerror={videoError} aria-label="红果短剧视频"><track kind="captions"/></video>
+      <video onpointerdown={hold} onpointerup={release} onpointercancel={resetBoost} onlostpointercapture={resetBoost} oncontextmenu={event=>event.preventDefault()} bind:this={video} src={source} preload="metadata" crossorigin="anonymous" playsinline bind:muted bind:volume ontimeupdate={()=>{if(video.readyState>0&&seeking===null&&frameTarget===null)position=video.currentTime;}} onplay={()=>{if(!live){video.pause();return;}playing=true;frames();}} onpause={()=>{seeking=null;resetBoost();playing=false;stopFrames();}} onended={ended} onerror={videoError} aria-label="红果短剧视频"><track kind="captions"/></video>
       <div class="video-top"><button class="video-back" aria-label="返回列表" onclick={leavePlayer}><Icon name="arrow" size={17}/></button><span class="video-title">{selected?.title} 第{episode}集</span><button class="video-favorite" aria-label={isFavorite(selected?.id)?'取消收藏':'收藏'} onclick={()=>selected&&favorite(selected)} disabled={account.operation==='pending'}><Icon name="star" filled={isFavorite(selected?.id)}/></button></div>
       {#if !playing}<button class="center-play" aria-label={playerLoading?'加载中':playbackError?'重试播放':'播放视频'} disabled={playerLoading} onclick={toggle}><Icon name={playbackError?'refresh':'play'} size={28}/></button>{/if}
-      <div class="video-bottom"><input class="seek" aria-label="播放进度" type="range" min="0" max={duration||1} step=".05" value={seeking??position} disabled={!source} oninput={event=>seeking=Number(event.currentTarget.value)} onchange={()=>{if(seeking!==null){frameTarget=seeking;frames();video.currentTime=seeking;}seeking=null;}}/><div class="video-controls">
+      <div class="video-bottom"><input class="seek" aria-label="播放进度" type="range" min="0" max={duration||1} step=".05" value={seeking??position} disabled={!source} oninput={event=>seeking=Number(event.currentTarget.value)} onchange={commitSeek} onpointercancel={()=>seeking=null} onblur={()=>seeking=null}/><div class="video-controls">
         <button aria-label="上一集" disabled={adjacent(episodes,episode,-1)===undefined} onclick={()=>{const value=adjacent(episodes,episode,-1);if(value!==undefined)void changeEpisode(value);}}><Icon name="previous"/></button>
         <button aria-label={playing?'暂停':'播放'} disabled={playerLoading} onclick={toggle}><Icon name={playing?'pause':'play'}/></button>
         <button aria-label="下一集" disabled={adjacent(episodes,episode,1)===undefined} onclick={()=>{const value=adjacent(episodes,episode,1);if(value!==undefined)void changeEpisode(value);}}><Icon name="next"/></button>
@@ -223,7 +228,7 @@
         {#if episodes.length}<select aria-label="选集" value={episode} onchange={event=>changeEpisode(Number(event.currentTarget.value))}>{#each episodes as value}<option value={value}>第{value}集</option>{/each}</select>{/if}
         <select aria-label="清晰度" value={quality} onchange={event=>changeQuality(event.currentTarget.value)}>{#each qualities.length?qualities:['360p','480p','720p','1080p'] as value}<option value={value}>{value}</option>{/each}</select>
         <select aria-label="倍速" value={speed} onchange={event=>{speed=Number(event.currentTarget.value);video.playbackRate=speed;}}>{#each [.5,1,1.5,2] as value}<option value={value}>{value}×</option>{/each}</select>
-        <button aria-label={muted?'取消静音':'静音'} onclick={()=>muted=!muted}><Icon name={muted?'mute':'volume'}/></button><input class="volume" aria-label="音量" type="range" min="0" max="1" step=".05" bind:value={volume}/>
+        <button aria-label={muted?'取消静音':'静音'} onclick={()=>{muteChosen=true;muted=!muted;}}><Icon name={muted?'mute':'volume'}/></button><input class="volume" aria-label="音量" type="range" min="0" max="1" step=".05" bind:value={volume}/>
       </div></div>
     </div></section>
   {:else}
