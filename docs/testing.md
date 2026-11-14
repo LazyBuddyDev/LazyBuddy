@@ -1,30 +1,27 @@
 # LazyBuddy 定向验证
 
-主仓库只验证前端、宿主平台、通用协议、模块管理与API调用；新闻/红果业务和媒体解码测试由独立仓库负责。
+新增功能带对应单元测试，只跑受影响范围，不默认执行全工作区或全量界面回归。主仓库测试宿主和 API 边界，独立服务维护业务与媒体处理测试。
 
-| 改动 | 最小检查 |
-| --- | --- |
-| 根页面、设置、快捷键、窗口边界 | `cargo test -p lazybuddy --locked` |
-| 清单与激活代数 | `cargo test -p lazybuddy-module-contract --locked` |
-| 包安装、签名、原子更新和卸载 | `cargo test -p lazybuddy-module-manager --locked` |
-| 私有服务会话 | `cargo test -p lazybuddy-service-client --locked` |
-| 当前用户CLI通道 | `cargo test -p lazybuddy-host-control --locked` |
-| 画面共享纹理消费者 | `cargo test -p lazybuddy-media-ipc --locked` |
-| Windows 签名身份保护（私有环境装 cryptography==46.0.3） | `python -B scripts/verify/test-signing-key.py`，只用临时样例身份 |
-| 目录组装 | `python -B scripts/verify/test-catalog-assembly.py` |
+```powershell
+npm.cmd --prefix apps/desktop run check
+npm.cmd --prefix apps/desktop test
+npm.cmd --prefix apps/desktop run build
+cargo test --locked -p lazybuddy host::tests
+```
 
-构建宿主/CLI及`cargo build --locked -p lazybuddy-service-client --example fixture`后，用`test-module-cli.py`检查离线包安装/调用/卸载；`test-host-startup.py`确认无可选运行时也能启动；`test-host-lifecycle.py`检查A→B→A、全局设置、窗口位置、隐藏及胶囊恢复，只有固定协议样例，不访问上游。
+窗口改动选 `dock::tests` / `tray::tests`，播放桥选 `playback::tests`，设置选 `preferences::tests`。签名包安装、私有会话、控制通道及更新器分别在对应 crates 中测试。CI 按变更选择 Rust 模块与相关 Python 单元，依赖变化只扩大编译检查。
 
-新闻仓库维护来源解析、状态保存和认证HTTP适配器检查；红果仓库维护账号/进度/封面/搜索、Go取源辅助、独立媒体及合成H.264/H.265/AAC检查。可选跨仓库集成显式提供LAZYBUDDY_HOST_DIR、LAZYBUDDY_PACKAGES_DIR和LAZYBUDDY_SDK_DIR，用已构建宿主和包体验证，不导入宿主实现。
+显式界面验证（需 Windows 桌面与 WebView2，不移动物理鼠标）：
 
-新增功能附带该功能的单元测试；所有日常修改及测试包发布只运行新增/受影响的测试和必要构建，不自动运行全量回归。共享边界有影响或出现失败证据时才扩大到关联测试，全量由用户明确要求。合成视频、真实账号权限、实机交互和在线发布分别报告。首个手机扫码、真实节目权限及音画同步仍需人工参与；真实写入必须独立授权。
+```powershell
+node apps/desktop/tests/tray.mjs <宿主EXE绝对路径>
+$env:LAZYBUDDY_TEST_NEWS_PACKAGE='<独立新闻包绝对路径>'
+node apps/desktop/tests/host.mjs <宿主EXE绝对路径>
+$env:LAZYBUDDY_BROWSER_PACKAGES='<独立红果合成服务包绝对路径>'
+$env:LAZYBUDDY_BROWSER_FIXTURE_FILE='<自制合成MP4绝对路径>'
+node apps/desktop/tests/browser-media.mjs <宿主EXE绝对路径>
+```
 
-已核实的历史资源/媒体证据见modular-architecture.md与media-runtime.md，其中旧文件位置只表示当时源码布局，不作为当前构建入口。不得cargo clean或清空target，已初始化的独立Git仓库与私有SDK均需保留。
+host 驱动安装外部新闻包，预置新鲜合成新闻缓存，验证 API、主题恢复、左右贴边、圆形命中和运行时卸载，不访问新闻上游。browser-media 使用独立服务仓库生成的合成账号/媒体包，验证二维码取消、收藏反馈、实际视频推进/跳转/隐藏恢复、错误详情与重试，不读真实账号。临时数据放 target/qa-* 并在退出后清理；报告放 target/verification-*。
 
-在线发布后可显式运行 `python -B scripts/verify/test-online-modules.py --host-dir <解压后的LazyBuddy目录> --report target/verification-release/online-modules.json`。它验证随包配置及真实签名下载，在同一宿主进程内安装新闻/红果及依赖，再卸载并回收运行时，不选内容页、不读取账号或请求上游。需要网络及正常Windows桌面会话，不加入常规离线CI。
-
-Windows下载问题需额外运行在线检查的 `--without-proxy-env` 模式，清除子进程代理环境变量，使用实际Windows系统代理，匹配资源管理器双击启动；不能只用手动设置HTTPS_PROXY的CLI成功证明桌面下载可用。
-
-公共框架改动运行 `python -B scripts/verify/test-shell-ui.py`（可加 `--dark`），只使用24来源的通用离线样例，验证功能页返回原设置/内容、矩形原生窗口区域及宽窄布局截图；截图和摘要在target/verification-ui。对当前用户前台窗口允许自然切换，只要求隔离宿主不抢占前台。来源滚动由Iced内嵌滚动条预留宽度，不通过隐藏文字规避遮挡。截图生成与已查看视觉分别记录。
-
-CI使用 `python -B scripts/check-changes.py --base <基线提交>`，按改动选择Rust模块单元及相关Python单元；依赖变更只扩大编译检查，不把它当作全量测试理由。GUI、真实接口和跨进程集成只在对应功能需要时显式执行。更新单元入口为 `cargo test -p lazybuddy-app-updater --lib` 和 `cargo test -p lazybuddy updater::tests`，无需执行workspace全量。
+真实登录、上游播放、音画同步、在线签名发布及资源预算各自验收，不由单元或合成样例外推。禁止 cargo clean 或整体清空 target，独立服务 Git 与私有 SDK 不作构建缓存删除。

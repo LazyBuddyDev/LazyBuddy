@@ -26,7 +26,9 @@ def info(directory):
     return result
 with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=ROOT/'target') as temporary:
     root=Path(temporary);install=root/'install';data=root/'data'
-    shutil.copytree(binaries,install)
+    install.mkdir()
+    for name in ('lazybuddy.exe','lazybuddy-cli.exe','lazybuddy-updater.exe','module-catalog.json','app-update-source.json'):
+        shutil.copyfile(binaries/name,install/name)
     directory=None
     if args.online:
         old_info=info(install)
@@ -47,7 +49,7 @@ with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=ROOT/'target') 
         payload=json.dumps(manifest).encode()
         (directory/'manifest.json').write_bytes(payload);(directory/'manifest.json.sig').write_bytes(key.sign(payload))
     data.mkdir();(data/'modules').mkdir();(data/'modules/keep').write_text('module data',encoding='utf-8')
-    (data/'preferences.json').write_text(json.dumps(dict(auto_update=False,dark=True)),encoding='utf-8')
+    (data/'web-preferences.json').write_text(json.dumps(dict(auto_update=False,dark=True)),encoding='utf-8')
     env=dict(os.environ,LAZYBUDDY_INSTANCE='qa-update-'+uuid.uuid4().hex,LAZYBUDDY_DATA_DIR=str(data))
     old=subprocess.Popen([str(install/'lazybuddy.exe'),'--background'],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=subprocess.CREATE_NO_WINDOW)
     helper=None
@@ -97,7 +99,7 @@ with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=ROOT/'target') 
         state=wait(lambda state:state['pid']!=old.pid and not state['hidden'])
         assert json.loads((install/'build-info.json').read_text(encoding='utf-8'))['build']==new_info['build']
         assert (data/'modules/keep').read_text(encoding='utf-8')=='module data'
-        preferences=json.loads((data/'preferences.json').read_text(encoding='utf-8'))
+        preferences=json.loads((data/'web-preferences.json').read_text(encoding='utf-8'))
         assert preferences['dark'] is True and preferences['auto_update'] is False
         deadline=time.monotonic()+10
         while (directory/'stage').exists() and time.monotonic()<deadline:time.sleep(.1)

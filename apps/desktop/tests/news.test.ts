@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {ordered,batches,type Preferences} from '../src/news.ts';
+test('news queue never submits more than four sources per batch',()=>{const groups=batches(Array.from({length:11},(_,i)=>i));assert.deepEqual(groups.map(g=>g.length),[4,4,3]);assert.equal(new Set(groups.flat()).size,11);});
+test('source preferences hide, filter and pin without mutating catalog',()=>{const sources=[{id:'a',name:'A'},{id:'b',name:'B'},{id:'c',name:'C'}];const prefs:Preferences={auto_refresh:true,refresh_minutes:5,followed:['b','c'],hidden:['c'],order:['b'],default_followed:false};assert.deepEqual(ordered(sources,prefs,false).map(s=>s.id),['b','a']);assert.deepEqual(ordered(sources,prefs,true).map(s=>s.id),['b']);assert.equal(sources.length,3);});

@@ -2,11 +2,13 @@
 
 默认在启动时和每15分钟后台检查、下载并准备应用更新；这是全局能力，切换新闻/红果、进入设置或隐藏窗口不会停止它。隔离实例默认不自动联网。系统设置可关闭自动检查，也可随时手动检查。准备好后底部显示「重启更新」，点击后正常保存、退出并替换程序；不会自动打断播放或强行重启。
 
+当前Web源码尚未发布更新清单，独立Web源发布前会返回不可用；不能回退读取旧Iced源。
+
 ## 测试包与信任
 
 测试包复用原下载入口，不能只比较2.0.0版本号。基础包携带build-info.json，记录本包文件哈希；规范化文件表的SHA256作为构建标识，同版本内容变化仍会被识别为更新。app-update-source.json固定独立更新目录URL和维护者Ed25519公钥，使用已有发布身份，不从下载响应信任新公钥。
 
-固定目录为https://lazybuddydev.github.io/LazyBuddy/updates/windows-x86_64.json及对应.sig。先验证原文签名、平台、版本/构建、ZIP大小及哈希，再验证build-info与每个文件哈希。ZIP拒绝越界、链接、重复及非应用文件；更新仅覆盖宿主/CLI/辅助程序、可信源配置与许可说明，不替换模块、账号、用户设置或其他目录。元数据1MiB、ZIP256MiB、解压512MiB有界；沿用Windows TLS、系统代理与慢网下载保护。
+固定目录为https://lazybuddydev.github.io/LazyBuddy/updates/web-windows-x86_64.json及对应.sig。先验证原文签名、平台、版本/构建、ZIP大小及哈希，再验证build-info与每个文件哈希。ZIP拒绝越界、链接、重复及非应用文件；更新仅覆盖宿主/CLI/辅助程序、可信源配置与许可说明，不替换模块、账号、用户设置或其他目录。元数据1MiB、ZIP256MiB、解压512MiB有界；沿用Windows TLS、系统代理与慢网下载保护。
 
 ## Windows替换
 
@@ -17,9 +19,9 @@
 ## 发布步骤
 
 ```powershell
-cargo build --release --locked -p lazybuddy -p lazybuddy-cli -p lazybuddy-app-updater
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-and-run.ps1 -BuildOnly -Release
 python -B scripts/package_base.py --output target/release-base
-.\target\release-tools\Scripts\python.exe -B scripts/sign-update.py --manifest target/release-base/app-update.json --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi" --output docs/updates/windows-x86_64.json --replace
+.\target\release-tools\Scripts\python.exe -B scripts/sign-update.py --manifest target/release-base/app-update.json --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi" --output docs/updates/web-windows-x86_64.json --replace
 ```
 
 package_base生成基础ZIP、package.json和未签名app-update.json；默认URL仍是当前测试包，稳定发版时显式传--download-url。签署目录后先覆盖上传ZIP/校验值，再推送docs/updates原文与签名到Pages；.gitattributes禁止对已签名JSON换行转换。短暂目录/包不同步时校验失败并保留现有应用，可稍后检查，绝不关闭校验或回退到未签名更新。
@@ -28,4 +30,4 @@ package_base生成基础ZIP、package.json和未签名app-update.json；默认UR
 
 ## 定向验证
 
-运行cargo test -p lazybuddy-app-updater --lib、cargo test -p lazybuddy updater::tests、python -B scripts/verify/test-app-release.py。共享下载代码变化才额外检查module-manager的package单元；不默认跑工作区、真实业务或全量界面。实际进程替换由独立更新链路脚本验证，不能把文件复制单元成功当作线上更新成功。
+运行cargo test -p lazybuddy-app-updater --lib、cargo test -p lazybuddy host::tests、python -B scripts/verify/test-app-release.py。共享下载代码变化才额外检查module-manager的package单元；不默认跑工作区、真实业务或全量界面。实际进程替换由独立更新链路脚本验证，不能把文件复制单元成功当作线上更新成功。

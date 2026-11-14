@@ -28,6 +28,25 @@ def application_manifest(archive, url):
                 host_sha256=files['lazybuddy.exe'])
 
 
+def frontend_notices(destination, frontend=ROOT / 'apps/desktop'):
+    lock = json.loads((frontend / 'package-lock.json').read_text(encoding='utf-8'))
+    records = []
+    for name, item in lock['packages'].items():
+        if not name or item.get('dev'):
+            continue
+        source = frontend / name
+        info = json.loads((source / 'package.json').read_text(encoding='utf-8'))
+        if info['version'] != item['version']:
+            raise ValueError('frontend dependency differs from lockfile')
+        directory = destination / (info['name'].replace('/', '_') + '-' + info['version'])
+        directory.mkdir(parents=True)
+        for path in source.iterdir():
+            if path.is_file() and path.name.upper().startswith(('LICENSE', 'COPYING', 'NOTICE', 'COPYRIGHT')):
+                shutil.copyfile(path, directory / path.name)
+        records.append(dict(name=info['name'], version=info['version'], license=info.get('license'), repository=info.get('repository')))
+    return records
+
+
 def notices(destination, names=('lazybuddy', 'lazybuddy-cli', 'lazybuddy-app-updater')):
     metadata = json.loads(subprocess.check_output(
         ['cargo', 'metadata', '--locked', '--offline', '--format-version', '1', '--filter-platform', 'x86_64-pc-windows-msvc'], cwd=ROOT))
@@ -55,6 +74,7 @@ def notices(destination, names=('lazybuddy', 'lazybuddy-cli', 'lazybuddy-app-upd
                 shutil.copyfile(path, directory / path.name)
         records.append(dict(name=package['name'], version=package['version'], license=package['license'], repository=package['repository']))
     shutil.copytree(ROOT / 'assets/button-icons', destination / 'fluent-icons', ignore=shutil.ignore_patterns('*.svg', '*.png', '*.bin'))
+    records.extend(frontend_notices(destination / 'npm'))
     (destination / 'dependencies.json').write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
@@ -99,7 +119,7 @@ def main():
              for path in sorted(directory.rglob('*')) if path.is_file()}
     build = hashlib.sha256(json.dumps(files, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
     import tomllib
-    version = tomllib.loads((ROOT / 'apps/desktop/Cargo.toml').read_text(encoding='utf-8'))['package']['version']
+    version = tomllib.loads((ROOT / 'apps/desktop/src-tauri/Cargo.toml').read_text(encoding='utf-8'))['package']['version']
     (directory / 'build-info.json').write_text(json.dumps(dict(schema=1, version=version, build=build, files=files), ensure_ascii=False, indent=2), encoding='utf-8')
     archive = output / 'LazyBuddy-windows-x86_64.zip'
     with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as package:

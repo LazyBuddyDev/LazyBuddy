@@ -31,7 +31,6 @@ app-update-error.log
 *.bat
 
 !/build_and_run.bat
-!/start_preview.bat
 
 # Generated Python bytecode
 __pycache__/

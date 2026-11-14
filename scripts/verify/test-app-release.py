@@ -14,6 +14,15 @@ spec.loader.exec_module(base)
 
 
 class Release(unittest.TestCase):
+    def test_frontend_distribution_retains_runtime_licenses_and_ignores_dev_packages(self):
+        with tempfile.TemporaryDirectory(prefix='qa-licenses-') as temporary:
+            root=Path(temporary); source=root/'node_modules/runtime'; source.mkdir(parents=True)
+            (root/'package-lock.json').write_text(json.dumps({'packages':{'':{},'node_modules/runtime':{'version':'1.2.3'},'node_modules/build-only':{'dev':True}}}),encoding='utf-8')
+            (source/'package.json').write_text(json.dumps(dict(name='runtime',version='1.2.3',license='MIT')),encoding='utf-8')
+            (source/'LICENSE').write_text('license evidence',encoding='utf-8')
+            records=base.frontend_notices(root/'licenses',root)
+            self.assertEqual([record['name'] for record in records],['runtime'])
+            self.assertEqual((root/'licenses/runtime-1.2.3/LICENSE').read_text(encoding='utf-8'),'license evidence')
     def test_published_manifest_signature_uses_shipped_public_key(self):
         path=ROOT/'docs/updates/windows-x86_64.json'
         if not path.is_file():

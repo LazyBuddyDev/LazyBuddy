@@ -29,9 +29,9 @@ class Selection(unittest.TestCase):
             self.assertEqual(selection.changed_paths('0'*40, root), ['prototype.ts'])
 
     def test_updater_changes_select_own_unit_tests_only(self):
-        commands = selection.plan(['apps/desktop/src/main.rs', 'apps/desktop/src/updater.rs', 'crates/app-updater/src/tests.rs'])
+        commands = selection.plan(['apps/desktop/src/main.rs', 'apps/desktop/src-tauri/src/host.rs', 'crates/app-updater/src/tests.rs'])
         tests = [command for command in commands if command[:2] == ['cargo', 'test']]
-        self.assertIn(['cargo', 'test', '--locked', '-p', 'lazybuddy', 'updater::tests'], tests)
+        self.assertIn(['cargo', 'test', '--locked', '-p', 'lazybuddy', 'host::tests'], tests)
         self.assertIn(['cargo', 'test', '--locked', '-p', 'lazybuddy-app-updater', 'tests'], tests)
         self.assertTrue(all('--workspace' not in command for command in commands))
         self.assertTrue(all('test-shell-ui.py' not in str(command) for command in commands))

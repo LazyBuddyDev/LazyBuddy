@@ -1,59 +1,36 @@
 # LazyBuddy
 
-<img src="assets/lazybuddy.svg" width="96" height="96" alt="LazyBuddy">
+Windows x64 桌面搭子。Tauri 2 + Svelte 5 Web 宿主负责界面、窗口和模块调度，新闻与红果短剧由独立服务提供，按需安装与卸载。旧 Iced 宿主已删除。
 
-上班摸鱼的桌面搭子。Windows x64 主程序负责界面和窗口，新闻、红果短剧及以后新增的功能按需安装；未使用的功能停止工作，卸载后回收无引用的运行时。
+## 构建与启动
 
-**2.0 正在重构，尚未发布稳定版本。** main已纳入用户认可的Tauri/Svelte Web宿主及红果浏览器资源接入代码，真实扫码、有限播放及收藏同步有分项验证；完整迁移和偶发故障定位仍待完成。代码入主线不代表软件正式发版。范围与证据见 [TASKS.md](TASKS.md)。旧 BriefDock 不再作为开发入口，不提供旧数据迁移。
-
-## 下载使用
-
-当前已发布预览包仍使用Iced，不包含main最新Web宿主；本次源码整合没有更新Release、签名模块目录或应用更新源。
-
-下载 [Windows x64 预览版](https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v2.0.0-preview.1)，解压后运行 `lazybuddy.exe`。在顶部「功能」中安装新闻或红果，再从「选择功能」进入；红果的两个运行时自动安装。不使用的功能可直接卸载。保留 EXE 同目录的可信源配置，无需安装 Python、Go 或 GStreamer。启动后自动检查并准备应用更新，点击「重启更新」即可应用；测试包即使版本号相同也能识别覆盖更新，见[应用更新](docs/app-updates.md)。
-
-## 本地开发
-
-Web宿主源码位于`apps/shell-prototype`（沿用原目录名，现已纳入main维护），需要Node.js、Rust/MSVC及WebView2。构建/启动使用`scripts/run-shell-prototype.ps1 -ServicePackages <独立服务包目录>`；当前本机已构建的真实服务入口可双击`start_preview.bat`，不重复编译或下载依赖。服务包必须先由独立仓库构建，再显式传入路径；源码不依赖相邻服务仓库。数据/账号与已发布宿主隔离，使用方式及验收边界见 [Web宿主集成](docs/shell-design-evaluation.md)。
-
-以下命令继续构建已发布路线的Iced宿主：
-
-需要 Windows x64、Rust/MSVC 工具链和 Windows SDK。首次获取 Cargo 依赖后：
+需要 Rust/MSVC、Windows SDK、Node.js 24 和 Microsoft Edge WebView2 Runtime。基础宿主不需要 Python、Go 或 GStreamer。
 
 ```powershell
-cargo build --locked -p lazybuddy -p lazybuddy-cli -p lazybuddy-app-updater
 .\build_and_run.bat
+.\build_and_run.bat -BuildOnly
+.\build_and_run.bat -BuildOnly -Release
+.\build_and_run.bat -LaunchOnly
 ```
 
-批处理只构建基础宿主，不要求预装 Python、Go 或 GStreamer。只构建、不启动：
+脚本使用 `npm.cmd`，不受 PowerShell 的 npm.ps1 执行策略影响。前端资源嵌入 EXE，可信目录配置与更新配置复制到 EXE 旁。构建失败不启动旧产物；正在运行的程序请从托盘「退出」后再构建。关闭按钮隐藏到托盘，托盘左键恢复，拖到左右屏幕边缘收起为圆形 Logo。
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-and-run.ps1 -BuildOnly
-```
+在「功能」中按需安装、更新、卸载；根页面下拉只显示已安装功能。新闻、账号和媒体请求仅在对应可见页面执行，隐藏停止读取视频，恢复后不自动播放。
 
-功能模块由组织内独立仓库构建和发布：
+当前 Web 源码尚未发布为软件版本。旧预览 Release 和线上红果 0.1.0 包属于原生播放路线，不能作为 Web 播放包使用；本地使用独立红果仓库生成的 0.2.1 以上浏览器包（当前验证 0.2.5）。Web 应用更新使用独立签名源 `updates/web-windows-x86_64.json`，发布前检查会报告源不可用，不会下载旧 Iced 宿主。模块和应用更新发布仍需另行执行。
 
-- [news-service](https://github.com/LazyBuddyDev/news-service)：新闻API、偏好和缓存。
-- [hongguo-service](https://github.com/LazyBuddyDev/hongguo-service)：账号、搜索、收藏、进度、封面、取源及媒体运行时。
+## 开发边界
 
-本仓库不包含业务服务源码、解码运行时、真实服务测试或其SDK准备脚本。宿主与CLI只通过版本化API调用已安装包；离线验证使用通用协议样例。预览版随包提供可信目录配置，可在应用内安装、卸载功能，无需重启。签名与发布维护见 [模块分发](docs/module-distribution.md)。组织归属为LazyBuddyDev，自有代码采用MIT；真实账号验收仍待完成。
-
-独立服务的构建、测试与包体准备见各仓库README。运行`lazybuddy-cli modules install-local <目录>`可显式安装开发包，须先正常退出宿主。真实账号凭据只由服务保存在Windows安全存储中。
-
-## 文件结构
-
-| 目录 | 职责 |
+| 路径 | 职责 |
 | --- | --- |
-| `apps/desktop` | Iced 界面、页面调度、窗口与通用设置 |
-| `apps/shell-prototype` | main维护的Tauri/Svelte Web宿主与浏览器播放器，独立开发入口 |
-| `apps/cli` | 模块管理、宿主控制和独立服务调用 |
-| `crates/module-contract` | 功能清单、依赖、页面描述和生命周期代数 |
-| `crates/module-manager` | 签名目录、包校验、原子安装更新及卸载 |
-| `crates/service-client` / `host-control` | 私有服务会话及当前用户 CLI 通道 |
-| `crates/media-ipc` | 无 GStreamer 链接的共享纹理消费者 |
-| `contracts` | 通用协议的离线验证样例 |
-| `scripts` | 宿主构建、签名目录组装和隔离验证 |
+| `apps/desktop/src` | Svelte 界面、浏览器视频与页面状态 |
+| `apps/desktop/src-tauri` | 唯一 Rust 桌面入口、Windows 托盘/热键/窗口、API 桥 |
+| `apps/cli` | 离线模块管理、服务调用与宿主控制 |
+| `crates/module-contract` | 清单、依赖和页面协议 |
+| `crates/module-manager` | 签名目录、校验、原子安装更新与卸载 |
+| `crates/service-client` / `host-control` | 私有服务会话与当前用户 CLI |
+| `crates/app-updater` | 签名更新准备、正常退出后替换及失败回滚 |
 
-日常运行相关单元/契约测试；合成媒体、真实接口和界面验收分别记录，避免每次局部改动重复全量验收。外部接入见 [模块 API](docs/module-api.md)。设计和执行清单见 [模块化架构](docs/modular-architecture.md)，媒体验证边界见 [独立媒体运行时](docs/media-runtime.md)，长期规范见 [AGENTS.md](AGENTS.md)。
+[news-service](https://github.com/LazyBuddyDev/news-service) 与 [hongguo-service](https://github.com/LazyBuddyDev/hongguo-service) 独立构建和测试；主仓库不加载相邻服务源码。开发包安装见 [构建与 CLI](docs/cli.md)，架构见 [模块化架构](docs/modular-architecture.md)，验证见 [定向测试](docs/testing.md)。长期规则见 [AGENTS.md](AGENTS.md)。
 
-自有代码采用[MIT](LICENSE)，Copyright (c) 2026 Leager；第三方代码保留原许可。预览版不代表真实账号或所有剧集权限已经验收。
+自有代码 MIT，Copyright © 2026 Leager；第三方保留原许可。真实账号和节目权限的验证不能由合成测试替代。
