@@ -31,6 +31,6 @@ Windows x64 桌面搭子。Tauri 2 + Svelte 5 Web 宿主负责界面、窗口和
 | `crates/service-client` / `host-control` | 私有服务会话与当前用户 CLI |
 | `crates/app-updater` | 签名更新准备、正常退出后替换及失败回滚 |
 
-[news-service](https://github.com/LazyBuddyDev/news-service) 与 [hongguo-service](https://github.com/LazyBuddyDev/hongguo-service) 独立构建和测试；主仓库不加载相邻服务源码。开发包安装见 [构建与 CLI](docs/cli.md)，架构见 [模块化架构](docs/modular-architecture.md)，验证见 [定向测试](docs/testing.md)。长期规则见 [AGENTS.md](AGENTS.md)。
+[news-service](https://github.com/LazyBuddyDev/news-service) 与 [hongguo-service](https://github.com/LazyBuddyDev/hongguo-service) 独立构建和测试；主仓库不加载相邻服务源码。开发包安装见 [构建与 CLI](docs/cli.md)，架构见 [架构](docs/architecture.md)，验证见 [定向测试](docs/testing.md)。完整入口见[文档导航](docs/README.md)，文件归位见[文件放置规范](docs/file-layout.md)，长期规则见 [AGENTS.md](AGENTS.md)。
 
 自有代码 MIT，Copyright © 2026 Leager；第三方保留原许可。真实账号和节目权限的验证不能由合成测试替代。

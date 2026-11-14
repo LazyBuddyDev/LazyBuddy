@@ -1,0 +1,80 @@
+# 文件放置规范
+
+本文件是LazyBuddy及其独立服务仓库的文件归位与命名依据。路径相对文件所属仓库；按需创建目录，不为未使用的工具或功能预建空结构。新增、移动文件前先确定其用途和所有者。
+
+## 源码和入口
+
+| 文件或内容 | 放置位置 | 边界 |
+| --- | --- | --- |
+| 产品介绍、最低运行条件、快速启动 | 根`README.md` | 保持简短，链接专题说明 |
+| 长期开发约束和文档规范 | 根`AGENTS.md` | 不写执行流水，直接链接本文件 |
+| 功能需求、TODO、状态、验收与阻塞 | 根`TASKS.md` | 一个完整功能需求一个稳定条目 |
+| 文档导航 | `docs/README.md` | 新增、合并、删除文档时一起更新 |
+| 前端页面、组件、样式 | 宿主`apps/desktop/src/` | 负责绘制与API调用，不放业务取源实现 |
+| 原生窗口、系统能力、API桥 | 宿主`apps/desktop/src-tauri/` | 唯一桌面程序入口 |
+| 命令行程序 | 宿主`apps/cli/` | 与宿主共用协议和管理能力 |
+| 通用Rust协议、客户端、安装及更新逻辑 | 宿主`crates/<职责>/` | 不导入具体新闻、短剧业务 |
+| 新闻、账号、搜索、收藏、媒体处理业务 | 对应独立服务仓库 | 本仓库只链接服务API，不复制服务源码 |
+| 构建、打包、维护脚本 | `scripts/` | 验证驱动放`scripts/verify/`或所属测试目录 |
+| Cargo工作区清单与锁文件、信任根配置 | 宿主根目录 | `Cargo.toml`、`Cargo.lock`、`module-catalog.json`、`app-update-source.json`，不含私钥 |
+| npm清单与锁文件、前端及Tauri配置 | `apps/desktop/`及其`src-tauri/` | 跟随实际构建入口，不另复制到根目录 |
+| 许可、第三方来源与忽略规则 | 根`LICENSE`、`.gitignore`及组件自带许可 | 组件自带许可随素材或源码保留，不随清理移除 |
+| 自动化工作流 | `.github/workflows/` | 与实际构建和文档入口保持一致 |
+| 产品图标、固定业务无关素材及第三方许可 | `assets/` | 不放验收截图、录屏或真实账号数据 |
+| 协议清单样例 | `contracts/` | 使用通用样例，不包含业务服务实现 |
+| 单元与契约测试 | 所属源码测试模块或`tests/` | 浏览器驱动放`apps/desktop/tests/` |
+
+独立服务内部沿用其现有语言结构，例如`src/`、`resolver/`、`search/`、`runtimes/`。这些是该服务的源码，不是主仓库的运行依赖目录。`target/service-exports/`中已有独立Git仓库属于源码，不能按构建缓存清理；接入或交接以对应仓库自己的文件和提交为准。
+
+## 文档归位
+
+| 内容 | 放置位置 |
+| --- | --- |
+| 架构、模块边界、数据流 | `docs/architecture.md` |
+| 构建、启动、CLI与数据位置 | `docs/cli.md` |
+| 宿主包清单、通用传输与生命周期契约 | `docs/module-api.md` |
+| 各服务自己的方法、字段、错误与限制 | 对应服务的`docs/module-api.md`等专题 |
+| 定向测试入口与验证边界 | `docs/testing.md` |
+| 模块包、目录签名与分发维护 | `docs/module-distribution.md` |
+| 主程序签名更新与替换维护 | `docs/app-updates.md` |
+| 一次性排查记录、报告、截图、录屏 | `tmp/`，有长期价值的结论再归并到专题 |
+| 功能交付状态、提交与验证结果 | 对应功能的`TASKS.md`条目 |
+
+一个主题只保留一份权威说明，跨仓库用链接引用；不把整份共享文档复制到多个仓库。小规模专题直接放`docs/`，确有多个独立主题时才增加目录层级，不为阶段或一次性任务建立文档树。
+
+`docs/index.html`与`docs/icon.svg`是公开站点入口及品牌资源。`docs/modules/`、`docs/updates/`是公开机器分发端点，包含精确字节签名；它们不是普通说明文档，整理时不得随意改名、删除、格式化或变更换行。发布与改写签名内容按单独授权执行。
+
+## 构建、工具和临时文件
+
+| 用途 | 固定位置 |
+| --- | --- |
+| 宿主编译产物 | `target/debug/`、`target/release/` |
+| 嵌套Rust工作区产物 | 该Cargo工作区默认位置，如服务的`search/target/release/` |
+| 验证素材 | `tmp/fixtures/<用途>/`，媒体样例为`tmp/fixtures/media/` |
+| 隔离配置、WebView用户数据 | `tmp/profiles/<验证入口>/` |
+| Rust/Python临时测试数据 | `tmp/`下带用途前缀的临时目录，收尾删除 |
+| 验证报告、截图、录屏 | `tmp/verification-<用途>/` |
+| 测试安装包、解包目录和校验信息 | `target/packages/<用途>/`，宿主基础包为`target/packages/base/` |
+| 维护者工具及独立环境 | `target/tools/<工具>/`，发布工具Python环境为`target/tools/release/` |
+| 服务私有工具链 | 所属服务的`target/toolchains/<工具>/`，如`go/`、`python/` |
+| 可选SDK | 所属服务的`target/sdks/<SDK>/`，如`gstreamer/` |
+| 下载缓存、wheel和安装源 | 所属服务的`target/downloads/`，如`python-wheels/`、`runtime/` |
+| 构建缓存 | 所属仓库的`target/cache/<工具>/`，如`go/`；Cargo缓存保持默认结构 |
+
+`tmp/`与`target/`保持Git忽略。构建工具、SDK和下载源由所属仓库管理，宿主不能隐式使用相邻服务源码或开发机固定路径。不要将SDK头文件、缓存、工具环境或验证数据打进用户安装包。
+
+## 运行资源、账号和密钥
+
+- 同一Windows用户的开发版与安装版默认共用`%LOCALAPPDATA%/LazyBuddy/modules/`，包按`packages/<id>/<version>/`保存，由模块管理器校验、安装和回收，不按EXE位置重复下载。
+- 通用设置与应用更新缓存归`%LOCALAPPDATA%/LazyBuddy/`。服务持久数据使用宿主传入的目录或服务自身公开约定；现有数据位置见[构建与CLI](cli.md)，不因整理仓库移动或清空账号数据。
+- 隔离验证使用独立实例、`tmp/`数据目录和凭据scope，不能覆盖生产配置、账号或服务。真实凭据只在Windows安全存储中。
+- 维护者真实签名私钥保存在工作区外的DPAPI保护文件或安全存储中，不进入`target/tools/release/`、`tmp/`、Git或安装包。随机测试身份仅用于隔离样例并在收尾删除，不能替代真实维护者身份。
+
+## 命名和迁移
+
+- 目录和专题文档使用表明用途的英文小写kebab-case。`README.md`、`AGENTS.md`、`TASKS.md`等约定入口保留原名。
+- 固定用途复用稳定名称，不按实验阶段、日期或流水号另建同类目录。并行临时实例可以附唯一标识，协议要求的不可变版本目录照常保留。
+- 不新建或恢复`target/qa-*`、`target/verification-*`、`target/release-tools`及混合工具链的`native-player-sdk`目录。
+- 移动时同步脚本、CI、文档链接、示例和清理路径；Python虚拟环境须核对解释器、入口脚本和依赖，不能只移动文件夹。
+- 删除或递归移动前核对绝对路径、链接边界、Git状态和运行占用；不得整体清空`target`、执行`cargo clean`，或把独立Git仓库、未推送源码、私有SDK、用户数据当成垃圾。
+- 历史任务可保留当时的证据路径；新入口必须遵循本规范，不通过改写历史伪造当前状态。

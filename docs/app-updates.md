@@ -16,6 +16,8 @@
 
 下载缓存位于当前数据目录updates；成功后清理解压、ZIP和备份，仍运行的辅助EXE下次检查再回收，不停止用户实例清理占用。只在受控隔离实例验证替换，不使用真实账号/播放做更新验收。Windows进程等待依据[Microsoft文档](https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-waitforsingleobject)，独立进程处理Windows运行文件占用的模式亦参考[self-replace](https://docs.rs/self-replace/latest/self_replace/)。
 
+签名身份及维护工具环境见[模块分发](module-distribution.md)，文件归位见[文件放置规范](file-layout.md)。
+
 ## 发布步骤
 
 ```powershell
@@ -24,7 +26,7 @@ python -B scripts/package_base.py --output target/packages/base
 .\target\tools\release\Scripts\python.exe -B scripts/sign-update.py --manifest target/packages/base/app-update.json --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi" --output docs/updates/web-windows-x86_64.json --replace
 ```
 
-package_base生成基础ZIP、package.json和未签名app-update.json；默认URL仍是当前测试包，稳定发版时显式传--download-url。签署目录后先覆盖上传ZIP/校验值，再推送docs/updates原文与签名到Pages；.gitattributes禁止对已签名JSON换行转换。短暂目录/包不同步时校验失败并保留现有应用，可稍后检查，绝不关闭校验或回退到未签名更新。
+基础包输出目录须为新目录或已核实清理的旧目录，不能覆盖未经核对的文件。package_base生成基础ZIP、package.json和未签名app-update.json；默认URL仍是当前测试包，稳定发版时显式传--download-url。签署目录后先覆盖上传ZIP/校验值，再推送docs/updates原文与签名到Pages；.gitattributes禁止对已签名JSON换行转换。短暂目录/包不同步时校验失败并保留现有应用，可稍后检查，绝不关闭校验或回退到未签名更新。
 
 仅在首次启用自动更新的旧客户端需要引导安装；启用后未来测试包覆盖会自动获取，用户只需点击重启更新。模块仍由功能管理按独立签名目录更新。
 

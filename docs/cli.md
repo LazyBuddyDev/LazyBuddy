@@ -9,7 +9,7 @@
 
 默认输出在 `target/debug` 或 `target/release`；可显式设置 `CARGO_TARGET_DIR`。脚本仅在 node_modules 缺失时安装精确 npm 依赖，使用 npm.cmd。无需媒体 SDK，不自动下载业务运行时。运行中 EXE 不能覆盖，先使用托盘「退出」。`-LaunchOnly` 只启动已有新入口，`-ServicePackages <绝对目录>` 是显式红果开发包入口，不能代替可信线上安装。
 
-宿主不再使用 `target/qa-browser-video/build`。Go、Python构建环境、wheel与可选GStreamer SDK由红果服务独立仓库按 `target/toolchains`、`target/downloads`、`target/sdks` 和 `target/cache` 管理，具体入口见该仓库README；移动宿主安装位置不需要复制这些构建输入。
+构建工具与SDK按[文件放置规范](file-layout.md)由所属服务独立管理；具体准备入口见[红果服务README](https://github.com/LazyBuddyDev/hongguo-service/blob/main/README.md)，移动宿主安装位置不需要复制这些构建输入。
 
 生产模块和全局配置位于 `%LOCALAPPDATA%/LazyBuddy`，Web 设置文件为 `web-preferences.json`。红果沿用已验证的 `%LOCALAPPDATA%/LazyBuddyShellPreview/hongguo` 与安全存储 scope `shell-preview`，避免复制或导出凭据；这是服务会话命名空间，不再表示另一套宿主入口。隔离实例的红果数据改用其独立数据目录。
 

@@ -1,44 +1,38 @@
 # 模块签名与在线分发
 
-LazyBuddy 预览版的主程序和功能分开分发。根目录 `module-catalog.json` 是信任根配置，包含固定 Ed25519 公钥及下载站 HTTPS 目录地址；Cargo 构建自动复制到主程序旁，`scripts/package_base.py` 默认携带该文件。普通用户在「功能」中安装、更新或卸载，依赖自动处理，无需退出或重启。
+宿主和功能包独立分发。根`module-catalog.json`包含可信Ed25519公钥及HTTPS目录地址；构建与基础打包均携带该配置。模块管理器先验目录签名，再核对ZIP的大小、SHA-256、路径、清单、平台和精确依赖。签名不等于Windows Authenticode，不能由此宣称EXE取得代码签名证书。
 
-## 当前发布
+## 分发边界
 
-- 主程序：[v2.0.0-preview.1](https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v2.0.0-preview.1)，基础 ZIP 不含功能及重运行时。
-- 模块：[modules-v0.1.0](https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/modules-v0.1.0)，含 news、hongguo、python-runtime、media-runtime 四包、catalog.json 和原始 64 字节 catalog.json.sig。
-- 模块由各服务仓库独立构建，再集中托管发布；服务源码不进入主仓库。news 来源 7e53803，hongguo 和运行时来源 68cac34。
+当前Web源码的签名模块分发尚待执行，交付状态见[TASKS](../TASKS.md)。已有`modules-v0.1.0`及`v2.0.0-preview.1`属于旧原生路线，不能作为当前Web包的验收结果；既有`docs/modules/catalog.json`与签名保留原字节，防止破坏旧客户端下载。
 
-下载目录后先验签，再使用其哈希/长度校验 ZIP，并检查清单、路径、平台及精确依赖。下载响应中的公钥不能替换随客户端分发的公钥。失败不回退到未签名安装。签名不等于 Windows Authenticode，此预览 EXE 未申请代码签名证书。
+新闻包由新闻仓库构建，红果及其运行时包由红果仓库构建，宿主不导入服务源码。浏览器路线默认需要news、hongguo与精确匹配的python-runtime；`media-runtime`是红果独立服务的可选原生能力，当前Web宿主不使用。以每个实际清单的依赖闭包为准，不能混用旧包。
 
-## 签名身份
+## 维护者身份
 
-本机维护者私钥保存在 `%LOCALAPPDATA%/LazyBuddyDev/signing/module-catalog-ed25519.dpapi`，不在工作区内。采用 Windows 当前用户 DPAPI 保护；仅解密到签名进程内存，不输出私钥，不以明文落盘或存入 GitHub。依据 [Microsoft DPAPI 文档](https://learn.microsoft.com/en-us/windows/win32/seccrypto/example-c-program-using-cryptprotectdata)，通常需要同一机器、同一 Windows 用户才能解密。
+真实维护者私钥保存在工作区外的`%LOCALAPPDATA%/LazyBuddyDev/signing/module-catalog-ed25519.dpapi`，仅由当前用户DPAPI保护后保存，签名时只在进程内存解密，不导出、不上传或打包。DPAPI文件通常依赖原机器和用户，不是跨机器恢复备份；丢失身份需显式规划公钥轮换，不能静默换钥。
 
-安装维护工具：`python -m venv target/tools/release`，然后使用该环境 `python -m pip install cryptography==46.0.3`。已存在的私钥必须复用，不在普通构建中生成。首次受权建立新身份时，显式使用 `--initialize-key`，路径存在则拒绝覆盖。DPAPI 文件本身不是跨机器恢复备份；更换机器前须规划安全迁移，丢失身份则需更新随客户端分发的公钥，不可静默换钥。
+维护工具环境统一为`target/tools/release/`，使用已验证的`cryptography==46.0.3`。已有私钥必须复用，普通构建不生成新身份；只有首次建立身份另获授权时才使用`--initialize-key`。详见[文件放置规范](file-layout.md)。
+
+## 组装与签名
+
+以下为发布操作参考，执行前核对当前授权、实际ZIP与来源提交。占位参数须替换；目录JSON、签名和可信配置的输出文件必须尚不存在，使用新暂存位置，不覆盖未经核对的旧产物。
 
 ```powershell
-# 先从两个服务仓库获取已验证的四个不可变 ZIP；输出文件必须尚不存在。
-python -B scripts/assemble-catalog.py --packages <news.zip> <hongguo.zip> <python-runtime.zip> <media-runtime.zip> --base-url <HTTPS模块资源目录> --output target/release-catalog/catalog.json
-
-# 复用既有身份；不会重新生成私钥。配置输出先放临时目标，核对公钥再更新正式配置。把目录及签名原样复制到 docs/modules，发布到固定下载站地址。
-.\target\tools\release\Scripts\python.exe -B scripts/sign-catalog.py --catalog target/release-catalog/catalog.json --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi" --source target/release-catalog/module-catalog.json --url <HTTPS目录地址>
-
-cargo build --release --locked -p lazybuddy -p lazybuddy-cli
+python -B scripts/assemble-catalog.py --packages <news.zip> <hongguo.zip> <python-runtime.zip> --base-url <HTTPS模块资源目录> --output target/packages/catalog/catalog.json
+.\target\tools\release\Scripts\python.exe -B scripts/sign-catalog.py --catalog target/packages/catalog/catalog.json --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi" --source target/packages/catalog/module-catalog.json --url <HTTPS目录地址>
+.\build_and_run.bat -BuildOnly -Release
 python -B scripts/package_base.py --output target/packages/base
 ```
 
-## 更新与验收
+核对新配置公钥与既有客户端信任根一致，再按发布范围更新正式配置。基础包输出目录也须为新的或已核实清理的位置。先上传完整模块ZIP，再将签名目录原文与`.sig`一起原样部署至`docs/modules/`，由Pages提供固定目录端点。`.gitattributes`禁止换行转换；目录与签名不同步时允许校验失败，不能关闭校验。功能页按目录与已安装状态提供安装/更新/卸载。
 
-- 包、目录和配置一起核对。正式版前测试安装包覆盖既有预览入口和资源，不新增预览流水发布；同步更新来源提交、SHA256与验证证据。业务或适配实现变化仍增加模块内部版本及精确依赖，再覆盖测试目录，确保已安装客户端能够识别更新；正式版保持不可变版本快照。
-- 客户端固定下载站 `https://lazybuddydev.github.io/LazyBuddy/modules/catalog.json`，`docs/modules` 同时维护目录原文与签名；测试Release保留当前目录及模块ZIP；正式版本保留不可变快照。上线新模块时更新下载站的签名目录，现有客户端在「功能」点「刷新」后可安装/更新，无需重发宿主。目录 JSON 与 .sig 必须按原始字节提交（.gitattributes 禁止换行转换）；目录与签名短暂不同步时验签失败，稍后重试，不能关闭校验。
-- 先创建草稿 Release 并上传完整资源，核对后发布；主程序包必须包含与已发布目录匹配的公钥配置。
-- 公布后通过匿名 HTTPS 重新下载目录、签名及模块，验证真实客户端安装、依赖、卸载与运行中入口。真实账号/节目权限、收藏写入和进度上传是独立验收，不能由分发成功外推。
-- 在线验证使用独立数据目录，不读取真实凭据，不触发真实账号或新闻上游请求；完成后退出自身实例并清理一次性下载、模块副本和截图。
+正式版前测试安装包复用现有测试分发入口，不为每次修复新建预览发布；同步包、校验值、说明、来源提交与证据。实现变化仍增加模块内部版本与精确依赖，使客户端识别更新；不可变包目录不能复用。正式稳定版快照另按授权建立。
 
-HTTPS使用显式选择NativeTls的ureq Agent，目录总超时30秒、每包1800秒、单次读取60秒、连接15秒；保留证书校验和签名校验。ureq启用native-tls特性仍不会自动选择该后端，见 [ureq官方文档](https://docs.rs/crate/ureq/3.5.1)。本机无效TLS对端单元测试及真实在线安装分别验证配置与端到端链路。
+## 在线验收
 
-Windows启用ureq的win-system-proxy支持：显式代理环境变量优先，没有时使用当前用户已启用的手动系统代理。不会修改系统设置；不支持由此推断PAC/WPAD已经适配。当前覆盖测试构建修复从资源管理器启动时未读取系统代理的问题，模块包及签名目录不变。回归使用 `test-online-modules.py --without-proxy-env` 验证完整下载事务。
+匿名HTTPS重新下载目录、签名和ZIP，验证真实客户端安装、整组依赖激活、卸载回收与运行中入口。使用隔离数据，不读取真实凭据，不触发业务上游请求；结束后退出自身实例并清理下载及模块副本。离线签名/解包单元不能代替真实下载验收，账号、收藏写入及节目权限另验。
 
-慢速网络下收到数据仍可能超过原5分钟总预算。修复构建将每包总预算延长至30分钟，并以60秒无数据读取超时约束停滞；不把持续传输误判为连接失败。
+下载统一使用显式选择NativeTls的ureq Agent，证书与签名校验均保留。目录总超时30秒，每包1800秒，读取60秒、连接15秒。Windows遵循显式代理环境变量，否则使用当前用户已启用的手动系统代理；不修改系统配置，也不声称支持PAC/WPAD。必须包含清除HTTP/HTTPS/ALL_PROXY环境变量后的桌面等价安装验证。
 
-基础宿主自更新采用独立签名清单和文件构建标识，测试包覆盖后客户端可自动获取；发布步骤见[应用更新](app-updates.md)。功能目录与应用更新目录独立，不能用模块安装包替换宿主。
+应用更新使用另一份签名清单，不能通过模块包替换宿主；见[应用更新](app-updates.md)。
