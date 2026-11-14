@@ -22,6 +22,7 @@ pub struct State {
     epoch: AtomicU64,
     closing: AtomicBool,
     view: Mutex<(bool, bool, bool)>,
+    favorite_reads: AtomicU64,
 }
 pub fn enabled() -> bool {
     std::env::var_os("LAZYBUDDY_BROWSER_PACKAGES").is_some()
@@ -144,6 +145,9 @@ fn environment(direct: bool) -> Result<Vec<(String, String)>, String> {
     Ok(environment)
 }
 impl State {
+    pub fn favorite_reads(&self) -> u64 {
+        self.favorite_reads.load(Ordering::Relaxed)
+    }
     pub async fn disconnect(&self) {
         self.epoch.fetch_add(1, Ordering::AcqRel);
         let connection = self.connection.lock().unwrap().take();
@@ -309,6 +313,9 @@ pub async fn playback_call(
         }
         slot.as_ref().unwrap().service.clone()
     };
+    if method == "favorites.read" {
+        state.favorite_reads.fetch_add(1, Ordering::Relaxed);
+    }
     let reply = service
         .request(json!({"version":1,"id":"web-playback","method":method,"args":args}))
         .await;

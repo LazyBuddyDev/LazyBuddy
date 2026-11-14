@@ -89,7 +89,7 @@ fn transition(
 #[tauri::command]
 fn snapshot(state: tauri::State<Mutex<Model>>, window: tauri::WebviewWindow) -> serde_json::Value {
     let state = state.lock().unwrap();
-    serde_json::json!({"view":state.view,"feed_requests":state.feed_requests,
+    serde_json::json!({"view":state.view,"feed_requests":state.feed_requests,"favorite_reads":window.state::<playback::State>().favorite_reads(),
         "media_route":if playback::enabled(){"browser_service"}else{"unavailable"},"real_service":playback::enabled()&&std::env::var_os("LAZYBUDDY_BROWSER_FIXTURE_FILE").is_none(), "native_texture_integrated":false,"tray":window.app_handle().tray_by_id("shell").is_some(),"desktop":dock::snapshot(&window)})
 }
 fn visibility(window: &tauri::WebviewWindow, visible: bool) {
@@ -185,6 +185,17 @@ fn toggle_pin(window: tauri::WebviewWindow) -> Result<bool, String> {
     Ok(pinned)
 }
 #[tauri::command]
+fn capture_shortcut(enabled: bool, window: tauri::WebviewWindow) -> Result<(), String> {
+    if enabled {
+        platform::unregister(&window)
+    } else {
+        platform::resume(
+            &window,
+            window.state::<host::State>().preferences().shortcut,
+        )
+    }
+}
+#[tauri::command]
 fn open_logs() -> Result<(), String> {
     let path = playback::data_directory()?.join("logs");
     std::fs::create_dir_all(&path).map_err(|_| "无法创建日志目录")?;
@@ -227,6 +238,7 @@ fn main() {
             window_action,
             resize,
             toggle_pin,
+            capture_shortcut,
             open_logs,
             playback::playback_call
         ])

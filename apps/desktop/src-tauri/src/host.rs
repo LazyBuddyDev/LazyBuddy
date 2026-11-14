@@ -322,7 +322,7 @@ pub async fn settings(
         saved.await?;
     }
     Ok(
-        json!({"preferences":state.preferences(),"startup":crate::startup::enabled(),"isolated":lazybuddy_host_control::isolated()}),
+        json!({"preferences":state.preferences(),"startup":crate::startup::enabled(),"isolated":lazybuddy_host_control::isolated(),"shortcut_capturing":crate::platform::capturing()}),
     )
 }
 #[tauri::command]

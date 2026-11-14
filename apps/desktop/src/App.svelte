@@ -18,6 +18,7 @@
   async function change(nextRoot=root,nextSection=section,nextVisible=visible){
     const accountPage=nextSection==='settings'&&category==='page';
     if(view.generation>0&&nextRoot===root&&nextSection===section&&nextVisible===visible&&accountPage===lastAccountPage&&category===displayedCategory)return;
+    if(section==='settings')void call('capture_shortcut',{enabled:false}).catch(error=>notice=String(error));
     const ticket=++sequence;serviceActive=false;await realHongguo?.suspend(nextRoot==='hongguo'&&nextSection==='content');if(ticket!==sequence)return;
     if(page&&visible&&!docked)scrollPositions.set(scrollKey(),page.scrollTop);
     root=nextRoot;section=nextSection;visible=nextVisible;lastAccountPage=accountPage;displayedCategory=category;
@@ -45,6 +46,7 @@
   function shortcut(event:KeyboardEvent){event.preventDefault();if(event.code==='Escape')return;const key=event.code.startsWith('Key')?event.code.charCodeAt(3):event.code.startsWith('Digit')?event.code.charCodeAt(5):/^F\d+$/.test(event.code)?111+Number(event.code.slice(1)):0;
     if(key)void save({shortcut:{modifiers:(event.altKey?1:0)|(event.ctrlKey?2:0)|(event.shiftKey?4:0),key}});}
   function shortcutLabel(){const s=preferences?.shortcut;if(!s)return '';return `${s.modifiers&2?'Ctrl+':''}${s.modifiers&1?'Alt+':''}${s.modifiers&4?'Shift+':''}${s.key>=112?`F${s.key-111}`:String.fromCharCode(s.key)}`;}
+  function captureShortcut(enabled:boolean){void call('capture_shortcut',{enabled}).catch(error=>notice=String(error));}
   onMount(()=>{const subscriptions:(()=>void)[]=[];let disposed=false;
     async function subscribe<T>(event:string,handler:(value:T)=>void){const off=await listen<T>(event,e=>handler(e.payload));if(disposed)off();else subscriptions.push(off);}
     void(async()=>{try{
@@ -57,7 +59,7 @@
     return()=>{disposed=true;subscriptions.forEach(off=>off());document.removeEventListener('visibilitychange',visibility);};
   });
 </script>
-<svelte:window onkeydown={mediaKey}/>
+<svelte:window onkeydown={mediaKey} onblur={()=>captureShortcut(false)} onfocus={()=>{if(document.activeElement?.id==='hotkey')captureShortcut(true);}}/>
 {#snippet settingsNavigation()}<aside class="settings-nav" aria-label="设置分类">{#if roots.some(m=>m.id===root)}<button class:chosen={category==='page'} onclick={()=>{category='page';void change();}}>{root==='news'?'新闻设置':'红果账号'}</button>{/if}{#each [['appearance','显示设置'],['system','系统设置'],['about','关于我们']] as [id,label]}<button class:chosen={category===id} onclick={()=>{category=id;void change();}}>{label}</button>{/each}<button class="back-button" onclick={()=>change(root,'content')}><Icon name="arrow" size={16}/>返回页面</button></aside>{/snippet}
 <div class:dark class:docked class="app-shell" style:--background-opacity={preferences?.background_opacity??.94} style:--card-opacity={preferences?.card_opacity??.94} data-testid="shell" data-root={root} data-section={section} data-visible={visible} data-docked={docked} data-events-ready={eventsReady}>
 {#if docked}<button class="dock-button" aria-label="展开 LazyBuddy" onclick={()=>action('expand')}><img src={logoUrl} alt=""/></button>{/if}
@@ -71,7 +73,7 @@
 {#if section==='modules'}<section class="content-width module-page"><div class="module-heading"><h1>可用功能</h1><button onclick={toggleModules}><Icon name="arrow" size={16}/>返回</button></div><div class="module-list">{#each modules as module}<div class="module-row"><div><strong>{module.name}</strong><span class="version">{module.version}</span></div><div class="row-actions">{#if module.installed}<button disabled={managerBusy||!module.update} onclick={()=>moduleAction('install',module.id)}>更新</button><button class="subtle-danger" disabled={managerBusy} onclick={()=>moduleAction('uninstall',module.id)}>卸载</button>{:else}<button disabled={managerBusy||!catalogReady} onclick={()=>moduleAction('install',module.id)}>安装</button>{/if}</div></div>{/each}</div></section>
 {:else if section==='settings'&&category!=='page'}<section class="settings-layout content-width">{@render settingsNavigation()}<div class="settings-content"><h1>{category==='appearance'?'显示设置':category==='system'?'系统设置':'关于我们'}</h1>
 {#if category==='appearance'}<div class="setting-row"><strong>深色模式</strong><Switch label="深色模式" checked={dark} onchange={value=>save({dark:value})}/></div><div class="setting-row"><label for="background-opacity">背景透明度</label><input id="background-opacity" aria-label="背景透明度" type="range" min="0" max="1" step=".05" value={preferences?.background_opacity??.94} onchange={event=>save({background_opacity:Number(event.currentTarget.value)})}/></div><div class="setting-row"><label for="card-opacity">卡片透明度</label><input id="card-opacity" aria-label="卡片透明度" type="range" min="0" max="1" step=".05" value={preferences?.card_opacity??.94} onchange={event=>save({card_opacity:Number(event.currentTarget.value)})}/></div>
-{:else if category==='system'}<div class="setting-row"><strong>开机启动</strong><Switch label="开机启动" checked={startup} disabled={isolated} onchange={value=>call('set_startup',{enabled:value}).then(()=>startup=value).catch(error=>notice=String(error))}/></div><div class="setting-row"><label for="hotkey">显示 / 隐藏快捷键</label><input id="hotkey" aria-label="显示隐藏快捷键" value={shortcutLabel()} readonly onkeydown={shortcut}/></div><div class="setting-row"><strong>应用自动更新</strong><Switch label="应用自动更新" checked={preferences?.auto_update??true} onchange={value=>save({auto_update:value})}/></div><div class="setting-row"><button onclick={checkUpdate}>检查更新</button><button onclick={()=>call('open_logs').catch(error=>notice=String(error))}>打开日志</button></div>
+{:else if category==='system'}<div class="setting-row"><strong>开机启动</strong><Switch label="开机启动" checked={startup} disabled={isolated} onchange={value=>call('set_startup',{enabled:value}).then(()=>startup=value).catch(error=>notice=String(error))}/></div><div class="setting-row"><label for="hotkey">显示 / 隐藏快捷键</label><input id="hotkey" aria-label="显示隐藏快捷键" value={shortcutLabel()} readonly onfocus={()=>captureShortcut(true)} onblur={()=>captureShortcut(false)} onkeydown={shortcut}/></div><div class="setting-row"><strong>应用自动更新</strong><Switch label="应用自动更新" checked={preferences?.auto_update??true} onchange={value=>save({auto_update:value})}/></div><div class="setting-row"><button onclick={checkUpdate}>检查更新</button><button onclick={()=>call('open_logs').catch(error=>notice=String(error))}>打开日志</button></div>
 {:else}<h2>LazyBuddy</h2><p>2.0.0</p><p>Copyright © 2026 Leager · MIT</p>{/if}</div></section>
 {:else if section==='content'&&!roots.length}<div class="list-empty"><button onclick={toggleModules}>安装功能</button></div>
 {:else if section==='content'&&root==='hongguo'&&!servicePlayback}<div class="list-empty">请在功能页更新红果短剧模块</div>{/if}

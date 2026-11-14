@@ -30,6 +30,9 @@ try{
  await page.getByRole('button',{name:'设置',exact:true}).click();await page.getByRole('heading',{name:'新闻设置',exact:true}).waitFor();
  const late=await invoke('news_call',{method:'fetch',args:{sources:[catalog.data[0].id]},generation:stale}).then(()=>'',String);assert.match(late,/inactive_news_page/);
  await page.getByRole('button',{name:'显示设置',exact:true}).click();await page.getByRole('switch',{name:'深色模式'}).click();await until(async()=>await page.locator('.app-shell.dark').count()===1);
+ await page.getByRole('button',{name:'系统设置',exact:true}).click();await page.getByLabel('显示隐藏快捷键').focus();await page.getByLabel('显示隐藏快捷键').dispatchEvent('focus');await until(async()=>(await invoke('settings')).shortcut_capturing);
+ await page.getByLabel('显示隐藏快捷键').press('Control+Alt+J');await until(async()=>(await invoke('settings')).preferences.shortcut.key===74);
+ await page.getByRole('button',{name:'显示设置',exact:true}).click();await until(async()=>!(await invoke('settings')).shortcut_capturing);
  await page.getByLabel('背景透明度',{exact:true}).fill('.5');await page.getByLabel('背景透明度',{exact:true}).dispatchEvent('change');
  await until(async()=>Number((await invoke('settings')).preferences.background_opacity)===.5);
  await page.reload();await page.waitForSelector('[data-events-ready=true]');assert.equal(await page.locator('.app-shell.dark').count(),1);
@@ -39,14 +42,13 @@ try{
  const hidden=(await invoke('snapshot')).feed_requests;await delay(400);assert.equal((await invoke('snapshot')).feed_requests,hidden);
  await page.getByRole('button',{name:'展开 LazyBuddy'}).click();await page.waitForFunction(()=>innerWidth>400);
  native('drag-right');await page.getByRole('button',{name:'展开 LazyBuddy'}).waitFor();await page.getByRole('button',{name:'展开 LazyBuddy'}).click();await page.waitForFunction(()=>innerWidth>400);
- await page.evaluate(()=>{const original=window.__TAURI_INTERNALS__.invoke;window.__TAURI_INTERNALS__.invoke=(name,args,...rest)=>name==='module_call'&&args.action==='catalog'?Promise.reject('offline catalog fixture'):original(name,args,...rest);});
  await page.getByRole('button',{name:'功能',exact:true}).click();await page.getByRole('heading',{name:'可用功能'}).waitFor();
  await page.getByRole('button',{name:'卸载',exact:true}).click();await until(async()=>await page.getByRole('button',{name:'卸载',exact:true}).count()===0);
  assert.equal(run('modules','list').length,0);assert.equal(await page.getByLabel('选择功能').isDisabled(),true);
  assert.equal(run('host',JSON.stringify({version:1,command:'status',args:{}})).data.backend,'web');
  await mkdir(path.join(root,'target/verification-web-host'),{recursive:true});
  await page.screenshot({path:path.join(root,'target/verification-web-host/modules.png')});
- const report={passed:true,installed_news_api:true,cached_news_no_network:true,news_rows:catalog.data.length*10,stale_fetch_rejected:true,theme_survives_reload:true,left_right_docking:true,circular_hit_region:true,hidden_requests_unchanged:true,live_uninstall:true,cli_web_status:true,real_account_used:false};
+ const report={passed:true,installed_news_api:true,cached_news_no_network:true,news_rows:catalog.data.length*10,stale_fetch_rejected:true,theme_survives_reload:true,shortcut_capture_and_restore:true,left_right_docking:true,circular_hit_region:true,hidden_requests_unchanged:true,live_uninstall:true,cli_web_status:true,real_account_used:false};
  await writeFile(path.join(root,'target/verification-web-host/host.json'),JSON.stringify(report,null,2));console.log(report);
 }catch(error){if(page)console.error({notice:await page.locator('.notice').textContent(),state:await invoke('snapshot')});throw error;}
 finally{

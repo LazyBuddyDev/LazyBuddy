@@ -67,11 +67,11 @@ try{
   await page.getByRole('button',{name:'收藏',exact:true}).click();
   const savedStar=page.getByRole('button',{name:'取消收藏测试短剧',exact:true}).locator('svg');
   await savedStar.waitFor();assert.equal(await savedStar.getAttribute('fill'),'#e9b308');
-  await page.evaluate(()=>{const original=window.__TAURI_INTERNALS__.invoke;window.__favoriteReads=0;window.__TAURI_INTERNALS__.invoke=(command,args,...rest)=>{if(command==='playback_call'&&args?.method==='favorites.read')window.__favoriteReads++;return original(command,args,...rest);};});
+  const favoriteReads=(await invoke('snapshot')).favorite_reads;assert.ok(favoriteReads>0);
   await page.getByRole('button',{name:'搜索',exact:true}).click();
   await page.getByRole('button',{name:'收藏',exact:true}).click();
   await page.getByRole('button',{name:'搜索',exact:true}).click();
-  assert.equal(await page.evaluate(()=>window.__favoriteReads),0);
+  assert.equal((await invoke('snapshot')).favorite_reads,favoriteReads);
   await page.getByLabel('搜索短剧').fill('测试');await page.getByRole('search').getByRole('button',{name:'搜索',exact:true}).click();
   await page.getByRole('button',{name:'播放测试短剧',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('video')?.currentTime>.3);
