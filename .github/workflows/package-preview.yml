@@ -38,7 +38,7 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           ./scripts/build-and-run.ps1 -BuildOnly -Release
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -B scripts/package_base.py --output target/base
+          python -B scripts/package_base.py --output target/packages/base
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
@@ -46,6 +46,6 @@ jobs:
           retention-days: 3
           if-no-files-found: error
           path: |
-            target/base/*.zip
-            target/base/package.json
-            target/base/app-update.json
+            target/packages/base/*.zip
+            target/packages/base/package.json
+            target/packages/base/app-update.json

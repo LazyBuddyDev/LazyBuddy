@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn existing_archive_target_is_preserved_without_network() {
         let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
+            .join("../../tmp")
             .join(format!(
                 "qa-download-{}",
                 std::time::SystemTime::now()
@@ -475,7 +475,7 @@ mod tests {
     fn verified_archives_reject_unsafe_paths_and_clean_staging() {
         use std::io::Write;
         let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
+            .join("../../tmp")
             .join(format!(
                 "qa-package-{}-{}",
                 std::process::id(),
@@ -516,7 +516,7 @@ mod tests {
     fn archive_identity_and_digest_are_checked_before_activation() {
         use std::io::Write;
         let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
+            .join("../../tmp")
             .join(format!(
                 "qa-package-valid-{}-{}",
                 std::process::id(),

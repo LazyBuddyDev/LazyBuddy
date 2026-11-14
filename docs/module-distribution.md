@@ -14,17 +14,17 @@ LazyBuddy 预览版的主程序和功能分开分发。根目录 `module-catalog
 
 本机维护者私钥保存在 `%LOCALAPPDATA%/LazyBuddyDev/signing/module-catalog-ed25519.dpapi`，不在工作区内。采用 Windows 当前用户 DPAPI 保护；仅解密到签名进程内存，不输出私钥，不以明文落盘或存入 GitHub。依据 [Microsoft DPAPI 文档](https://learn.microsoft.com/en-us/windows/win32/seccrypto/example-c-program-using-cryptprotectdata)，通常需要同一机器、同一 Windows 用户才能解密。
 
-安装维护工具：`python -m venv target/release-tools`，然后使用该环境 `python -m pip install cryptography==46.0.3`。已存在的私钥必须复用，不在普通构建中生成。首次受权建立新身份时，显式使用 `--initialize-key`，路径存在则拒绝覆盖。DPAPI 文件本身不是跨机器恢复备份；更换机器前须规划安全迁移，丢失身份则需更新随客户端分发的公钥，不可静默换钥。
+安装维护工具：`python -m venv target/tools/release`，然后使用该环境 `python -m pip install cryptography==46.0.3`。已存在的私钥必须复用，不在普通构建中生成。首次受权建立新身份时，显式使用 `--initialize-key`，路径存在则拒绝覆盖。DPAPI 文件本身不是跨机器恢复备份；更换机器前须规划安全迁移，丢失身份则需更新随客户端分发的公钥，不可静默换钥。
 
 ```powershell
 # 先从两个服务仓库获取已验证的四个不可变 ZIP；输出文件必须尚不存在。
 python -B scripts/assemble-catalog.py --packages <news.zip> <hongguo.zip> <python-runtime.zip> <media-runtime.zip> --base-url <HTTPS模块资源目录> --output target/release-catalog/catalog.json
 
 # 复用既有身份；不会重新生成私钥。配置输出先放临时目标，核对公钥再更新正式配置。把目录及签名原样复制到 docs/modules，发布到固定下载站地址。
-.\target\release-tools\Scripts\python.exe -B scripts/sign-catalog.py --catalog target/release-catalog/catalog.json --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi" --source target/release-catalog/module-catalog.json --url <HTTPS目录地址>
+.\target\tools\release\Scripts\python.exe -B scripts/sign-catalog.py --catalog target/release-catalog/catalog.json --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi" --source target/release-catalog/module-catalog.json --url <HTTPS目录地址>
 
 cargo build --release --locked -p lazybuddy -p lazybuddy-cli
-python -B scripts/package_base.py --output target/release-base
+python -B scripts/package_base.py --output target/packages/base
 ```
 
 ## 更新与验收

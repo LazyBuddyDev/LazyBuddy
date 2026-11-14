@@ -9,7 +9,7 @@ import {chromium} from 'playwright-core';
 const here=path.dirname(fileURLToPath(import.meta.url));const root=path.resolve(here,'../../..');
 assert.ok(process.argv[2],'explicit candidate executable required');const exe=path.resolve(process.argv[2]);
 const output=path.join(root,'tmp/verification-shell');await mkdir(output,{recursive:true});
-const profile=path.join(root,'target/qa-browser-video/tray-profile');
+const profile=path.join(root,'tmp/profiles/tray');await mkdir(profile,{recursive:true});
 const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
 const env={...process.env,LAZYBUDDY_INSTANCE:`qa-web-${process.pid}`,LAZYBUDDY_DATA_DIR:path.join(profile,"host-data"),LAZYBUDDY_PROTOTYPE_PROBE:'1',WEBVIEW2_USER_DATA_FOLDER:profile,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`};
 delete env.LAZYBUDDY_BROWSER_PACKAGES;

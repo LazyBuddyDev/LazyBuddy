@@ -8,7 +8,7 @@ import net from 'node:net';
 import {chromium} from 'playwright-core';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
 const output=path.join(root,'tmp/verification-browser-video');await mkdir(output,{recursive:true});
-const profile=path.join(root,'target/qa-browser-video/profile');
+const profile=path.join(root,'tmp/profiles/browser-media');await mkdir(profile,{recursive:true});
 assert.ok(process.env.LAZYBUDDY_BROWSER_PACKAGES,'explicit external fixture package required');
 const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
 assert.ok(process.argv[2],'explicit candidate executable required');

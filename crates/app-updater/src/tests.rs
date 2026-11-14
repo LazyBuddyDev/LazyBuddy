@@ -7,7 +7,7 @@ impl Temporary {
     fn new() -> Self {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
+            .join("../../tmp")
             .join(format!(
                 "qa-updater-{}-{}",
                 std::process::id(),

@@ -141,7 +141,7 @@ mod tests {
     #[test]
     fn malformed_settings_are_not_replaced_with_defaults() {
         let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../target")
+            .join("../../../tmp")
             .join(format!("qa-preferences-{}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
         let path = directory.join("preferences.json");

@@ -8,13 +8,15 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+TMP = ROOT / 'tmp'
+TMP.mkdir(exist_ok=True)
 CLI = ROOT / 'target/debug/lazybuddy-cli.exe'
 SERVICE = ROOT / 'target/debug/examples/fixture.exe'
 
 
 class ModuleTests(unittest.TestCase):
     def test_install_call_remove_and_missing_entry_rollback(self):
-        with tempfile.TemporaryDirectory(prefix='qa-module-', dir=ROOT / 'target') as temporary:
+        with tempfile.TemporaryDirectory(prefix='qa-module-', dir=TMP) as temporary:
             directory = Path(temporary)
             package = directory / 'package'
             (package / 'bin').mkdir(parents=True)

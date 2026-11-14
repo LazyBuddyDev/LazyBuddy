@@ -22,6 +22,6 @@ $env:LAZYBUDDY_BROWSER_FIXTURE_FILE='<自制合成MP4绝对路径>'
 node apps/desktop/tests/browser-media.mjs <宿主EXE绝对路径>
 ```
 
-host 驱动安装外部新闻包，预置新鲜合成新闻缓存，验证 API、主题恢复、左右贴边、圆形命中和运行时卸载，不访问新闻上游。browser-media 使用独立服务仓库生成的合成账号/媒体包，验证二维码取消、收藏反馈、实际视频推进/跳转/隐藏恢复、错误详情与重试，不读真实账号。临时数据放 target/qa-* 并在退出后清理；验证报告、截图和录屏统一放 tmp/verification-*，不再写入 target/verification-*。更新进程验证脚本的默认报告为 tmp/verification-updates/update-process.json。
+host 驱动安装外部新闻包，预置新鲜合成新闻缓存，验证 API、主题恢复、左右贴边、圆形命中和运行时卸载，不访问新闻上游。browser-media 使用独立服务仓库生成的合成账号/媒体包，验证二维码取消、收藏反馈、实际视频推进/跳转/隐藏恢复、错误详情与重试，不读真实账号。隔离配置统一放 tmp/profiles，Rust/Python临时测试数据也在tmp下创建并在退出后清理；验证报告、截图和录屏统一放 tmp/verification-*，不再写入 target/verification-* 或 target/qa-*。本机合成媒体位于 tmp/fixtures/media，不随源码分发。测试安装包统一放 target/packages/base，维护者发布工具环境为 target/tools/release；更新进程验证脚本的默认报告为 tmp/verification-updates/update-process.json。
 
 真实登录、上游播放、音画同步、在线签名发布及资源预算各自验收，不由单元或合成样例外推。禁止 cargo clean 或整体清空 target，独立服务 Git 与私有 SDK 不作构建缓存删除。

@@ -8,6 +8,8 @@ import unittest
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
+TMP = ROOT / 'tmp'
+TMP.mkdir(exist_ok=True)
 spec = importlib.util.spec_from_file_location('base', ROOT/'scripts/package_base.py')
 base = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(base)
@@ -15,7 +17,7 @@ spec.loader.exec_module(base)
 
 class Release(unittest.TestCase):
     def test_frontend_distribution_retains_runtime_licenses_and_ignores_dev_packages(self):
-        with tempfile.TemporaryDirectory(prefix='qa-licenses-') as temporary:
+        with tempfile.TemporaryDirectory(prefix='qa-licenses-',dir=TMP) as temporary:
             root=Path(temporary); source=root/'node_modules/runtime'; source.mkdir(parents=True)
             (root/'package-lock.json').write_text(json.dumps({'packages':{'':{},'node_modules/runtime':{'version':'1.2.3'},'node_modules/build-only':{'dev':True}}}),encoding='utf-8')
             (source/'package.json').write_text(json.dumps(dict(name='runtime',version='1.2.3',license='MIT')),encoding='utf-8')
@@ -47,7 +49,7 @@ class Release(unittest.TestCase):
         return path
 
     def test_same_version_new_content_has_new_build_identity(self):
-        with tempfile.TemporaryDirectory(prefix='qa-app-release-',dir=ROOT/'target') as temporary:
+        with tempfile.TemporaryDirectory(prefix='qa-app-release-',dir=TMP) as temporary:
             directory=Path(temporary)
             first=base.application_manifest(self.bundle(directory,'old'),'https://example.invalid/app.zip')
             second=base.application_manifest(self.bundle(directory,'new'),'https://example.invalid/app.zip')
@@ -55,7 +57,7 @@ class Release(unittest.TestCase):
             self.assertNotEqual(first['build'],second['build'])
 
     def test_missing_helper_damaged_files_and_http_are_rejected(self):
-        with tempfile.TemporaryDirectory(prefix='qa-app-release-',dir=ROOT/'target') as temporary:
+        with tempfile.TemporaryDirectory(prefix='qa-app-release-',dir=TMP) as temporary:
             directory=Path(temporary)
             for marker,kwargs in [('missing',dict(missing=True)),('damaged',dict(corrupt=True))]:
                 with self.assertRaises(ValueError):

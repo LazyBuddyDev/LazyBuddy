@@ -360,7 +360,7 @@ mod tests {
     #[test]
     fn feature_and_shared_runtime_activate_as_one_transaction() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
+            .join("../../tmp")
             .join(format!("qa-module-transaction-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let manager = Manager::new(root.join("modules"));
@@ -441,7 +441,7 @@ mod tests {
     #[test]
     fn local_install_is_atomic_and_dependencies_prevent_removal() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
+            .join("../../tmp")
             .join(format!(
                 "lazybuddy-manager-{}-{}",
                 std::process::id(),

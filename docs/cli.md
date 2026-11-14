@@ -17,7 +17,7 @@
 
 ```powershell
 $env:LAZYBUDDY_INSTANCE='local-qa'
-$env:LAZYBUDDY_DATA_DIR=(Join-Path (Get-Location) 'target/qa-host-data')
+$env:LAZYBUDDY_DATA_DIR=(Join-Path (Get-Location) 'tmp/profiles/local-qa')
 .\target\debug\lazybuddy.exe --background
 ```
 

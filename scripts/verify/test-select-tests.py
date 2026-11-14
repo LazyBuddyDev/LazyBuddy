@@ -6,6 +6,8 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
+TMP = ROOT / 'tmp'
+TMP.mkdir(exist_ok=True)
 spec = importlib.util.spec_from_file_location('selection', ROOT/'scripts/check-changes.py')
 selection = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(selection)
@@ -13,7 +15,7 @@ spec.loader.exec_module(selection)
 
 class Selection(unittest.TestCase):
     def test_new_branch_zero_before_compares_main_instead_of_all_files(self):
-        with tempfile.TemporaryDirectory(prefix='qa-selection-') as temporary:
+        with tempfile.TemporaryDirectory(prefix='qa-selection-',dir=TMP) as temporary:
             root = Path(temporary)
             def git(*args):
                 return subprocess.check_output(['git', *args], cwd=root, text=True, stderr=subprocess.DEVNULL)

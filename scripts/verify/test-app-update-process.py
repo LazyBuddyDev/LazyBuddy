@@ -12,6 +12,8 @@ import uuid
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 ROOT=Path(__file__).resolve().parents[2]
+TMP = ROOT / 'tmp'
+TMP.mkdir(exist_ok=True)
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--host-dir',type=Path,required=True)
 parser.add_argument('--report',type=Path,default=ROOT/'tmp/verification-updates/update-process.json',help='verification report under tmp/')
@@ -24,7 +26,7 @@ def info(directory):
     result=dict(schema=1,version='2.0.0',build=build,files=files)
     (directory/'build-info.json').write_text(json.dumps(result),encoding='utf-8')
     return result
-with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=ROOT/'target') as temporary:
+with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=TMP) as temporary:
     root=Path(temporary);install=root/'install';data=root/'data'
     install.mkdir()
     for name in ('lazybuddy.exe','lazybuddy-cli.exe','lazybuddy-updater.exe','module-catalog.json','app-update-source.json'):

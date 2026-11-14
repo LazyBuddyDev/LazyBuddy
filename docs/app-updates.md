@@ -20,8 +20,8 @@
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-and-run.ps1 -BuildOnly -Release
-python -B scripts/package_base.py --output target/release-base
-.\target\release-tools\Scripts\python.exe -B scripts/sign-update.py --manifest target/release-base/app-update.json --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi" --output docs/updates/web-windows-x86_64.json --replace
+python -B scripts/package_base.py --output target/packages/base
+.\target\tools\release\Scripts\python.exe -B scripts/sign-update.py --manifest target/packages/base/app-update.json --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi" --output docs/updates/web-windows-x86_64.json --replace
 ```
 
 package_base生成基础ZIP、package.json和未签名app-update.json；默认URL仍是当前测试包，稳定发版时显式传--download-url。签署目录后先覆盖上传ZIP/校验值，再推送docs/updates原文与签名到Pages；.gitattributes禁止对已签名JSON换行转换。短暂目录/包不同步时校验失败并保留现有应用，可稍后检查，绝不关闭校验或回退到未签名更新。

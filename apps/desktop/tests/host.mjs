@@ -5,7 +5,7 @@ import {mkdir,writeFile,realpath,rm} from 'node:fs/promises';
 import path from 'node:path';import {fileURLToPath} from 'node:url';import net from 'node:net';import {chromium} from 'playwright-core';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
 const exe=path.resolve(process.argv[2]);assert.ok(process.env.LAZYBUDDY_TEST_NEWS_PACKAGE,'explicit external news package required');
-const profile=path.join(root,'target/qa-web-host');const data=path.join(profile,'data');await mkdir(path.join(data,'services/news'),{recursive:true});
+const profile=path.join(root,'tmp/profiles/web-host');const data=path.join(profile,'data');await mkdir(path.join(data,'services/news'),{recursive:true});
 const env={...process.env,LAZYBUDDY_INSTANCE:`qa-host-${process.pid}`,LAZYBUDDY_DATA_DIR:data,LAZYBUDDY_PROTOTYPE_PROBE:'1',WEBVIEW2_USER_DATA_FOLDER:path.join(profile,'webview')};
 delete env.LAZYBUDDY_BROWSER_PACKAGES;delete env.LAZYBUDDY_BROWSER_FIXTURE_FILE;
 const cli=path.join(path.dirname(exe),'lazybuddy-cli.exe');
