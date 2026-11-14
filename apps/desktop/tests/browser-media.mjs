@@ -105,7 +105,6 @@ try{
   await page.locator('video').evaluate(v=>{v.dispatchEvent(new PointerEvent('pointerup',{button:2,pointerId:99,bubbles:true}));v.setPointerCapture=v.__capture;delete v.__capture;});
   assert.equal((await read()).rate,1);assert.ok((await read()).position-heldPosition<1,'long right hold must not also seek');
   const initial=await read();assert.ok(initial.width>0&&initial.height>0);assert.equal(initial.error,null);
-  await page.getByRole('button',{name:'暂停',exact:true}).click();await delay(150);
   const drag=await page.evaluate(async()=>{
     const video=document.querySelector('video'),slider=document.querySelector('input.seek');
     const descriptor=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'currentTime');
@@ -121,6 +120,7 @@ try{
   assert.equal(drag.during,drag.preview);assert.equal(drag.writesDuring,0,'dragging previews without seeking');
   assert.deepEqual(drag.writes,[drag.preview],'release commits once');
   assert.equal(drag.committed,drag.preview,'release must not snap back to the old position');
+  await page.getByRole('button',{name:'暂停',exact:true}).click();await delay(150);
   await page.locator('video').evaluate(v=>v.currentTime=3);
   await page.waitForFunction(()=>{const v=document.querySelector('video');return !v.seeking&&v.currentTime>=3;});
   const mediaTime=await page.locator('video').evaluate(v=>new Promise(resolve=>{v.requestVideoFrameCallback((_,m)=>resolve(m.mediaTime));v.currentTime=3.1;}));
