@@ -109,6 +109,7 @@ def main():
         '应用启动后自动检查并下载更新，准备好后点击「重启更新」，无需手动下载。\n'
         '显示、系统和关于设置为全局设置；当前功能的账号和偏好单独保存。\n'
         '用户数据位于 %LOCALAPPDATA%\\LazyBuddy，账号凭据由 Windows 安全存储管理。\n'
+        '同一 Windows 用户下，开发版与安装版共用已安装的功能和运行时，移动安装目录无需重复下载。\n'
         '第三方许可见 licenses；开发分发状态见 NOTICE.txt（若存在）。\n', encoding='utf-8')
     if (ROOT / 'LICENSE').is_file():
         shutil.copyfile(ROOT / 'LICENSE', directory / 'LICENSE')

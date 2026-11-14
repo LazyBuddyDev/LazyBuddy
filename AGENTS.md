@@ -14,6 +14,8 @@
 - 优先CLI、连接器和文件操作；仅真实界面、焦点或窗口行为需要时才用computer-use，集中完成必要交互。后台构建、下载、CI跟踪不反复截图，不占前台，不停止用户实例来腾出文件占用。
 - 临时文件及时清理，使用tmp或明确的target/qa-*目录；清理前核对用途、引用、占用、绝对路径和链接边界。不删除未跟踪源码、用户配置、凭据或私有SDK。禁止cargo clean及整体清空target；只清理核实后的子目录，忽略规则不能代替实际清理。
 - 验证报告、验收截图和录屏统一输出到已忽略的tmp目录，按用途放入tmp/verification-*等子目录；不再创建target/verification-*。长期有效结论归并到docs或对应TASKS条目，临时证据可按用户要求清理。
+- 宿主构建统一使用标准target/debug与target/release，不沿用原型qa-*构建目录。功能服务的私有工具链、SDK、下载缓存由所属独立仓库管理，分别放target/toolchains、target/sdks、target/downloads与target/cache，不在宿主内混放业务构建环境。
+- 同一Windows用户下，开发版与安装版默认共用%LOCALAPPDATA%/LazyBuddy/modules中的已安装功能与运行时，不按EXE位置重复安装，也不依赖工作区SDK才能运行。隔离验证显式指定独立实例、数据目录与凭据scope；安装包保留可信目录配置，模块仍通过校验后按需安装。
 - target/service-exports中已初始化的独立Git仓库属于待交付源码；清理前核对其提交与远端状态，不把尚未推送的仓库当作可重建包体删除。源码重新导出只使用新目录，不覆盖已初始化仓库。
 - 用户暂不在场且授权自主推进时，普通取舍由执行端决定；确需人决定的问题写tmp/lazybuddy-decisions.md，继续其他可推进工作，不把可逆实现选择升级为阻塞。
 
