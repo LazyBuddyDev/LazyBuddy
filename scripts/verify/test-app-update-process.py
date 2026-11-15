@@ -23,13 +23,13 @@ binaries=args.host_dir.resolve()
 def info(directory):
     files={path.relative_to(directory).as_posix():hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(directory.rglob('*')) if path.is_file() and path.name!='build-info.json'}
     build=hashlib.sha256(json.dumps(files,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
-    result=dict(schema=1,version='2.0.0',build=build,files=files)
+    result=dict(schema=1,version='2.0.1',build=build,files=files)
     (directory/'build-info.json').write_text(json.dumps(result),encoding='utf-8')
     return result
 with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=TMP) as temporary:
     root=Path(temporary);install=root/'install';data=root/'data'
     install.mkdir()
-    for name in ('lazybuddy.exe','lazybuddy-cli.exe','lazybuddy-updater.exe','module-catalog.json','app-update-source.json'):
+    for name in ('lazybuddy.exe','lazybuddy-cli.exe','lazybuddy-updater.exe','uninstall.exe','module-catalog.json','app-update-source.json'):
         shutil.copyfile(binaries/name,install/name)
     directory=None
     if args.online:
@@ -47,7 +47,7 @@ with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=TMP) as tempora
         assert old_info['version']==new_info['version'] and old_info['build']!=new_info['build']
         directory=root/'updates'/new_info['build'];directory.mkdir(parents=True)
         shutil.move(str(stage),str(directory/'stage'))
-        manifest=dict(schema=1,target='windows-x86_64',version='2.0.0',build=new_info['build'],url='https://example.invalid/app.zip',bytes=1,sha256='0'*64,host_sha256=new_info['files']['lazybuddy.exe'])
+        manifest=dict(schema=1,target='windows-x86_64',version='2.0.1',build=new_info['build'],url='https://example.invalid/app.zip',bytes=1,sha256='0'*64,host_sha256=new_info['files']['lazybuddy.exe'])
         payload=json.dumps(manifest).encode()
         (directory/'manifest.json').write_bytes(payload);(directory/'manifest.json.sig').write_bytes(key.sign(payload))
     data.mkdir();(data/'modules').mkdir();(data/'modules/keep').write_text('module data',encoding='utf-8')
@@ -103,11 +103,7 @@ with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=TMP) as tempora
         assert (data/'modules/keep').read_text(encoding='utf-8')=='module data'
         preferences=json.loads((data/'web-preferences.json').read_text(encoding='utf-8'))
         assert preferences['dark'] is True and preferences['auto_update'] is False
-        if new_info['version'] != '2.0.0':
-            deadline=time.monotonic()+10
-            while not (install/'uninstall.sha256').exists() and time.monotonic()<deadline:time.sleep(.1)
-            assert (install/'uninstall.exe').is_file()
-            assert hashlib.sha256((install/'uninstall.exe').read_bytes()).hexdigest()==(install/'uninstall.sha256').read_text()
+        assert hashlib.sha256((install/'uninstall.exe').read_bytes()).hexdigest()==new_info['files']['uninstall.exe']
         deadline=time.monotonic()+10
         while (directory/'stage').exists() and time.monotonic()<deadline:time.sleep(.1)
         assert not (directory/'stage').exists() and not (directory/'backup').exists()

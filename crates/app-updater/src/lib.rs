@@ -18,10 +18,11 @@ use std::{
 
 pub const SOURCE: &str = "app-update-source.json";
 const INFO: &str = "build-info.json";
-const REQUIRED: [&str; 5] = [
+const REQUIRED: [&str; 6] = [
     "lazybuddy.exe",
     "lazybuddy-cli.exe",
     "lazybuddy-updater.exe",
+    "uninstall.exe",
     SOURCE,
     "module-catalog.json",
 ];

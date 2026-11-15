@@ -1,33 +1,8 @@
 //! Inventory-based uninstall. Shared settings and credentials are never removed.
 use super::*;
 use lazybuddy_host_control::{Request, call_sync};
-use std::{io::Write, time::SystemTime};
+use std::time::SystemTime;
 use windows_sys::{Win32::UI::WindowsAndMessaging::*, core::w};
-
-const LAUNCHER: &str = "uninstall.exe";
-const RECEIPT: &str = "uninstall.sha256";
-
-pub fn ensure(install: &Path) -> io::Result<()> {
-    if !install.join(INFO).exists() || install.join(LAUNCHER).exists() {
-        return Ok(());
-    }
-    let info = build_info(install)?;
-    let source = install.join("lazybuddy-updater.exe");
-    let mut output = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(install.join(LAUNCHER))?;
-    let result = (|| {
-        io::copy(&mut fs::File::open(source)?, &mut output)?;
-        output.flush()?;
-        fs::write(install.join(RECEIPT), &info.files["lazybuddy-updater.exe"])
-    })();
-    drop(output);
-    if result.is_err() {
-        let _ = fs::remove_file(install.join(LAUNCHER));
-    }
-    result
-}
 
 fn inventory(install: &Path) -> io::Result<Vec<PathBuf>> {
     let info = build_info(install)?;
@@ -37,22 +12,6 @@ fn inventory(install: &Path) -> io::Result<Vec<PathBuf>> {
         .map(|name| destination(install, name))
         .collect::<io::Result<Vec<_>>>()?;
     files.push(destination(install, INFO)?);
-    let receipt = install.join(RECEIPT);
-    if receipt.exists() {
-        plain(&receipt)?;
-        if fs::metadata(&receipt)?.len() != 64 {
-            return Err(invalid("invalid uninstall receipt"));
-        }
-        let expected = fs::read_to_string(&receipt)?;
-        let launcher = install.join(LAUNCHER);
-        plain(&launcher)?;
-        if !hex(&expected) || file_digest(&launcher)? != expected {
-            return Err(invalid(
-                "uninstall launcher changed; installation preserved",
-            ));
-        }
-        files.extend([launcher, receipt]);
-    }
     Ok(files)
 }
 
@@ -237,10 +196,7 @@ pub fn start(quiet: bool, mut modules: bool) -> io::Result<()> {
         std::process::id()
     ));
     fs::create_dir(&stage)?;
-    fs::copy(
-        install.join("lazybuddy-updater.exe"),
-        stage.join("remove.exe"),
-    )?;
+    fs::copy(install.join("uninstall.exe"), stage.join("remove.exe"))?;
     fs::write(
         stage.join("job.json"),
         serde_json::to_vec(&Removal {
@@ -258,8 +214,13 @@ pub fn start(quiet: bool, mut modules: bool) -> io::Result<()> {
         .spawn()?;
     let deadline = Instant::now() + Duration::from_secs(10);
     while !stage.join("ready").exists() {
-        if child.try_wait()?.is_some() || Instant::now() > deadline {
+        if child.try_wait()?.is_some() {
             return Err(invalid("uninstall helper could not start"));
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(invalid("uninstall helper startup timed out"));
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -284,7 +245,7 @@ pub fn apply(job: &Path) -> io::Result<()> {
         inventory(&removal.install)?;
         windows::wait_parent(
             removal.parent,
-            &removal.install.join("lazybuddy-updater.exe"),
+            &removal.install.join("uninstall.exe"),
             &stage.join("ready"),
         )?;
         stop_host(&removal.install, &stage)?;
@@ -356,12 +317,11 @@ mod tests {
         let root = Temporary::new();
         let install = root.0.join("app");
         fixture(&install, "fixture");
-        ensure(&install).unwrap();
         fs::write(install.join("personal.txt"), b"keep").unwrap();
         remove_files(&install).unwrap();
         assert_eq!(fs::read(install.join("personal.txt")).unwrap(), b"keep");
         assert!(!install.join("lazybuddy.exe").exists());
-        assert!(!install.join(LAUNCHER).exists());
+        assert!(!install.join("uninstall.exe").exists());
     }
     #[test]
     fn changed_or_linked_files_preserve_whole_installation() {
@@ -383,13 +343,13 @@ mod tests {
         fs::remove_file(install.join("lazybuddy-cli.exe")).unwrap();
     }
     #[test]
-    fn launcher_creation_never_overwrites_existing_entry() {
+    fn changed_uninstaller_preserves_entire_installation() {
         let root = Temporary::new();
         let install = root.0.join("app");
         fixture(&install, "fixture");
-        fs::write(install.join(LAUNCHER), b"user file").unwrap();
-        ensure(&install).unwrap();
-        assert_eq!(fs::read(install.join(LAUNCHER)).unwrap(), b"user file");
+        fs::write(install.join("uninstall.exe"), b"changed").unwrap();
+        assert!(remove_files(&install).is_err());
+        assert!(install.join("lazybuddy.exe").exists());
     }
     #[test]
     fn startup_cleanup_matches_only_this_installation() {

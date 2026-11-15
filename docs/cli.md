@@ -25,7 +25,7 @@ $env:LAZYBUDDY_DATA_DIR=(Join-Path (Get-Location) 'tmp/profiles/local-qa')
 
 ## 功能包
 
-卸载整个应用使用首次启动后生成在EXE旁的`uninstall.exe`，可选择是否回收已下载的共享模块；设置和账号默认保留。详见[Windows卸载](uninstall.md)。
+卸载整个应用使用安装目录内的`uninstall.exe`，可选择是否回收已下载的共享模块；设置和账号默认保留。详见[Windows卸载](uninstall.md)。
 
 ```powershell
 .\target\debug\lazybuddy-cli.exe modules list

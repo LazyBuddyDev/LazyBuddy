@@ -2,7 +2,7 @@
 
 文件归位与命名直接查看[文件放置规范](docs/file-layout.md)；专题入口见[文档导航](docs/README.md)。新增、移动和清理文件前先按该规范确定位置。
 
-适用于整个仓库。LazyBuddy 是 Windows x64 的 Tauri 2/Svelte 5/TypeScript + Rust 桌面宿主，功能与运行时按需安装；目前不支持 macOS。平台行为集中在 `apps/desktop/src-tauri/src/platform.rs`，未来平台通过该边界扩展，不保留失效的旧入口。无 BriefDock 数据迁移或兼容要求，不自动删除本机旧数据与凭据。
+适用于整个仓库。LazyBuddy 是 Windows x64 的 Tauri 2/Svelte 5/TypeScript + Rust 桌面宿主，功能与运行时按需安装；目前不支持 macOS。平台行为集中在 `apps/desktop/src-tauri/src/platform.rs`，未来平台通过该边界扩展，不保留失效的旧入口。当前按全新产品交付，无此前旧包/BriefDock的数据迁移或兼容要求，不为旧包增加引导和回退分支；也不因此自动删除本机数据与凭据。
 
 ## 开发与协作
 

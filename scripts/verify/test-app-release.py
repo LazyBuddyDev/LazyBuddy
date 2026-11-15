@@ -16,6 +16,20 @@ spec.loader.exec_module(base)
 
 
 class Release(unittest.TestCase):
+    def test_package_contains_uninstaller_before_first_launch(self):
+        with tempfile.TemporaryDirectory(prefix='qa-uninstall-bundle-',dir=TMP) as temporary:
+            output=Path(temporary);directory=output/'LazyBuddy';directory.mkdir()
+            for name in ['lazybuddy.exe','lazybuddy-cli.exe','lazybuddy-updater.exe','uninstall.exe','app-update-source.json','module-catalog.json']:
+                (directory/name).write_bytes(('fixture:'+name).encode())
+            files={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in directory.iterdir()}
+            build=hashlib.sha256(json.dumps(files,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+            (directory/'build-info.json').write_text(json.dumps(dict(schema=1,version='2.0.1',build=build,files=files)),encoding='utf-8')
+            archive=base.write_archive(directory,output)
+            with zipfile.ZipFile(archive) as package:self.assertIn('LazyBuddy/uninstall.exe',package.namelist())
+            self.assertEqual(base.application_manifest(archive,'https://example.invalid/app.zip')['build'],build)
+            (directory/'uninstall.exe').unlink();archive=base.write_archive(directory,output)
+            with self.assertRaises(KeyError):base.application_manifest(archive,'https://example.invalid/app.zip')
+
     def test_frontend_distribution_retains_runtime_licenses_and_ignores_dev_packages(self):
         with tempfile.TemporaryDirectory(prefix='qa-licenses-',dir=TMP) as temporary:
             root=Path(temporary); source=root/'node_modules/runtime'; source.mkdir(parents=True)
@@ -37,7 +51,7 @@ class Release(unittest.TestCase):
                 key.verify(path.with_name(path.name+'.sig').read_bytes(),path.read_bytes())
 
     def bundle(self, directory, marker, missing=False, corrupt=False):
-        names = ['lazybuddy.exe', 'lazybuddy-cli.exe', 'lazybuddy-updater.exe', 'app-update-source.json', 'module-catalog.json']
+        names = ['lazybuddy.exe', 'lazybuddy-cli.exe', 'lazybuddy-updater.exe', 'uninstall.exe', 'app-update-source.json', 'module-catalog.json']
         if missing:
             names.remove('lazybuddy-updater.exe')
         data = {name: (marker+name).encode() for name in names}

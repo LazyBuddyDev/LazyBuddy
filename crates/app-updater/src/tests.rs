@@ -211,3 +211,25 @@ fn active_update_cache_is_not_pruned() {
     prune(&cache, None);
     assert!(!directory.exists());
 }
+
+#[test]
+fn update_replaces_and_rolls_back_uninstaller_with_host() {
+    let temp = Temporary::new();
+    let install = temp.0.join("install");
+    let stage = temp.0.join("stage");
+    let old = fixture(&install, "old");
+    let new = fixture(&stage, "new");
+    let info = verify_stage(&stage, &new).unwrap();
+    let mut transaction = Transaction::new(&install, &temp.0.join("backup")).unwrap();
+    transaction.replace(&stage, &info).unwrap();
+    assert_eq!(
+        fs::read(install.join("uninstall.exe")).unwrap(),
+        fs::read(stage.join("uninstall.exe")).unwrap()
+    );
+    transaction.rollback().unwrap();
+    assert!(current(&install, &old));
+    assert_eq!(
+        fs::read(install.join("uninstall.exe")).unwrap(),
+        b"old:uninstall.exe"
+    );
+}

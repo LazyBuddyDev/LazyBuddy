@@ -8,6 +8,12 @@ import subprocess
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+def write_archive(directory, output):
+    archive = output / 'LazyBuddy-windows-x86_64.zip'
+    with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as package:
+        for path in sorted(directory.rglob('*')):
+            if path.is_file():package.write(path,path.relative_to(output).as_posix())
+    return archive
 
 
 def application_manifest(archive, url):
@@ -17,7 +23,7 @@ def application_manifest(archive, url):
         info = json.loads(package.read('LazyBuddy/build-info.json'))
         files = info['files']
         build = hashlib.sha256(json.dumps(files, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
-        required = ('lazybuddy.exe', 'lazybuddy-cli.exe', 'lazybuddy-updater.exe', 'app-update-source.json', 'module-catalog.json')
+        required = ('lazybuddy.exe', 'lazybuddy-cli.exe', 'lazybuddy-updater.exe', 'uninstall.exe', 'app-update-source.json', 'module-catalog.json')
         if info['schema'] != 1 or info['build'] != build or any(name not in files for name in required):
             raise ValueError('incomplete application build')
         for name, expected in files.items():
@@ -91,7 +97,7 @@ def main():
         raise ValueError('new output directory inside target required')
     directory = output / 'LazyBuddy'
     directory.mkdir(parents=True)
-    for filename in ('lazybuddy.exe', 'lazybuddy-cli.exe', 'lazybuddy-updater.exe'):
+    for filename in ('lazybuddy.exe', 'lazybuddy-cli.exe', 'lazybuddy-updater.exe', 'uninstall.exe'):
         shutil.copyfile((args.binary_dir or ROOT / 'target' / args.profile) / filename, directory / filename)
     catalog_source = args.catalog_source or ROOT / 'module-catalog.json'
     source = json.loads(catalog_source.read_text(encoding='utf-8'))
@@ -107,7 +113,7 @@ def main():
         '开发者也可在退出宿主后使用：\n'
         'lazybuddy-cli modules install-local <功能包目录>\n\n'
         '应用启动后自动检查并下载更新，准备好后点击「重启更新」，无需手动下载。\n'
-        '首次启动后在本目录生成 uninstall.exe；双击可卸载主程序，按确认可选移除已下载功能，保留账号与设置。\n'
+        '本目录附带 uninstall.exe；双击可卸载主程序，按确认可选移除已下载功能，保留账号与设置。\n'
         '显示、系统和关于设置为全局设置；当前功能的账号和偏好单独保存。\n'
         '用户数据位于 %LOCALAPPDATA%\\LazyBuddy，账号凭据由 Windows 安全存储管理。\n'
         '同一 Windows 用户下，开发版与安装版共用已安装的功能和运行时，移动安装目录无需重复下载。\n'
@@ -123,16 +129,13 @@ def main():
     import tomllib
     version = tomllib.loads((ROOT / 'apps/desktop/src-tauri/Cargo.toml').read_text(encoding='utf-8'))['package']['version']
     (directory / 'build-info.json').write_text(json.dumps(dict(schema=1, version=version, build=build, files=files), ensure_ascii=False, indent=2), encoding='utf-8')
-    archive = output / 'LazyBuddy-windows-x86_64.zip'
-    with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as package:
-        for path in sorted(directory.rglob('*')):
-            if path.is_file():
-                package.write(path, path.relative_to(output).as_posix())
+    archive = write_archive(directory, output)
     with archive.open('rb') as file:
-        digest = hashlib.file_digest(file, 'sha256').hexdigest()
-    result = dict(archive=str(archive), bytes=archive.stat().st_size, sha256=digest, optional_modules_bundled=False, build=build)
+        digest = hashlib.file_digest(file,'sha256').hexdigest()
+    result = dict(archive=str(archive),bytes=archive.stat().st_size,sha256=digest,optional_modules_bundled=False,build=build)
+    manifest = application_manifest(archive,args.download_url)
     (output / 'package.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
-    (output / 'app-update.json').write_bytes(json.dumps(application_manifest(archive, args.download_url), indent=2).encode('utf-8'))
+    (output / 'app-update.json').write_bytes(json.dumps(manifest, indent=2).encode('utf-8'))
     print(json.dumps(result))
 
 
