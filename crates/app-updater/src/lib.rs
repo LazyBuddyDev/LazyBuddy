@@ -1,6 +1,7 @@
 //! Signed portable-host updates. Feature packages and user data are never replaced.
 #[cfg(test)]
 mod tests;
+pub mod uninstall;
 mod windows;
 use lazybuddy_module_contract::{package_path, version};
 use lazybuddy_module_manager::package::{Source, download_archive, download_signed_payload};
@@ -145,14 +146,12 @@ fn destination(root: &Path, name: &str) -> io::Result<PathBuf> {
     }
     Ok(path)
 }
-pub fn verify_stage(stage: &Path, manifest: &Manifest) -> io::Result<BuildInfo> {
+fn build_info(stage: &Path) -> io::Result<BuildInfo> {
     let info: BuildInfo = read_json(&stage.join(INFO))?;
     if info.schema != 1
-        || info.version != manifest.version
-        || info.build != manifest.build
+        || !version(&info.version)
         || info.files.len() > 10000
         || digest(&serde_json::to_vec(&info.files).map_err(io::Error::other)?) != info.build
-        || info.files.get("lazybuddy.exe") != Some(&manifest.host_sha256)
         || REQUIRED.iter().any(|name| !info.files.contains_key(*name))
     {
         return Err(invalid("application build mismatch"));
@@ -161,6 +160,16 @@ pub fn verify_stage(stage: &Path, manifest: &Manifest) -> io::Result<BuildInfo> 
         if !hex(expected) || file_digest(&destination(stage, name)?)? != *expected {
             return Err(invalid("application file digest mismatch"));
         }
+    }
+    Ok(info)
+}
+pub fn verify_stage(stage: &Path, manifest: &Manifest) -> io::Result<BuildInfo> {
+    let info = build_info(stage)?;
+    if info.version != manifest.version
+        || info.build != manifest.build
+        || info.files.get("lazybuddy.exe") != Some(&manifest.host_sha256)
+    {
+        return Err(invalid("application build mismatch"));
     }
     Ok(info)
 }

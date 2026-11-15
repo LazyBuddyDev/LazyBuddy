@@ -52,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=TMP) as tempora
         (directory/'manifest.json').write_bytes(payload);(directory/'manifest.json.sig').write_bytes(key.sign(payload))
     data.mkdir();(data/'modules').mkdir();(data/'modules/keep').write_text('module data',encoding='utf-8')
     (data/'web-preferences.json').write_text(json.dumps(dict(auto_update=False,dark=True)),encoding='utf-8')
-    env=dict(os.environ,LAZYBUDDY_INSTANCE='qa-update-'+uuid.uuid4().hex,LAZYBUDDY_DATA_DIR=str(data))
+    env=dict(os.environ,LAZYBUDDY_INSTANCE='qa-update-'+uuid.uuid4().hex,LAZYBUDDY_DATA_DIR=str(data),WEBVIEW2_USER_DATA_FOLDER=str(root/'webview'))
     old=subprocess.Popen([str(install/'lazybuddy.exe'),'--background'],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=subprocess.CREATE_NO_WINDOW)
     helper=None
     def rpc(command,required=True):
@@ -103,6 +103,11 @@ with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=TMP) as tempora
         assert (data/'modules/keep').read_text(encoding='utf-8')=='module data'
         preferences=json.loads((data/'web-preferences.json').read_text(encoding='utf-8'))
         assert preferences['dark'] is True and preferences['auto_update'] is False
+        if new_info['version'] != '2.0.0':
+            deadline=time.monotonic()+10
+            while not (install/'uninstall.sha256').exists() and time.monotonic()<deadline:time.sleep(.1)
+            assert (install/'uninstall.exe').is_file()
+            assert hashlib.sha256((install/'uninstall.exe').read_bytes()).hexdigest()==(install/'uninstall.sha256').read_text()
         deadline=time.monotonic()+10
         while (directory/'stage').exists() and time.monotonic()<deadline:time.sleep(.1)
         assert not (directory/'stage').exists() and not (directory/'backup').exists()

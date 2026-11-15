@@ -11,6 +11,7 @@
 | 选择局部验证入口 | [定向测试](testing.md) |
 | 维护模块包与可信下载目录 | [模块分发](module-distribution.md) |
 | 维护主程序更新与替换 | [应用更新](app-updates.md) |
+| 卸载主程序及可选功能资源 | [Windows卸载](uninstall.md) |
 
 业务接口分别由[新闻服务](https://github.com/LazyBuddyDev/news-service/blob/main/docs/module-api.md)和[红果服务](https://github.com/LazyBuddyDev/hongguo-service/blob/main/docs/module-api.md)维护，宿主不保留整份副本。
 

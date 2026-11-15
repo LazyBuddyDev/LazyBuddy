@@ -243,6 +243,15 @@ fn main() {
             playback::playback_call
         ])
         .setup(|app| {
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let result = std::env::current_exe().and_then(|path| {
+                    lazybuddy_app_updater::uninstall::ensure(path.parent().unwrap())
+                });
+                if let Err(error) = result {
+                    let _ = handle.emit("shell-error", format!("无法准备卸载程序：{error}"));
+                }
+            });
             let window = app.get_webview_window("main").unwrap();
             dock::attach(&window)?;
             tray::install(app)?;

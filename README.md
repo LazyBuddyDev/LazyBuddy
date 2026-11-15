@@ -15,6 +15,8 @@ Windows x64 桌面搭子。Tauri 2 + Svelte 5 Web 宿主负责界面、窗口和
 
 脚本使用 `npm.cmd`，不受 PowerShell 的 npm.ps1 执行策略影响。前端资源嵌入 EXE，可信目录配置与更新配置复制到 EXE 旁。构建失败不启动旧产物；正在运行的程序请从托盘「退出」后再构建。关闭按钮隐藏到托盘，托盘左键恢复，拖到左右屏幕边缘收起为圆形 Logo。
 
+卸载整个应用时，双击首次启动后生成在EXE旁的 `uninstall.exe`；可选移除已下载模块，设置和账号保留。详见[Windows卸载](docs/uninstall.md)。
+
 在「功能」中按需安装、更新、卸载；根页面下拉只显示已安装功能。新闻、账号和媒体请求仅在对应可见页面执行，隐藏停止读取视频，恢复后不自动播放。
 
 当前正式版为[LazyBuddy 2.0.0](https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v2.0.0)，内置可信Web模块目录，可安装新闻0.1.0与红果0.2.6（自动安装Python依赖）。应用通过签名源 `updates/web-windows-x86_64.json` 获取更新；旧客户端清单提供一次引导升级。首次播放默认有声，主动静音会保留，拖动进度只在松手时提交。真实播放已由用户验收，已知上游起播错误与资源测量边界见[TASKS](TASKS.md)和发布说明。

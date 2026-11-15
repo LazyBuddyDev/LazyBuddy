@@ -2,9 +2,9 @@ use super::*;
 use ring::signature::{Ed25519KeyPair, KeyPair};
 use std::os::windows::fs::OpenOptionsExt;
 
-struct Temporary(PathBuf);
+pub(super) struct Temporary(pub(super) PathBuf);
 impl Temporary {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tmp")
@@ -28,7 +28,7 @@ fn concurrent_fixture_directories_are_distinct() {
     let unique: std::collections::BTreeSet<_> = directories.iter().map(|item| &item.0).collect();
     assert_eq!(unique.len(), directories.len());
 }
-fn fixture(directory: &Path, label: &str) -> Manifest {
+pub(super) fn fixture(directory: &Path, label: &str) -> Manifest {
     fs::create_dir_all(directory).unwrap();
     let mut files = BTreeMap::new();
     for name in REQUIRED {
