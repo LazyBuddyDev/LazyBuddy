@@ -139,8 +139,8 @@ try{
   await page.getByRole('heading',{name:'红果账号',exact:true}).waitFor();
   await page.getByRole('button',{name:'退出登录',exact:true}).click();
   await page.getByRole('button',{name:'登录',exact:true}).waitFor();
-  const logged=(await readFile(path.join(profile,'host-data/services/hongguo/logs/media.log'),'utf8')).trim().split('\n').map(x=>JSON.parse(x));
-  assert.ok(logged.some(row=>row.event==='browser_media_error'&&row.browser_code===4));
+  const logged=await readFile(path.join(profile,'host-data/logs/LB.log'),'utf8');
+  assert.ok(logged.includes('browser_media_error')&&logged.includes('browser_code：4'));
   report={initial,seek,mediaTime,restored,drag_seek_stable:true,default_unmuted:true,legacy_default_mute_cleared:true,structured_error_log:true,expandable_error_details:true,favorites_cached:true,yellow_filled_star:true,pin_toggle:true,direct_setting_persists:true,numeric_qualities_and_series_switch:true,media_error_retry:true,module_back:'content',qr_cancel:true,qr_stopped_in_global_settings:true,account_logout:true,scope:'fixture QR/account workflow and browser resource; no real account or upstream network'};
   await invoke('window_action',{action:'quit'});
   await new Promise((resolve,reject)=>{if(child.exitCode!==null)return resolve();const timer=setTimeout(()=>reject(Error('prototype exit timeout')),15000);child.once('exit',()=>{clearTimeout(timer);resolve();});});

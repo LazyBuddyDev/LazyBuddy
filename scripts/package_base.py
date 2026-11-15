@@ -80,6 +80,8 @@ def notices(destination, names=('lazybuddy', 'lazybuddy-cli', 'lazybuddy-app-upd
                 shutil.copyfile(path, directory / path.name)
         records.append(dict(name=package['name'], version=package['version'], license=package['license'], repository=package['repository']))
     shutil.copytree(ROOT / 'assets/button-icons', destination / 'fluent-icons', ignore=shutil.ignore_patterns('*.svg', '*.png', '*.bin'))
+    shutil.copytree(ROOT / 'assets/installer', destination / 'installer')
+    shutil.copytree(ROOT / 'assets/source-icons', destination / 'news-source-icons', ignore=shutil.ignore_patterns('*.png', '*.ico'))
     records.extend(frontend_notices(destination / 'npm'))
     (destination / 'dependencies.json').write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding='utf-8')
 
@@ -107,7 +109,7 @@ def main():
     shutil.copyfile(ROOT / 'app-update-source.json', directory / 'app-update-source.json')
     (directory / 'README.txt').write_text(
         'LazyBuddy · Windows x64\n\n'
-        '运行 lazybuddy.exe 打开桌面搭子。基础包只包含主程序与 CLI，功能需要单独安装。\n'
+        '通过 LazyBuddy-Setup-windows-x86_64.exe 安装后运行 lazybuddy.exe。功能需要单独安装。\n'
         '附有正式可信目录配置时，可在「功能」中下载安装或卸载新闻、短剧。\n'
         '在顶部「功能」中安装新闻或红果，安装完成后从「选择功能」进入，无需重启。\n'
         '开发者也可在退出宿主后使用：\n'

@@ -7,6 +7,7 @@ use std::{io, path::PathBuf, time::Duration};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 pub const MAX_REQUEST: usize = 65536;
+pub mod logs;
 pub const TIMEOUT: Duration = Duration::from_secs(10);
 pub type Reply = tokio::sync::oneshot::Sender<Value>;
 #[derive(Clone, Debug, Deserialize, Serialize)]

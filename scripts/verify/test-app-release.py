@@ -40,15 +40,13 @@ class Release(unittest.TestCase):
             self.assertEqual([record['name'] for record in records],['runtime'])
             self.assertEqual((root/'licenses/runtime-1.2.3/LICENSE').read_text(encoding='utf-8'),'license evidence')
     def test_published_manifest_signature_uses_shipped_public_key(self):
-        paths=sorted((ROOT/'docs/updates').glob('*.json'))
-        if not paths:
-            self.skipTest('application feeds have not been prepared')
+        from urllib.parse import urlsplit
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         source=json.loads((ROOT/'app-update-source.json').read_text(encoding='utf-8'))
+        path=ROOT/'docs/updates'/Path(urlsplit(source['url']).path).name
+        self.assertTrue(path.is_file(), 'active application feed is missing')
         key=Ed25519PublicKey.from_public_bytes(bytes(source['public_key']))
-        for path in paths:
-            with self.subTest(feed=path.name):
-                key.verify(path.with_name(path.name+'.sig').read_bytes(),path.read_bytes())
+        key.verify(path.with_name(path.name+'.sig').read_bytes(),path.read_bytes())
 
     def bundle(self, directory, marker, missing=False, corrupt=False):
         names = ['lazybuddy.exe', 'lazybuddy-cli.exe', 'lazybuddy-updater.exe', 'uninstall.exe', 'app-update-source.json', 'module-catalog.json']

@@ -1,18 +1,25 @@
 <script lang="ts">
   import {onDestroy, tick, untrack, type Snippet} from 'svelte';
   import {invoke} from '@tauri-apps/api/core';
-  import Icon from './Icon.svelte';
+  import Icon from './Icon.svelte';import Cover from './Cover.svelte';
   import Switch from './Switch.svelte';
   import {formatTime} from './lifecycle';
-  import {loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails,playerPreferences,type Account,type Item,type Playback} from './hongguo';
+  import {coverPixels,watchedLabel,filterFavorites,loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails,playerPreferences,type CoverData,type Account,type Item,type Playback} from './hongguo';
   let {active,showing,accountOnly,notice,navigation}: {active:boolean;showing:boolean;accountOnly:boolean;notice:(text:string)=>void;navigation:Snippet}=$props();
   function savedPlayer(){try{return playerPreferences(JSON.parse(localStorage.getItem('lazybuddy.hongguo.player')??'null'));}catch{return playerPreferences(null);}}
   const saved=savedPlayer();let defaultFavorites=$state(saved.favorites);
   let account=$state<Account>({state:'idle',name:''});
   let tab=$state<'search'|'favorites'>(saved.favorites?'favorites':'search');
   let mode=$state<'list'|'player'>('list');
+  let favoritesView=$state(localStorage.getItem('lazybuddy.hongguo.favoritesView')==='grid'?'grid':'list');
+  let searchView=$state(localStorage.getItem('lazybuddy.hongguo.searchView')==='grid'?'grid':'list');
+  let listView=$derived(tab==='search'?searchView:favoritesView);
+  function toggleView(){const value=listView==='list'?'grid':'list';if(tab==='search')searchView=value;else favoritesView=value;localStorage.setItem(`lazybuddy.hongguo.${tab==='search'?'searchView':'favoritesView'}`,value);}
+  let favoritesQuery=$state('');let favoritesRevision=$state(0);
   let query=$state('');let searched=$state(false);let page=1;
   let items=$state<Item[]>([]);let favorites=$state<Item[]>([]);let hasMore=$state(false);let busy=$state(false);
+  let visibleFavorites=$derived(filterFavorites(favorites,favoritesQuery));
+  let visibleItems=$derived(tab==='search'?items:visibleFavorites);
   let selected=$state<Item>();let episode=$state(1);let episodes=$state<number[]>([]);let quality=$state('720p');let qualities=$state<string[]>([]);
   let source=$state<string>();let lease:number|undefined;let video=$state<HTMLVideoElement>(undefined!);
   let playing=$state(false);let position=$state(0);let duration=$state(0);let muted=$state(saved.mute);let volume=$state(saved.volume);let speed=$state(saved.speed);
@@ -20,8 +27,18 @@
   let playerLoading=$state(false);let seeking=$state<number|null>(null);
   let playbackError=$state(false);
   let watched=0;let lastCheckpoint=0;let epoch=0;let playRequest=0;let live=$state(false);let timer:ReturnType<typeof setTimeout>|undefined;let frame:number|undefined;
-  let cancelMetadata:(()=>void)|undefined;let history:Record<string,{episode:number;time:number}>={};
+  let cancelMetadata:(()=>void)|undefined;let history=$state<Record<string,{episode:number;time:number}>>({});
   let opening:Promise<Playback>|undefined;
+  const coverCache=new Map<string,CoverData>();let coverEpoch=0;
+  $effect(()=>{if(!(active&&live&&mode==='list'&&tab==='favorites'&&favoritesView==='grid'))coverEpoch++;});
+  async function readCover(id:string){
+    const cache=tab==='favorites';const cached=cache?coverCache.get(id):undefined;if(cached)return cached;
+    const ticket=epoch;const generation=coverEpoch;
+    const data=await raw<CoverData>('cover.read',{series:id});
+    if(!coverPixels(data))throw new Error('invalid_cover');
+    if(cache&&valid(ticket)&&generation===coverEpoch){coverCache.set(id,data);if(coverCache.size>64)coverCache.delete(coverCache.keys().next().value!);}
+    return data;
+  }
   let favoritesReady=false;let favoritesPending=false;
   let favoriteChange=$state<{id:string;value:boolean}|null>(null);
   function isFavorite(id:string|undefined){return favoriteValue(favorites,favoriteChange,id);}
@@ -58,6 +75,7 @@
   }
   async function checkpoint(final:boolean){
     if(lease===undefined||!duration||watched<=0)return;
+    if(selected)history={...history,[selected.id]:{episode,time:watched}};
     const data=await raw<Playback>('playback.checkpoint',{session:lease,position:watched,duration,final});
     if(data.progress_error)notice('观看进度保存失败');
   }
@@ -96,7 +114,7 @@
       lease=undefined;
       const data=await raw<Account>('account.restore');if(!valid(ticket))return;
       account=data;
-      if(data.state!=='signed_in'){favorites=[];favoritesReady=false;}
+      if(data.state!=='signed_in'){favorites=[];favoritesReady=false;coverCache.clear();coverEpoch++;}
       if(data.state==='signed_in')await signedIn(ticket);else if(data.error)notice(message(data.error));else notice('红果账号未登录');
     }catch(error){if(valid(ticket)){lease=undefined;if(mode==='player')playbackError=true;warn(error);}}finally{if(valid(ticket))busy=false;}
   }
@@ -106,7 +124,7 @@
     account=data;
     if(data.favorites_error)notice(message(data.favorites_error));
     if(favoritesPending&&data.operation!=='pending'){
-      if(!data.favorites_error&&data.favorites){favorites=data.favorites;favoritesReady=true;}
+      if(!data.favorites_error&&data.favorites){favorites=data.favorites;favoritesReady=true;favoritesRevision++;}
       favoritesPending=false;
       favoriteChange=null;
     }
@@ -131,7 +149,7 @@
     },1000);
   }
   async function login(){
-    if(!active||!live||busy)return;busy=true;const ticket=epoch;favorites=[];favoritesReady=false;favoritesPending=false;items=[];history={};
+    if(!active||!live||busy)return;busy=true;const ticket=epoch;favorites=[];favoritesReady=false;favoritesPending=false;items=[];history={};coverCache.clear();coverEpoch++;
     try{const data=await raw<Account>('account.login');if(!valid(ticket))return;account=data;notice('请使用红果短剧 App 扫码；登录信息安全保存在本机');poll(ticket);}
     catch(error){if(valid(ticket))warn(error);}finally{if(valid(ticket))busy=false;}
   }
@@ -140,7 +158,7 @@
     try{const data=await raw<Account>('account.cancel');if(valid(ticket))account=data;}catch(error){if(valid(ticket))warn(error);}
   }
   async function logout(){
-    clearTimeout(timer);detach();lease=undefined;mode='list';favorites=[];favoritesReady=false;favoritesPending=false;items=[];history={};
+    clearTimeout(timer);detach();lease=undefined;mode='list';favorites=[];favoritesReady=false;favoritesPending=false;items=[];history={};coverCache.clear();coverEpoch++;
     const ticket=epoch;
     try{const data=await raw<Account>('account.logout');if(valid(ticket)){account=data;notice('已退出账号并删除其保存凭据');}}catch(error){if(valid(ticket))warn(error);}
   }
@@ -187,6 +205,11 @@
     if(video.paused){try{await video.play();}catch(error){warn(error);}}
     else{video.pause();void checkpoint(true).catch(warn);}
   }
+  function setVolume(value:number){volume=Math.max(0,Math.min(1,Math.round(value*100)/100));}
+  function volumeKey(event:KeyboardEvent){
+    if(event.defaultPrevented||event.altKey||event.ctrlKey||event.metaKey||!live||mode!=='player'||event.target instanceof HTMLInputElement||event.target instanceof HTMLSelectElement||(event.target instanceof HTMLElement&&event.target.isContentEditable))return;
+    if(event.code==='ArrowUp'||event.code==='ArrowDown'){event.preventDefault();setVolume(volume+(event.code==='ArrowUp'?.05:-.05));}
+  }
   export function pause(){seeking=null;resetBoost();if(video)video.pause();stopFrames();playing=false;}
   function seekTo(target:number){
     position=target;frameTarget=target;seeking=null;frames();video.currentTime=target;
@@ -208,7 +231,8 @@
   async function changeQuality(value:string){requestedQuality=quality=value;position=video?.currentTime??position;await load(!source||!!video?.error||playing);}
   function ended(){if(!live||!active||playerLoading||!video.ended)return;playing=false;stopFrames();void checkpoint(true).catch(warn);const next=adjacent(episodes,episode,1);if(next!==undefined)void changeEpisode(next);}
 </script>
-<svelte:window onblur={resetBoost}/>
+
+<svelte:window onkeydown={volumeKey} onblur={resetBoost}/>
 
 {#if showing}
   {#if accountOnly}
@@ -217,7 +241,7 @@
     <section class="account-login"><button onclick={login} disabled={!active||!live||busy||loginPending(account.state)}>登录</button></section>
   {:else if mode==='player'}
     <section class="player-page"><div class="video-stage" class:paused={!playing}>
-      <video onpointerdown={hold} onpointerup={release} onpointercancel={resetBoost} onlostpointercapture={resetBoost} oncontextmenu={event=>event.preventDefault()} bind:this={video} src={source} preload="metadata" crossorigin="anonymous" playsinline bind:muted bind:volume ontimeupdate={()=>{if(video.readyState>0&&seeking===null&&frameTarget===null)position=video.currentTime;}} onplay={()=>{if(!live){video.pause();return;}playing=true;frames();}} onpause={()=>{seeking=null;resetBoost();playing=false;stopFrames();}} onended={ended} onerror={videoError} aria-label="红果短剧视频"><track kind="captions"/></video>
+      <video role="button" tabindex="0" onclick={toggle} onkeydown={event=>{if(event.code==='Enter'&&!event.repeat){event.preventDefault();void toggle();}}} onpointerdown={hold} onpointerup={release} onpointercancel={resetBoost} onlostpointercapture={resetBoost} oncontextmenu={event=>event.preventDefault()} bind:this={video} src={source} preload="metadata" crossorigin="anonymous" playsinline bind:muted bind:volume ontimeupdate={()=>{if(video.readyState>0&&seeking===null&&frameTarget===null)position=video.currentTime;}} onplay={()=>{if(!live){video.pause();return;}playing=true;frames();}} onpause={()=>{seeking=null;resetBoost();playing=false;stopFrames();}} onended={ended} onerror={videoError} aria-label="红果短剧视频"><track kind="captions"/></video>
       <div class="video-top"><button class="video-back" aria-label="返回列表" onclick={leavePlayer}><Icon name="arrow" size={17}/></button><span class="video-title">{selected?.title} 第{episode}集</span><button class="video-favorite" aria-label={isFavorite(selected?.id)?'取消收藏':'收藏'} onclick={()=>selected&&favorite(selected)} disabled={account.operation==='pending'}><Icon name="star" filled={isFavorite(selected?.id)}/></button></div>
       {#if !playing}<button class="center-play" aria-label={playerLoading?'加载中':playbackError?'重试播放':'播放视频'} disabled={playerLoading} onclick={toggle}><Icon name={playbackError?'refresh':'play'} size={28}/></button>{/if}
       <div class="video-bottom"><input class="seek" aria-label="播放进度" type="range" min="0" max={duration||1} step=".05" value={seeking??position} disabled={!source} oninput={event=>seeking=Number(event.currentTarget.value)} onchange={commitSeek} onpointercancel={()=>seeking=null} onblur={()=>seeking=null}/><div class="video-controls">
@@ -228,15 +252,21 @@
         {#if episodes.length}<select aria-label="选集" value={episode} onchange={event=>changeEpisode(Number(event.currentTarget.value))}>{#each episodes as value}<option value={value}>第{value}集</option>{/each}</select>{/if}
         <select aria-label="清晰度" value={quality} onchange={event=>changeQuality(event.currentTarget.value)}>{#each qualities.length?qualities:['360p','480p','720p','1080p'] as value}<option value={value}>{value}</option>{/each}</select>
         <select aria-label="倍速" value={speed} onchange={event=>{speed=Number(event.currentTarget.value);video.playbackRate=speed;}}>{#each [.5,1,1.5,2] as value}<option value={value}>{value}×</option>{/each}</select>
-        <button aria-label={muted?'取消静音':'静音'} onclick={()=>{muteChosen=true;muted=!muted;}}><Icon name={muted?'mute':'volume'}/></button><input class="volume" aria-label="音量" type="range" min="0" max="1" step=".05" bind:value={volume}/>
+        <div class="volume-control"><button aria-label={muted?'取消静音':'静音'} title="音量（↑/↓ 调节）" onclick={()=>{muteChosen=true;muted=!muted;}}><Icon name={muted?'mute':'volume'}/></button><div class="volume-popover"><output aria-hidden="true">{Math.round(volume*100)}%</output><input class="volume" aria-label="音量" aria-orientation="vertical" aria-valuetext={`${Math.round(volume*100)}%`} type="range" min="0" max="1" step=".05" value={volume} oninput={event=>setVolume(Number(event.currentTarget.value))}/></div></div>
       </div></div>
     </div></section>
   {:else}
-    <section class="media-library"><div class="list-toolbar"><div class="tabs"><button class:active={tab==='search'} onclick={()=>chooseTab('search')}>搜索</button><button class:active={tab==='favorites'} onclick={()=>chooseTab('favorites')}>收藏</button></div>{#if tab==='favorites'}<button aria-label="刷新收藏" disabled={account.operation==='pending'} onclick={readFavorites}><Icon name="refresh" size={15}/></button>{/if}</div>
-      {#if tab==='search'}<form class="media-search" role="search" onsubmit={event=>{event.preventDefault();void search();}}><label class="search-box"><Icon name="search" size={16}/><input aria-label="搜索短剧" placeholder="搜索短剧" bind:value={query}/></label><button type="submit" disabled={busy}>搜索</button></form>{/if}
-      {#each tab==='search'?items:favorites as item (item.id)}<div class="media-result"><div><h2>{item.title}</h2>{#if item.episodes}<span>共 {item.episodes} 集</span>{/if}</div><div class="row-actions"><button aria-label={isFavorite(item.id)?`取消收藏${item.title}`:`收藏${item.title}`} disabled={account.operation==='pending'||!!favoriteChange} onclick={()=>favorite(item)}><Icon name="star" size={15} filled={isFavorite(item.id)}/></button><button aria-label={`播放${item.title}`} onclick={()=>open(item)}><Icon name="play" size={15}/>播放</button></div></div>{/each}
+    <section class="media-library"><div class="list-toolbar"><div class="tabs"><button class:active={tab==='search'} onclick={()=>chooseTab('search')}>搜索</button><button class:active={tab==='favorites'} onclick={()=>chooseTab('favorites')}>收藏</button></div></div>
+      <form onsubmit={event=>{event.preventDefault();if(tab==='search')void search();else void readFavorites();}}><div class="media-search" role="toolbar" aria-label={tab==='search'?'搜索工具栏':'收藏工具栏'}><label class="search-box"><Icon name="search" size={16}/>{#if tab==='search'}<input aria-label="搜索短剧" placeholder="搜索短剧" bind:value={query}/>{:else}<input aria-label="筛选收藏" placeholder="筛选收藏" bind:value={favoritesQuery}/>{/if}</label><button type="button" aria-label={listView==='list'?'切换图标视图':'切换列表视图'} title={listView==='list'?'图标视图':'列表视图'} onclick={toggleView}><Icon name={listView==='list'?'grid':'list'} size={15}/></button><button type="submit" aria-label={tab==='search'?'搜索':'刷新收藏'} title={tab==='search'?'搜索':'刷新收藏'} disabled={tab==='search'?busy||!query.trim():account.operation==='pending'}><Icon name={tab==='search'?'search':'refresh'} size={15}/></button></div></form>
+      {#key tab==='favorites'?`favorites:${favoritesRevision}`:tab}
+      {#if listView==='grid'}
+      <div class="favorites-grid">{#each visibleItems as item (item.id)}<article class="favorite-tile"><button class="cover-open" aria-label={`播放${item.title}`} onclick={()=>open(item)}><Cover active={active&&live&&item.has_cover!==false} title={item.title} load={()=>readCover(item.id)}/><strong title={item.title}>{item.title}</strong><span>{watchedLabel(history[item.id])}{item.episodes?` · 共 ${item.episodes} 集`:''}</span></button><button class="grid-favorite" aria-label={isFavorite(item.id)?`取消收藏${item.title}`:`收藏${item.title}`} disabled={account.operation==='pending'||!!favoriteChange} onclick={()=>favorite(item)}><Icon name="star" size={15} filled={isFavorite(item.id)}/></button></article>{/each}</div>
+      {:else}
+      {#each visibleItems as item (item.id)}<div class="media-result"><div><h2>{item.title}</h2><span>{watchedLabel(history[item.id])}{item.episodes?` · 共 ${item.episodes} 集`:''}</span></div><div class="row-actions"><button aria-label={isFavorite(item.id)?`取消收藏${item.title}`:`收藏${item.title}`} disabled={account.operation==='pending'||!!favoriteChange} onclick={()=>favorite(item)}><Icon name="star" size={15} filled={isFavorite(item.id)}/></button><button aria-label={`播放${item.title}`} onclick={()=>open(item)}><Icon name="play" size={15}/>播放</button></div></div>{/each}
+      {/if}
+      {/key}
       {#if tab==='search'&&hasMore}<button disabled={busy} onclick={()=>search(true)}>更多</button>{/if}
-      {#if tab==='favorites'&&favorites.length===0&&account.operation!=='pending'}<div class="list-empty">暂无收藏</div>{:else if tab==='search'&&searched&&items.length===0}<div class="list-empty">没有搜索结果</div>{/if}
+      {#if tab==='favorites'&&favorites.length===0&&account.operation!=='pending'}<div class="list-empty">暂无收藏</div>{:else if tab==='favorites'&&visibleFavorites.length===0}<div class="list-empty">没有匹配的收藏</div>{:else if tab==='search'&&searched&&items.length===0}<div class="list-empty">没有搜索结果</div>{/if}
     </section>
   {/if}
   {#if loginPending(account.state)}<div class="qr-backdrop"><div class="qr-dialog" role="dialog" aria-modal="true" aria-label="扫码登录" tabindex="-1"><h2>使用红果短剧 App 扫码</h2>{#if account.qr_png}<img src={`data:image/png;base64,${account.qr_png}`} alt="红果登录二维码"/>{/if}<button onclick={cancelLogin}>取消</button></div></div>{/if}

@@ -39,3 +39,15 @@ export function playbackDetails(error:unknown,context:{title:string;episode:numb
   const action=code==='quality_unavailable'?'请选择其他清晰度后重试。':code==='media_access_denied'?'媒体访问被拒绝，请核对账号权限；不会自动重试。':'可点击视频中央“重试”重新连接当前集。';
   return `${context.title} 第${context.episode}集：${reason}\n阶段：${context.stage}；请求清晰度：${context.quality}；连接：${context.direct?'直连':'系统代理'}\n${action}\n错误码：${code}。准确定位请查看本地日志。`;
 }
+
+export function filterFavorites(items:Item[],query:string):Item[]{
+  const term=query.trim().toLocaleLowerCase();
+  return term?items.filter(item=>item.title.toLocaleLowerCase().includes(term)):items;
+}
+
+export type CoverData={width:number;height:number;rgba:string};
+export function coverPixels(data:CoverData):Uint8ClampedArray<ArrayBuffer>|undefined{
+ if(!Number.isInteger(data.width)||!Number.isInteger(data.height)||data.width<1||data.width>240||data.height<1||data.height>360||typeof data.rgba!=='string'||data.rgba.length>460800)return;
+ try{const bytes=atob(data.rgba);if(bytes.length!==data.width*data.height*4)return;return Uint8ClampedArray.from(bytes,c=>c.charCodeAt(0));}catch{return;}
+}
+export function watchedLabel(record?:{episode:number}):string{return record&&Number.isInteger(record.episode)&&record.episode>0?`看到第 ${record.episode} 集`:'暂无观看记录';}

@@ -40,6 +40,9 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -B scripts/package_base.py --output target/packages/base
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $compiler = ./scripts/prepare-nsis.ps1
+          python -B scripts/package_installer.py --bundle target/packages/base --compiler $compiler
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
           name: LazyBuddy-windows-development-packages
@@ -47,5 +50,7 @@ jobs:
           if-no-files-found: error
           path: |
             target/packages/base/*.zip
+            target/packages/base/*Setup*.exe
+            target/packages/base/installer.json
             target/packages/base/package.json
             target/packages/base/app-update.json

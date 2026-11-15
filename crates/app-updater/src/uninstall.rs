@@ -32,11 +32,7 @@ fn remove_files(install: &Path) -> io::Result<()> {
     for file in files {
         fs::remove_file(file)?;
     }
-    for directory in directories
-        .iter()
-        .rev()
-        .chain(std::iter::once(&install.to_owned()))
-    {
+    for directory in directories.iter().rev() {
         match fs::remove_dir(directory) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::DirectoryNotEmpty => {}
@@ -139,6 +135,60 @@ fn clear_startup(install: &Path) -> io::Result<()> {
         )
     {
         let result = unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, run, w!("LazyBuddy")) };
+        if result != ERROR_SUCCESS {
+            return Err(io::Error::from_raw_os_error(result as i32));
+        }
+    }
+    Ok(())
+}
+
+fn registered_install_matches(value: &str, install: &Path) -> bool {
+    Path::new(value.trim_end_matches('\0')).canonicalize().ok() == install.canonicalize().ok()
+        && install.is_dir()
+}
+
+fn clear_install_registration(install: &Path) -> io::Result<()> {
+    use windows_sys::Win32::{
+        Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS},
+        System::Registry::*,
+    };
+    let key: Vec<u16> = if lazybuddy_host_control::isolated() {
+        format!(
+            r"Software\LazyBuddy\Verification\{}",
+            lazybuddy_host_control::instance()?
+        )
+    } else {
+        r"Software\Microsoft\Windows\CurrentVersion\Uninstall\LazyBuddy".into()
+    }
+    .encode_utf16()
+    .chain([0])
+    .collect();
+    let mut value = vec![0u16; 32768];
+    let mut bytes = (value.len() * 2) as u32;
+    let result = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            w!("InstallLocation"),
+            RRF_RT_REG_SZ | RRF_SUBKEY_WOW6464KEY,
+            std::ptr::null_mut(),
+            value.as_mut_ptr().cast(),
+            &mut bytes,
+        )
+    };
+    if result == ERROR_FILE_NOT_FOUND {
+        return Ok(());
+    }
+    if result != ERROR_SUCCESS {
+        return Err(io::Error::from_raw_os_error(result as i32));
+    }
+    if registered_install_matches(
+        &String::from_utf16_lossy(&value[..bytes as usize / 2]),
+        install,
+    ) {
+        // Non-recursive: an unexpected subkey must not be deleted.
+        let result =
+            unsafe { RegDeleteKeyExW(HKEY_CURRENT_USER, key.as_ptr(), KEY_WOW64_64KEY, 0) };
         if result != ERROR_SUCCESS {
             return Err(io::Error::from_raw_os_error(result as i32));
         }
@@ -253,7 +303,13 @@ pub fn apply(job: &Path) -> io::Result<()> {
             remove_modules(&removal.install)?;
         }
         clear_startup(&removal.install)?;
-        remove_files(&removal.install)
+        remove_files(&removal.install)?;
+        clear_install_registration(&removal.install)?;
+        match fs::remove_dir(&removal.install) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::DirectoryNotEmpty => Ok(()),
+            Err(error) => Err(error),
+        }
     })();
     if let Err(error) = &result {
         if !removal.quiet {
@@ -312,6 +368,23 @@ pub fn show_error(error: &io::Error) {
 mod tests {
     use super::*;
     use crate::tests::{Temporary, fixture};
+    #[test]
+    fn uninstall_registration_must_belong_to_this_installation() {
+        let temp = Temporary::new();
+        let install = temp.0.join("registered");
+        let other = temp.0.join("other");
+        fs::create_dir(&install).unwrap();
+        fs::create_dir(&other).unwrap();
+        assert!(registered_install_matches(
+            &install.to_string_lossy(),
+            &install
+        ));
+        assert!(!registered_install_matches(
+            &other.to_string_lossy(),
+            &install
+        ));
+        assert!(!registered_install_matches("does-not-exist", &install));
+    }
     #[test]
     fn removes_only_inventory_and_keeps_unknown_files() {
         let root = Temporary::new();

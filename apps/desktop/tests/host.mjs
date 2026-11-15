@@ -30,7 +30,7 @@ try{
  await page.getByRole('button',{name:'设置',exact:true}).click();await page.getByRole('heading',{name:'新闻设置',exact:true}).waitFor();
  const late=await invoke('news_call',{method:'fetch',args:{sources:[catalog.data[0].id]},generation:stale}).then(()=>'',String);assert.match(late,/inactive_news_page/);
  await page.getByRole('button',{name:'显示设置',exact:true}).click();await page.getByRole('switch',{name:'深色模式'}).click();await until(async()=>await page.locator('.app-shell.dark').count()===1);
- await page.getByRole('button',{name:'系统设置',exact:true}).click();await page.getByLabel('显示隐藏快捷键').focus();await page.getByLabel('显示隐藏快捷键').dispatchEvent('focus');await until(async()=>(await invoke('settings')).shortcut_capturing);
+ await page.getByRole('button',{name:'系统设置',exact:true}).click();await page.getByRole('button',{name:'显示隐藏快捷键'}).click();await until(async()=>(await invoke('settings')).shortcut_capturing);
  await page.getByLabel('显示隐藏快捷键').press('Control+Alt+J');await until(async()=>(await invoke('settings')).preferences.shortcut.key===74);
  await page.getByRole('button',{name:'显示设置',exact:true}).click();await until(async()=>!(await invoke('settings')).shortcut_capturing);
  await page.getByLabel('背景透明度',{exact:true}).fill('.5');await page.getByLabel('背景透明度',{exact:true}).dispatchEvent('change');

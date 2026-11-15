@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails,playerPreferences} from '../src/hongguo.ts';
+import {coverPixels,watchedLabel,filterFavorites,loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails,playerPreferences} from '../src/hongguo.ts';
 test('player preferences preserve mute independently of volume and reject damaged storage',()=>{
   assert.deepEqual(playerPreferences({volume:0,mute:false,muteChosen:true,speed:1.5,quality:'1080p',favorites:true}),{volume:0,mute:false,muteChosen:true,speed:1.5,quality:'1080p',favorites:true});
   assert.deepEqual(playerPreferences({volume:2,speed:NaN,quality:720}),playerPreferences(null));
@@ -48,4 +48,18 @@ test('first playback is audible and explicit mute remains independent of volume'
   assert.equal(playerPreferences(null).volume,.5);
   assert.equal(playerPreferences({mute:true,muteChosen:true,volume:.7}).mute,true);
   assert.equal(playerPreferences({mute:false,muteChosen:true,volume:0}).mute,false);
+});
+
+test('favorites filter uses titles without changing confirmed collection',()=>{
+ const items=[{id:'1',title:'春日',episodes:10},{id:'2',title:'Summer',episodes:20}];
+ assert.deepEqual(filterFavorites(items,' 春 '),[items[0]]);
+ assert.deepEqual(filterFavorites(items,'SUM'),[items[1]]);
+ assert.equal(filterFavorites(items,'  '),items);
+ assert.deepEqual(filterFavorites(items,'未找到'),[]);assert.equal(items.length,2);
+});
+
+test('cover pixels are bounded and viewing labels use actual episode records',()=>{
+ assert.deepEqual(coverPixels({width:1,height:1,rgba:'/wAA/w=='}),new Uint8ClampedArray([255,0,0,255]));
+ for(const data of [{width:241,height:1,rgba:''},{width:1,height:361,rgba:''},{width:1,height:1,rgba:'AA=='},{width:1,height:1,rgba:'invalid'}])assert.equal(coverPixels(data),undefined);
+ assert.equal(watchedLabel({episode:3}),'看到第 3 集');assert.equal(watchedLabel(),'暂无观看记录');assert.equal(watchedLabel({episode:0}),'暂无观看记录');
 });

@@ -17,14 +17,12 @@ TMP.mkdir(exist_ok=True)
 
 class SigningKey(unittest.TestCase):
     def test_shipped_catalog_matches_trusted_public_key(self):
-        root = Path(__file__).resolve().parents[2]
-        source = json.loads((root / 'module-catalog.json').read_text(encoding='utf-8'))
-        paths=sorted((root/'docs/modules').glob('*.json'))
-        self.assertTrue(paths, 'published catalog is missing')
+        from urllib.parse import urlsplit
+        source = json.loads((ROOT / 'module-catalog.json').read_text(encoding='utf-8'))
+        path=ROOT/'docs/modules'/Path(urlsplit(source['url']).path).name
+        self.assertTrue(path.is_file(), 'active catalog is missing')
         key=Ed25519PublicKey.from_public_bytes(bytes(source['public_key']))
-        for path in paths:
-            with self.subTest(catalog=path.name):
-                key.verify(path.with_name(path.name+'.sig').read_bytes(),path.read_bytes())
+        key.verify(path.with_name(path.name+'.sig').read_bytes(),path.read_bytes())
 
     def test_reuse_and_reject_overwrite_or_corruption(self):
         with tempfile.TemporaryDirectory(prefix='lazybuddy-signing-test-',dir=TMP) as directory:

@@ -328,9 +328,38 @@ pub async fn playback_call(
             if let Some(connection) = state.connection.lock().unwrap().take() {
                 connection.service.stop();
             }
+            lazybuddy_host_control::logs::record(
+                "hongguo",
+                "api_failed",
+                json!({"接口":method,"错误码":"playback_service_unavailable"}),
+            );
             return Err("playback_service_unavailable".into());
         }
     };
+    let data = &reply["data"];
+    let error = if reply["ok"] != true {
+        reply["error"]["code"].as_str()
+    } else {
+        data["error"]
+            .as_str()
+            .or_else(|| data["progress_error"].as_str())
+            .or_else(|| data["favorites_error"].as_str())
+            .or_else(|| {
+                data["diagnostic"]["event"]
+                    .as_str()
+                    .filter(|s| *s == "browser_media_error")
+            })
+    };
+    if let Some(code) =
+        error.filter(|s| s.len() < 80 && s.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'))
+    {
+        let diagnostic = if reply["ok"] == true {
+            &data["diagnostic"]
+        } else {
+            &reply["error"]["diagnostic"]
+        };
+        lazybuddy_host_control::logs::api_error("hongguo", &method, code, diagnostic);
+    }
     if reply["ok"] != true {
         return Err(reply["error"]["code"]
             .as_str()

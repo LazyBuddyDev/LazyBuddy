@@ -11,6 +11,19 @@ cargo test --locked -p lazybuddy host::tests
 
 窗口改动选 `dock::tests` / `tray::tests`，播放桥选 `playback::tests`，设置选 `preferences::tests`。签名包安装、私有会话、控制通道及更新器分别在对应 crates 中测试。CI 按变更选择 Rust 模块与相关 Python 单元，依赖变化只扩大编译检查。
 
+公共界面按[UI规范](ui-guidelines.md)验证，选择受影响的模式及已有使用方，不按功能重复建立外观标准。以下是现有模式验证入口，脚本名只表示当前实现位置：
+
+| 验证模式 | 无头样例入口 |
+| --- | --- |
+| 聚合卡片、标题滚动及局部操作状态 | `apps/desktop/tests/news-page.mjs` |
+| 平台视觉、公共工具栏、主题与窄窗口 | `apps/desktop/tests/news-design.mjs` |
+| 统一页签、集合工具栏、列表/网格与封面状态 | `apps/desktop/tests/hongguo-views.mjs` |
+| 画面点击、音量浮层与媒体快捷键 | `apps/desktop/tests/video-click.mjs` |
+| 根页面切换后的提示归属 | `apps/desktop/tests/feature-notices.mjs` |
+| API诊断文本与运行日志归档 | `apps/desktop/tests/host-logs.mjs <宿主EXE绝对路径> <CLI绝对路径>` |
+
+这些样例不代替真实账号、系统窗口行为或音画验收。使用本地媒体样例的入口需先准备对应测试素材；宿主级诊断样例还需显式假服务产物，不能因此调用真实账号或加载相邻工作区业务实现。
+
 显式界面验证（需 Windows 桌面与 WebView2，不移动物理鼠标）：
 
 ```powershell

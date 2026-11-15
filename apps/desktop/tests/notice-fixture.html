@@ -1,0 +1,28 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><div id="app"></div><script type="module">
+import {mount} from 'svelte';import App from '/src/App.svelte';import '/src/style.css';
+let generation=0;const callbacks=[];
+const preferences={root:'hongguo',dark:false,topmost:false,auto_update:false,background_opacity:1,card_opacity:1};
+const news={auto_refresh:false,refresh_minutes:5,followed:[],hidden:[],order:[],default_followed:false};
+window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback),invoke:async(command,args)=>{
+ if(command==='plugin:event|listen')return callbacks.length;
+ if(command==='plugin:event|unlisten'||command==='capture_shortcut')return;
+ if(command==='settings'){if(args.value)Object.assign(preferences,args.value);return {preferences,startup:false,isolated:true};}
+ if(command==='module_call')return {entries:[],installed:[{id:'news',name:'新闻速览'},{id:'hongguo',name:'红果短剧'}],catalog_ready:true};
+ if(command==='toggle_pin')return window.fixturePinned=!window.fixturePinned;
+ if(command==='snapshot')return {media_route:'browser_service',view:{root:'hongguo',section:'content',visible:true,generation}};
+ if(command==='transition')return {...args,generation:++generation};
+ if(command==='playback_call'){
+   if(args.method==='account.restore')return {state:'signed_in',name:'用户样例'};
+   if(args.method==='progress.read')return {history:{}};
+   if(args.method==='favorites.read')return {state:'signed_in',name:'用户样例',favorites:[]};
+   return {};
+ }
+ if(command==='news_call'){
+   if(args.method==='sources')return window.designSources??[{id:'fixture',name:'样例来源'}];
+   if(args.method==='state')return {preferences:news,cache:window.designSources?Object.fromEntries(window.designSources.map(s=>[s.id,{updated_ms:Date.now(),stories:Array.from({length:16},(_,i)=>({title:['周末城市漫步路线推荐','中国空间站最新科普直播','秋日限定风景正在上线','这些生活小技巧值得收藏','年轻人开始记录普通的一天','博物馆里的奇妙发现'][i%6],url:'https://example.invalid/',badge:['Hot',null,'New',null,'Explosive',null][i%6]}))}])):{}};
+   if(args.method==='configure'){Object.assign(news,args.args.preferences);return {preferences:news};}
+   if(args.method==='fetch')throw new Error('fixture_news_failure');
+ }
+}};
+mount(App,{target:document.querySelector('#app')});
+</script></html>

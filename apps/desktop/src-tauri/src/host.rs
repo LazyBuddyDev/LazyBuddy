@@ -11,7 +11,8 @@ use tauri::{Emitter, Manager};
 
 pub struct State {
     pub data: PathBuf,
-    pub news: Mutex<Option<Session>>,
+    logging: Option<lazybuddy_host_control::logs::Session>,
+    pub news: Mutex<Option<(bool, Session)>>,
     catalog: Mutex<Option<Catalog>>,
     operation: tokio::sync::Mutex<()>,
     preferences: Mutex<crate::preferences::Preferences>,
@@ -26,6 +27,7 @@ impl State {
         let preferences = crate::preferences::Preferences::load(&data.join("web-preferences.json"))
             .map_err(|e| format!("设置读取失败：{e}"))?;
         Ok(Self {
+            logging: lazybuddy_host_control::logs::begin().ok(),
             writer: crate::preferences::Writer::new(data.join("web-preferences.json")),
             data,
             news: Mutex::new(None),
@@ -37,11 +39,16 @@ impl State {
             news_slots: std::sync::Arc::new(tokio::sync::Semaphore::new(4)),
         })
     }
+    pub fn finish_logs(&self) {
+        if let Some(session) = &self.logging {
+            let _ = session.finish();
+        }
+    }
     pub fn modules(&self) -> Modules {
         Modules::new(self.data.join("modules"))
     }
     pub fn stop_news(&self) {
-        if let Some(service) = self.news.lock().unwrap().take() {
+        if let Some((_, service)) = self.news.lock().unwrap().take() {
             service.stop();
         }
     }
@@ -208,6 +215,7 @@ pub async fn news_call(
     method: String,
     args: Value,
     generation: u64,
+    direct: Option<bool>,
     app: tauri::AppHandle,
 ) -> Result<Value, String> {
     if !matches!(
@@ -235,6 +243,7 @@ pub async fn news_call(
     } else {
         None
     };
+    let direct = direct.unwrap_or(true);
     let service = {
         let model = app.state::<Mutex<crate::Model>>();
         let mut model = model.lock().unwrap();
@@ -243,8 +252,23 @@ pub async fn news_call(
         }
         model.feed_requests += 1;
         let mut slot = state.news.lock().unwrap();
+        if slot.as_ref().is_some_and(|(mode, _)| *mode != direct) {
+            if let Some((_, previous)) = slot.take() {
+                previous.stop();
+            }
+        }
         if slot.is_none() {
-            let mut launch = state.modules().launch("news").map_err(failure)?;
+            let modules = state.modules();
+            let manifest = modules.manifest("news").map_err(failure)?;
+            let version = manifest
+                .version
+                .split('.')
+                .map(|v| v.parse::<u32>().unwrap())
+                .collect::<Vec<_>>();
+            if version.as_slice() < [0, 1, 1].as_slice() {
+                return Err("请在功能管理中更新新闻模块至 0.1.1 以上，以使用连接设置".into());
+            }
+            let mut launch = modules.launch("news").map_err(failure)?;
             launch.environment.push((
                 "LAZYBUDDY_NEWS_DATA_DIR".into(),
                 state
@@ -253,20 +277,30 @@ pub async fn news_call(
                     .to_string_lossy()
                     .into_owned(),
             ));
-            *slot = Some(Session::with_environment(
-                launch.executable,
-                launch.arguments,
-                launch.environment,
+            launch.environment.push((
+                "LAZYBUDDY_NEWS_DIRECT".into(),
+                if direct { "1" } else { "0" }.into(),
+            ));
+            *slot = Some((
+                direct,
+                Session::with_environment(launch.executable, launch.arguments, launch.environment),
             ));
         }
-        slot.as_ref().unwrap().clone()
+        slot.as_ref().unwrap().1.clone()
     };
     let reply = service
         .request(json!({"version":1,"id":"web-news","method":method,"args":args}))
         .await
         .map_err(failure)?;
     let model = app.state::<Mutex<crate::Model>>();
-    if !news_allowed(&model.lock().unwrap(), &method, generation) {
+    if !news_allowed(&model.lock().unwrap(), &method, generation)
+        || !state
+            .news
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|(mode, _)| *mode == direct)
+    {
         return Err("stale_news_reply".into());
     }
     if reply["ok"] != true {
@@ -275,13 +309,41 @@ pub async fn news_call(
             .unwrap_or("news_failed")
             .into());
     }
+    if method == "fetch" {
+        for row in reply["data"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|row| row["ok"] == false)
+        {
+            // Retain only diagnostic tokens, never arbitrary service messages or URLs.
+            let detail = row["error"]["detail"].as_str().unwrap_or("");
+            let fields: serde_json::Map<String, Value> = detail
+                .split_whitespace()
+                .filter_map(|part| {
+                    let (key, value) = part.split_once('=')?;
+                    (matches!(key, "stage" | "kind" | "status" | "phase")
+                        && value.len() <= 64
+                        && value
+                            .bytes()
+                            .all(|c| c.is_ascii_alphanumeric() || c == b'_'))
+                    .then(|| (key.into(), json!(value)))
+                })
+                .collect();
+            lazybuddy_host_control::logs::record(
+                "news",
+                "source_failed",
+                json!({"source":row["id"],"diagnostic":fields}),
+            );
+        }
+    }
     Ok(reply["data"].clone())
 }
 fn news_allowed(model: &crate::Model, method: &str, generation: u64) -> bool {
     model.view.visible
         && model.view.root == crate::Root::News
         && model.view.generation == generation
-        && (model.view.section == crate::Section::Content && method != "configure"
+        && (model.view.section == crate::Section::Content
             || model.view.section == crate::Section::Settings
                 && model.account_page
                 && method != "fetch")
@@ -359,6 +421,9 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<bool, String> {
     .map_err(failure)
     .and_then(|r| r);
     state.checking.store(false, Ordering::Release);
+    if result.is_err() {
+        lazybuddy_host_control::logs::record("host", "update_check_failed", json!({}));
+    }
     let prepared = result?;
     let ready = prepared.is_some();
     *state.prepared.lock().unwrap() = prepared;
@@ -432,6 +497,7 @@ mod tests {
         let mut model = crate::Model::default();
         model.transition(crate::Root::News, crate::Section::Content, true);
         assert!(news_allowed(&model, "fetch", model.view.generation));
+        assert!(news_allowed(&model, "configure", model.view.generation));
         let old = model.view.generation;
         model.transition(crate::Root::News, crate::Section::Settings, true);
         assert!(!news_allowed(&model, "fetch", model.view.generation));

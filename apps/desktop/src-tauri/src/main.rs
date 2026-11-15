@@ -155,6 +155,7 @@ fn window_action(action: &str, window: tauri::WebviewWindow) -> Result<(), Strin
                 state.stop_news();
                 let _guard = state.exit_barrier().await;
                 let _ = state.flush().await;
+                state.finish_logs();
                 app.exit(0);
             });
         }
@@ -197,7 +198,7 @@ fn capture_shortcut(enabled: bool, window: tauri::WebviewWindow) -> Result<(), S
 }
 #[tauri::command]
 fn open_logs() -> Result<(), String> {
-    let path = playback::data_directory()?.join("logs");
+    let path = lazybuddy_host_control::logs::root().map_err(|_| "无法确定日志目录")?;
     std::fs::create_dir_all(&path).map_err(|_| "无法创建日志目录")?;
     std::process::Command::new("explorer.exe")
         .arg(path)
