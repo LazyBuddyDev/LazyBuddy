@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "target": "windows-x86_64",
-  "version": "2.0.0",
-  "build": "4213faf3bf4e96a1850b44c0a8175933e25f1c384a589155a7aecbdd6d957938",
-  "url": "https://github.com/LazyBuddyDev/LazyBuddy/releases/download/v2.0.0/LazyBuddy-windows-x86_64.zip",
-  "bytes": 5018834,
-  "sha256": "e982c7e78449926c1fde987982b8ebf93b85222a21b5a8f742464d8eb817a621",
-  "host_sha256": "b461b93232db8d743c8f9e66da39e68b54501705cae4725500a1394bce5d26ef"
+  "version": "2.0.1",
+  "build": "67c1dace8b52bb72fbae9d2abc42fb8b74bd731760e747219f4744d6b6da1d89",
+  "url": "https://github.com/LazyBuddyDev/LazyBuddy/releases/download/v2.0.1/LazyBuddy-windows-x86_64.zip",
+  "bytes": 5339380,
+  "sha256": "ce1d59d220c85f4a2d0f0d607fdd7c147c130dba7cc9294cf84bca3bcfccfee4",
+  "host_sha256": "1a3467793f6a87fed0a12e8732535c562e70fded8b588945aeffe3317474cb77"
 }

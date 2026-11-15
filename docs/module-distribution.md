@@ -4,7 +4,7 @@
 
 ## 分发边界
 
-正式宿主快照为`v2.0.0`，模块组合快照为`modules-v2.0.0`；正式资源不可覆盖，后续版本使用新标签。Web可信目录为`docs/modules/web-catalog.json`及对应签名，指向正式不可变资源；组合为news0.1.0、hongguo0.2.6、python-runtime0.1.0。旧`catalog.json`与原生包保留给旧客户端，不能混用。原测试入口也覆盖为本次修复包；发布与验证证据见[TASKS](../TASKS.md)。
+正式宿主快照为`v2.0.1`，模块组合快照为`modules-v2.0.0`；正式资源不可覆盖，后续版本使用新标签。Web可信目录为`docs/modules/web-catalog.json`及对应签名，指向正式不可变资源；组合为news0.1.0、hongguo0.2.6、python-runtime0.1.0。旧`catalog.json`与原生包保留给旧客户端，不能混用。原测试入口也覆盖为本次修复包；发布与验证证据见[TASKS](../TASKS.md)。
 
 新闻包由新闻仓库构建，红果及其运行时包由红果仓库构建，宿主不导入服务源码。浏览器路线默认需要news、hongguo与精确匹配的python-runtime；`media-runtime`是红果独立服务的可选原生能力，当前Web宿主不使用。以每个实际清单的依赖闭包为准，不能混用旧包。
 
