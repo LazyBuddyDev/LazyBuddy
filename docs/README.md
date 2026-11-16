@@ -14,7 +14,7 @@
 | 维护主程序更新与替换 | [应用更新](app-updates.md) |
 | 构建安装向导、安装及卸载主程序 | [Windows安装与卸载](uninstall.md) |
 
-业务接口分别由[新闻服务](https://github.com/LazyBuddyDev/news-service/blob/main/docs/module-api.md)和[红果服务](https://github.com/LazyBuddyDev/hongguo-service/blob/main/docs/module-api.md)维护，宿主不保留整份副本。
+业务接口分别由[新闻服务](https://github.com/LazyBuddyDev/news-service/blob/main/docs/module-api.md)、[红果服务](https://github.com/LazyBuddyDev/hongguo-service/blob/main/docs/module-api.md)和[阅读服务](https://github.com/LazyBuddyDev/reader-service/blob/main/docs/module-api.md)维护，宿主不保留整份副本。
 
 `index.html`和`icon.svg`用于公开站点；`modules/`和`updates/`用于已发布机器端点。签名文件按原字节维护，不作为普通文档排版或清理。
 

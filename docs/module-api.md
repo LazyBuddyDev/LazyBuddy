@@ -1,6 +1,6 @@
 # 宿主模块契约
 
-API v1，目标平台Windows x64。本文只定义宿主的包、传输与生命周期边界；[新闻API](https://github.com/LazyBuddyDev/news-service/blob/main/docs/module-api.md)和[红果API](https://github.com/LazyBuddyDev/hongguo-service/blob/main/docs/module-api.md)由所属服务维护。源码边界见[架构](architecture.md)，文件归位见[规范](file-layout.md)。
+API v1，目标平台Windows x64。本文只定义宿主的包、传输与生命周期边界；[新闻API](https://github.com/LazyBuddyDev/news-service/blob/main/docs/module-api.md)、[红果API](https://github.com/LazyBuddyDev/hongguo-service/blob/main/docs/module-api.md)和[阅读API](https://github.com/LazyBuddyDev/reader-service/blob/main/docs/module-api.md)由所属服务维护。源码边界见[架构](architecture.md)，文件归位见[规范](file-layout.md)。
 
 ## 清单与进程
 

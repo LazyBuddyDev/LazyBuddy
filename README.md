@@ -66,7 +66,7 @@ LazyBuddy 是你的桌面摸鱼搭子，把喜欢的消遣放在手边。功能�
 | [维护指南](AGENTS.md) | 开始贡献前阅读的长期协作规范 |
 | [GitHub Issues](https://github.com/LazyBuddyDev/LazyBuddy/issues) | 报告问题、讨论需求 |
 
-当前功能服务各自维护业务实现、依赖和文档：[news-service](https://github.com/LazyBuddyDev/news-service) · [hongguo-service](https://github.com/LazyBuddyDev/hongguo-service)。
+当前功能服务各自维护业务实现、依赖和文档：[news-service](https://github.com/LazyBuddyDev/news-service) · [hongguo-service](https://github.com/LazyBuddyDev/hongguo-service) · [reader-service](https://github.com/LazyBuddyDev/reader-service)。
 
 ## 许可
 
