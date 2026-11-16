@@ -316,6 +316,8 @@ pub async fn playback_call(
     if method == "favorites.read" {
         state.favorite_reads.fetch_add(1, Ordering::Relaxed);
     }
+    let request_id = lazybuddy_host_control::logs::next_id();
+    let began = std::time::Instant::now();
     let reply = service
         .request(json!({"version":1,"id":"web-playback","method":method,"args":args}))
         .await;
@@ -331,7 +333,7 @@ pub async fn playback_call(
             lazybuddy_host_control::logs::record(
                 "hongguo",
                 "api_failed",
-                json!({"接口":method,"错误码":"playback_service_unavailable"}),
+                json!({"接口":method,"错误码":"playback_service_unavailable","request_id":request_id,"epoch":epoch,"direct":direct,"elapsed_ms":began.elapsed().as_millis()}),
             );
             return Err("playback_service_unavailable".into());
         }
@@ -358,7 +360,13 @@ pub async fn playback_call(
         } else {
             &reply["error"]["diagnostic"]
         };
-        lazybuddy_host_control::logs::api_error("hongguo", &method, code, diagnostic);
+        lazybuddy_host_control::logs::api_error(
+            "hongguo",
+            &method,
+            code,
+            diagnostic,
+            json!({"id":request_id,"epoch":epoch,"direct":direct,"elapsed_ms":began.elapsed().as_millis() as u64}),
+        );
     }
     if reply["ok"] != true {
         return Err(reply["error"]["code"]

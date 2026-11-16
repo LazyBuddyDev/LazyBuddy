@@ -5,9 +5,77 @@ use std::{
     io::{self, Read, Seek, SeekFrom, Write},
     os::windows::fs::OpenOptionsExt,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+    },
+    time::Duration,
 };
 static WRITER: Mutex<()> = Mutex::new(());
+static EVENTS: OnceLock<Option<EventWriter>> = OnceLock::new();
+static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+pub fn next_id() -> u64 {
+    SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1
+}
+enum Event {
+    Line(String),
+    Flush(mpsc::Sender<()>),
+}
+struct EventWriter {
+    sender: mpsc::SyncSender<Event>,
+    dropped: Arc<AtomicU64>,
+}
+impl EventWriter {
+    fn start(directory: PathBuf) -> io::Result<Self> {
+        let (sender, receiver) = mpsc::sync_channel(128);
+        let dropped = Arc::new(AtomicU64::new(0));
+        let lost = dropped.clone();
+        std::thread::Builder::new()
+            .name("host-events".into())
+            .spawn(move || {
+                while let Ok(event) = receiver.recv() {
+                    let count = lost.swap(0, Ordering::Relaxed);
+                    if count > 0 {
+                        let _ = write(
+                            &directory,
+                            &format!(
+                                "[{}] [WARN] [宿主] 日志队列已满 dropped_events={}\n",
+                                now().0,
+                                count
+                            ),
+                            false,
+                        );
+                    }
+                    match event {
+                        Event::Line(text) => {
+                            let _ = write(&directory, &text, false);
+                        }
+                        Event::Flush(done) => {
+                            let _ = done.send(());
+                        }
+                    }
+                }
+            })?;
+        Ok(Self { sender, dropped })
+    }
+    fn line(&self, text: String) -> bool {
+        if self.sender.try_send(Event::Line(text)).is_err() {
+            self.dropped.fetch_add(1, Ordering::Relaxed);
+            return false;
+        }
+        true
+    }
+    fn flush(&self) -> io::Result<()> {
+        let (sender, receiver) = mpsc::channel();
+        self.sender
+            .send(Event::Flush(sender))
+            .map_err(|_| io::Error::other("event writer closed"))?;
+        receiver
+            .recv_timeout(Duration::from_secs(2))
+            .map_err(|_| io::Error::other("event writer flush timed out"))
+    }
+}
 fn now() -> (String, String) {
     let mut t = windows_sys::Win32::Foundation::SYSTEMTIME::default();
     unsafe { windows_sys::Win32::System::SystemInformation::GetLocalTime(&mut t) };
@@ -31,6 +99,9 @@ pub struct Session {
 }
 impl Session {
     pub fn finish(&self) -> io::Result<()> {
+        if let Some(Some(writer)) = EVENTS.get() {
+            let _ = writer.flush();
+        }
         let (_, stamp) = now();
         write(
             &self.directory,
@@ -40,7 +111,10 @@ impl Session {
     }
 }
 pub fn begin() -> io::Result<Session> {
-    begin_in(&root()?)
+    let directory = root()?;
+    let session = begin_in(&directory)?;
+    EVENTS.get_or_init(|| EventWriter::start(directory).ok());
+    Ok(session)
 }
 fn begin_in(directory: &Path) -> io::Result<Session> {
     fs::create_dir_all(directory)?;
@@ -206,12 +280,24 @@ fn diagnostic(value: &Value) -> Value {
     Value::Object(result)
 }
 #[track_caller]
-pub fn api_error(module: &str, method: &str, code: &str, details: &Value) {
+pub fn api_error(module: &str, method: &str, code: &str, details: &Value, context: Value) {
     record(
         module,
         "api_failed",
-        serde_json::json!({"接口":method,"错误码":code,"诊断":diagnostic(details)}),
+        serde_json::json!({"接口":method,"错误码":code,"诊断":diagnostic(details),"请求":request_context(&context)}),
     );
+}
+fn request_context(value: &Value) -> Value {
+    let mut result = serde_json::Map::new();
+    for key in ["id", "elapsed_ms", "epoch", "generation"] {
+        if let Some(n) = value[key].as_u64() {
+            result.insert(key.into(), Value::from(n));
+        }
+    }
+    if let Some(direct) = value["direct"].as_bool() {
+        result.insert("direct".into(), Value::from(direct));
+    }
+    Value::Object(result)
 }
 fn clean(value: &str) -> String {
     value
@@ -284,6 +370,34 @@ fn fields(value: &Value, prefix: &str, output: &mut String, depth: usize) {
 #[track_caller]
 pub fn record(module: &str, event: &str, value: Value) {
     let caller = std::panic::Location::caller();
+    let text = format_record(module, event, &value, "ERROR", caller);
+    if text.len() <= 128 * 1024 {
+        let _ = root().and_then(|root| write(&root, &text, false));
+    }
+}
+/// Low-volume lifecycle events; native callbacks never wait for disk I/O.
+#[track_caller]
+pub fn event(module: &str, event: &str, value: Value) {
+    if let Some(Some(writer)) = EVENTS.get() {
+        let text = format_record(
+            module,
+            event,
+            &value,
+            "INFO",
+            std::panic::Location::caller(),
+        );
+        if text.len() <= 16 * 1024 {
+            writer.line(text);
+        }
+    }
+}
+fn format_record(
+    module: &str,
+    event: &str,
+    value: &Value,
+    level: &str,
+    caller: &std::panic::Location<'_>,
+) -> String {
     let name = match module {
         "news" => "新闻",
         "hongguo" => "红果",
@@ -297,17 +411,17 @@ pub fn record(module: &str, event: &str, value: Value) {
         other => other,
     };
     let mut text = format!(
-        "[{}] [ERROR] [{}] {}:{} {}\n",
+        "[{}] [{}] [{}] #{} {}:{} {}\n",
         now().0,
+        level,
         clean(name),
+        next_id(),
         caller.file(),
         caller.line(),
         clean(description)
     );
-    fields(&value, "", &mut text, 0);
-    if text.len() <= 128 * 1024 {
-        let _ = root().and_then(|root| write(&root, &text, false));
-    }
+    fields(value, "", &mut text, 0);
+    text
 }
 fn write(directory: &Path, text: &str, sync: bool) -> io::Result<()> {
     let _guard = WRITER
@@ -331,6 +445,44 @@ fn append_unlocked(directory: &Path, text: &str, sync: bool) -> io::Result<()> {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn events_are_ordered_and_flushed_before_exit() {
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp")
+            .join(format!("qa-event-log-{}", std::process::id()));
+        let writer = EventWriter::start(directory.clone()).unwrap();
+        assert!(writer.line("first\n".into()));
+        assert!(writer.line("second\n".into()));
+        writer.flush().unwrap();
+        assert_eq!(
+            fs::read_to_string(directory.join("LB.log")).unwrap(),
+            "first\nsecond\n"
+        );
+        drop(writer);
+        fs::remove_file(directory.join("LB.log")).unwrap();
+        fs::remove_dir(directory).unwrap();
+    }
+    #[test]
+    fn full_event_queue_does_not_block_and_counts_lost_events() {
+        let (sender, _receiver) = mpsc::sync_channel(1);
+        let writer = EventWriter {
+            sender,
+            dropped: Arc::new(AtomicU64::new(0)),
+        };
+        assert!(writer.line("first".into()));
+        assert!(!writer.line("overflow".into()));
+        assert_eq!(writer.dropped.load(Ordering::Relaxed), 1);
+    }
+    #[test]
+    fn request_context_does_not_log_credentials_or_addresses() {
+        let context = request_context(
+            &json!({"id":7,"elapsed_ms":120,"epoch":3,"direct":true,"cookie":"SECRET","url":"SECRET","generation":"SECRET"}),
+        );
+        assert_eq!(
+            context,
+            json!({"id":7,"elapsed_ms":120,"epoch":3,"direct":true})
+        );
+    }
     #[test]
     fn restart_archives_at_closed_time_and_never_overwrites() {
         let directory = Path::new(env!("CARGO_MANIFEST_DIR"))

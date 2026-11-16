@@ -1,5 +1,5 @@
 //! The production host's move-end/work-area behavior, adapted to a Tauri window.
-use std::{cell::Cell, io, sync::Mutex};
+use std::{cell::Cell, io, sync::Mutex, time::Instant};
 use tauri::{Emitter, Manager, WebviewWindow};
 use windows_sys::Win32::{
     Foundation::*,
@@ -52,6 +52,7 @@ pub struct Dock {
 struct Hook {
     window: WebviewWindow,
     moved: Cell<bool>,
+    move_started: Cell<Option<Instant>>,
 }
 
 fn hwnd(window: &WebviewWindow) -> io::Result<HWND> {
@@ -215,6 +216,17 @@ pub fn shape(window: &WebviewWindow) -> io::Result<()> {
     Ok(())
 }
 pub fn collapse(window: &WebviewWindow) -> io::Result<bool> {
+    let began = Instant::now();
+    trace(window, "collapse_begin", serde_json::json!({}));
+    let result = collapse_inner(window);
+    trace(
+        window,
+        "collapse_end",
+        serde_json::json!({"ok":result.is_ok(),"changed":result.as_ref().ok(),"elapsed_ms":began.elapsed().as_millis(),"os_error":result.as_ref().err().and_then(io::Error::raw_os_error)}),
+    );
+    result
+}
+fn collapse_inner(window: &WebviewWindow) -> io::Result<bool> {
     if is_docked(window) {
         return Ok(false);
     }
@@ -244,6 +256,20 @@ pub fn collapse(window: &WebviewWindow) -> io::Result<bool> {
     Ok(true)
 }
 pub fn expand(window: &WebviewWindow) -> io::Result<()> {
+    if !is_docked(window) {
+        return Ok(());
+    }
+    let began = Instant::now();
+    trace(window, "expand_begin", serde_json::json!({}));
+    let result = expand_inner(window);
+    trace(
+        window,
+        "expand_end",
+        serde_json::json!({"ok":result.is_ok(),"elapsed_ms":began.elapsed().as_millis(),"os_error":result.as_ref().err().and_then(io::Error::raw_os_error)}),
+    );
+    result
+}
+fn expand_inner(window: &WebviewWindow) -> io::Result<()> {
     let Some(saved) = window.state::<Mutex<Dock>>().lock().unwrap().expanded else {
         return Ok(());
     };
@@ -266,13 +292,28 @@ pub fn expand(window: &WebviewWindow) -> io::Result<()> {
     Ok(())
 }
 pub fn snapshot(window: &WebviewWindow) -> serde_json::Value {
-    geometry(window).map(|(bounds,work,dpi)|serde_json::json!({"docked":is_docked(window),"bounds":bounds.array(),"work_area":work.array(),"dpi":dpi})).unwrap_or(serde_json::Value::Null)
+    geometry(window).map(|(bounds,work,dpi)|{
+        let handle=hwnd(window).ok();
+        let style=handle.map(|h| unsafe { GetWindowLongPtrW(h,GWL_STYLE) } as u32).unwrap_or_default();
+        serde_json::json!({"docked":is_docked(window),"bounds":bounds.array(),"work_area":work.array(),"dpi":dpi,
+            "native_visible":handle.is_some_and(|h|unsafe {IsWindowVisible(h)}!=0),"minimized":handle.is_some_and(|h|unsafe {IsIconic(h)}!=0),
+            "resizable":style&WS_THICKFRAME!=0,"maximizable":style&WS_MAXIMIZEBOX!=0})
+    }).unwrap_or(serde_json::Value::Null)
+}
+#[track_caller]
+pub fn trace(window: &WebviewWindow, event: &str, details: serde_json::Value) {
+    lazybuddy_host_control::logs::event(
+        "host",
+        event,
+        serde_json::json!({"window":snapshot(window),"details":details}),
+    );
 }
 pub fn attach(window: &WebviewWindow) -> io::Result<()> {
     let handle = hwnd(window)?;
     let hook = Box::into_raw(Box::new(Hook {
         window: window.clone(),
         moved: Cell::new(false),
+        move_started: Cell::new(None),
     }));
     if unsafe { SetWindowSubclass(handle, Some(subclass), HOOK, hook as usize) } == 0 {
         unsafe {
@@ -280,6 +321,7 @@ pub fn attach(window: &WebviewWindow) -> io::Result<()> {
         }
         return Err(io::Error::last_os_error());
     }
+    trace(window, "window_attached", serde_json::json!({}));
     Ok(())
 }
 unsafe extern "system" fn subclass(
@@ -307,24 +349,36 @@ unsafe extern "system" fn subclass(
             };
             let _ = crate::window_action(action, hook.window.clone());
         }
-        WM_ENTERSIZEMOVE => hook.moved.set(false),
+        WM_ENTERSIZEMOVE => {
+            hook.moved.set(false);
+            hook.move_started.set(Some(Instant::now()));
+            trace(&hook.window, "move_begin", serde_json::json!({}));
+        }
         WM_MOVING => hook.moved.set(true),
         WM_EXITSIZEMOVE => {
             hook.window
                 .state::<crate::host::State>()
                 .remember_window(&hook.window);
-            if hook.moved.replace(false) {
+            let moved = hook.moved.replace(false);
+            let mut error = None;
+            if moved {
                 let result = if is_docked(&hook.window) {
                     redock(&hook.window)
                 } else {
                     collapse(&hook.window).map(|_| ())
                 };
                 if result.is_err() {
+                    error = result.as_ref().err().and_then(io::Error::raw_os_error);
                     let _ = hook
                         .window
                         .emit("shell-error", "贴边停靠失败，请重新拖动窗口。");
                 }
             }
+            trace(
+                &hook.window,
+                "move_end",
+                serde_json::json!({"moved":moved,"elapsed_ms":hook.move_started.take().map(|t|t.elapsed().as_millis()),"os_error":error}),
+            );
         }
         WM_NCHITTEST if is_docked(&hook.window) => return HTCLIENT as LRESULT,
         WM_NCDESTROY => unsafe {

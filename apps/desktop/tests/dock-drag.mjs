@@ -12,7 +12,11 @@ try{
  const button=page.getByRole('button',{name:'展开 LazyBuddy'});
  async function dock(){await page.evaluate(()=>{window.fixtureCalls=[];window.fixtureDock(true);});await button.waitFor();}
  const calls=()=>page.evaluate(()=>window.fixtureCalls);
- await dock();await button.click();assert.deepEqual(await calls(),['expand']);
+ await dock();await page.waitForFunction(()=>window.fixtureReports.some(r=>r.docked));await button.click();assert.deepEqual(await calls(),['expand']);
+ await page.waitForFunction(()=>window.fixtureReports.some(r=>!r.docked));
+ const reports=await page.evaluate(()=>window.fixtureReports);
+ assert.ok(reports.some(r=>r.docked&&r.button[0]===38&&r.icon[0]>0),'render diagnostics measure the real capsule');
+ assert.ok(reports.some(r=>!r.docked&&r.button[0]===0),'expanded diagnostics report the absent capsule');
  await dock();await page.mouse.move(20,20);await page.mouse.down();await page.mouse.move(22,20);
  assert.deepEqual(await calls(),[],'small movement remains a click');
  await page.mouse.move(27,20);await page.mouse.move(32,20);await page.mouse.up();
@@ -26,5 +30,12 @@ try{
  await dock();await page.evaluate(()=>window.fixtureDragError=true);await page.mouse.move(20,20);await page.mouse.down();await page.mouse.move(28,20);await page.mouse.up();
  assert.deepEqual(await calls(),['drag']);assert.match(await page.locator('.notice').textContent(),/拖动失败/);
  await page.evaluate(()=>window.fixtureDragError=false);await button.click();assert.deepEqual(await calls(),['drag','expand'],'a new click works after drag failure');
+ const backgroundReport=await page.evaluate(async()=>{
+   const previous=requestAnimationFrame;window.requestAnimationFrame=()=>0;
+   const count=window.fixtureReports.length;window.fixtureDock(true);
+   await new Promise(resolve=>setTimeout(resolve,0));window.requestAnimationFrame=previous;
+   return window.fixtureReports.slice(count);
+ });
+ assert.ok(backgroundReport.some(r=>r.docked&&r.button[0]===38),'diagnostics must not depend on a background animation frame');
  console.log('PASS: click/drag threshold, one drag dispatch, drag-click suppression, keyboard, cancellation, right button and failure recovery.');
 }finally{await browser?.close();await server.close();await rm(scratch,{recursive:true,force:true});}

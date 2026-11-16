@@ -35,8 +35,14 @@ impl State {
         let data = lazybuddy_host_control::data_dir().map_err(|e| e.to_string())?;
         let preferences = crate::preferences::Preferences::load(&data.join("web-preferences.json"))
             .map_err(|e| format!("设置读取失败：{e}"))?;
+        let logging = lazybuddy_host_control::logs::begin().ok();
+        lazybuddy_host_control::logs::event(
+            "host",
+            "runtime",
+            json!({"version":env!("CARGO_PKG_VERSION"),"debug":cfg!(debug_assertions),"pid":std::process::id()}),
+        );
         Ok(Self {
-            logging: lazybuddy_host_control::logs::begin().ok(),
+            logging,
             writer: crate::preferences::Writer::new(data.join("web-preferences.json")),
             data,
             news: Mutex::new(None),
@@ -320,6 +326,8 @@ pub async fn news_call(
         }
         slot.as_ref().unwrap().1.clone()
     };
+    let request_id = lazybuddy_host_control::logs::next_id();
+    let began = std::time::Instant::now();
     let reply = service
         .request(json!({"version":1,"id":"web-news","method":method,"args":args}))
         .await
@@ -365,7 +373,7 @@ pub async fn news_call(
             lazybuddy_host_control::logs::record(
                 "news",
                 "source_failed",
-                json!({"source":row["id"],"diagnostic":fields}),
+                json!({"source":row["id"],"diagnostic":fields,"request_id":request_id,"generation":generation,"direct":direct,"elapsed_ms":began.elapsed().as_millis()}),
             );
         }
     }

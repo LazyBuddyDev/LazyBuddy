@@ -1,5 +1,5 @@
 """Check capsule window styles and restoration without moving the physical mouse."""
-import argparse,json,os,shutil,subprocess,sys,tempfile,time,uuid
+import argparse,hashlib,json,os,shutil,subprocess,sys,tempfile,time,uuid
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -24,6 +24,10 @@ with tempfile.TemporaryDirectory(prefix='dock-snap-',dir=ROOT/'tmp/profiles',ign
             assert child.poll() is None and time.monotonic()<deadline
             time.sleep(.1)
         assert rpc('window.show')['ok']
+        # Native show also advances the generation; only the mounted UI opens modules here.
+        while rpc('status')['data']['view']['section'] != 'modules':
+            assert time.monotonic()<deadline, 'frontend did not become ready'
+            time.sleep(.1)
         original=native();assert original['visible'];cycles=[]
         for _ in range(3):
             left=native('drag-left');right=native('drag-right');left_again=native('drag-left')
@@ -39,11 +43,19 @@ with tempfile.TemporaryDirectory(prefix='dock-snap-',dir=ROOT/'tmp/profiles',ign
             assert restored['after'][2:]==original['after'][2:]
             assert restored['topmost']==original['topmost']
             cycles.append(dict(left=left,right=right,left_again=left_again,restored=restored))
-        report=dict(passed=True,original=original,cycles=cycles,physical_mouse_used=False)
+        report=dict(passed=True,original=original,cycles=cycles,physical_mouse_used=False,
+                    host_sha256=hashlib.sha256((binaries/'lazybuddy.exe').read_bytes()).hexdigest())
     finally:
         if child.poll() is None:
             assert rpc('app.quit')['ok'];child.wait(timeout=30)
     output=ROOT/'tmp/verification-dock-snap';output.mkdir(exist_ok=True)
+    log=(data/'logs/LB.log').read_text(encoding='utf-8')
+    (output/'LB.log').write_text(log,encoding='utf-8')
+    for event in ('collapse_begin','collapse_end','expand_begin','expand_end','move_begin','move_end','dock_rendered','应用退出'):
+        assert event in log, 'missing lifecycle log: '+event
+    assert 'details.render.button[0]：38' in log, 'frontend capsule dimensions were not logged'
+    assert 'window.native_visible：是' in log, 'native visibility was not logged'
+    report['lifecycle_log_verified']=True
     (output/'native.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
 
 # WebView2 may retain its profile briefly after the owned host exits.

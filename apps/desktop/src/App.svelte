@@ -23,6 +23,11 @@
   }
   function releaseDock(){dockPress=undefined;}
   function clickDock(event:MouseEvent){if(event.detail===0||!dockDragged)void action('expand');}
+  async function renderDock(value:boolean){
+    const began=performance.now();docked=value;await tick();
+    const size=(element:Element|null)=>{const r=element?.getBoundingClientRect();return [Math.round(r?.width??0),Math.round(r?.height??0)];};
+    void call('dock_rendered',{report:{docked:value,visible:!document.hidden,viewport:[innerWidth,innerHeight],button:size(document.querySelector('.dock-button')),icon:size(document.querySelector('.dock-button img')),delay_ms:Math.min(60000,Math.round(performance.now()-began))}}).catch(()=>{});
+  }
   const scrollPositions=new Map<string,number>();const scrollKey=()=>`${root}:${section}:${section==='settings'?displayedCategory:''}`;
   const call=<T,>(name:string,args:Record<string,unknown>={})=>invoke<T>(name,args);
   let saving:Promise<unknown>=Promise.resolve();
@@ -63,7 +68,7 @@
   onMount(()=>{const subscriptions:(()=>void)[]=[];let disposed=false;
     async function subscribe<T>(event:string,handler:(value:T)=>void){const off=await listen<T>(event,e=>handler(e.payload));if(disposed)off();else subscriptions.push(off);}
     void(async()=>{try{
-      await Promise.all([subscribe<boolean>('shell-visibility',value=>void change(root,section,value)),subscribe<boolean>('shell-docked',value=>{docked=value;}),subscribe<string>('shell-error',value=>notice=value),subscribe<boolean>('shell-update',value=>{if(appUpdates){updateReady=value;if(value)notice='应用更新已就绪';}})]);
+      await Promise.all([subscribe<boolean>('shell-visibility',value=>void change(root,section,value)),subscribe<boolean>('shell-docked',value=>void renderDock(value)),subscribe<string>('shell-error',value=>notice=value),subscribe<boolean>('shell-update',value=>{if(appUpdates){updateReady=value;if(value)notice='应用更新已就绪';}})]);
       const saved=await call<{preferences:Preferences;startup:boolean;isolated:boolean;app_updates:boolean}>('settings');preferences=saved.preferences;startup=saved.startup;isolated=saved.isolated;appUpdates=saved.app_updates;pinned=preferences.topmost;
       await moduleAction('list');root=roots.find(m=>m.id===preferences?.root)?.id??roots[0]?.id??'news';const status=await call<{view:View}>('snapshot');visible=status.view.visible;
       ready=true;eventsReady=true;await change(root,roots.length?'content':'modules',visible);notice=roots.length?'就绪':'从功能页安装需要的功能';

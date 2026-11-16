@@ -2,9 +2,11 @@
 import {mount} from 'svelte';import App from '/src/App.svelte';import '/src/style.css';
 const callbacks=[],handlers=new Map();let generation=0;
 window.fixtureCalls=[];
+window.fixtureReports=[];
 window.fixtureDock=value=>callbacks[handlers.get('shell-docked')]({payload:value});
 window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'main'}},transformCallback:callback=>callbacks.push(callback)-1,invoke:async(command,args)=>{
  if(command==='plugin:event|listen'){handlers.set(args.event,args.handler);return args.handler;}
+ if(command==='dock_rendered'){window.fixtureReports.push(args.report);return;}
  if(command==='settings')return {preferences:{dark:false,auto_update:false,background_opacity:1,card_opacity:1},startup:false,isolated:true};
  if(command==='module_call')return {entries:[],installed:[],catalog_ready:true};
  if(command==='snapshot')return {media_route:'browser_service',view:{root:'news',section:'modules',visible:true,generation}};

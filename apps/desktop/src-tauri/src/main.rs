@@ -70,14 +70,24 @@ fn transition(
     let visible = visible && !dock::is_docked(&window);
     let page = root == Root::Hongguo && section == Section::Content;
     let account = section == Section::Settings && account_page.unwrap_or(false);
-    let view = {
+    let (view, changed) = {
         let mut state = state.lock().unwrap();
+        let before = state.view.generation;
         if state.account_page != account {
             state.account_page = account;
             state.view.generation += 1;
         }
-        state.transition(root, section, visible)
+        let view = state.transition(root, section, visible);
+        let changed = before != view.generation;
+        (view, changed)
     };
+    if changed {
+        lazybuddy_host_control::logs::event(
+            "host",
+            "view_transition",
+            serde_json::json!({"view":view}),
+        );
+    }
     if !visible || root != Root::News || section != Section::Content {
         window.state::<host::State>().stop_news();
     }
@@ -91,6 +101,38 @@ fn snapshot(state: tauri::State<Mutex<Model>>, window: tauri::WebviewWindow) -> 
     let state = state.lock().unwrap();
     serde_json::json!({"view":state.view,"feed_requests":state.feed_requests,"favorite_reads":window.state::<playback::State>().favorite_reads(),
         "media_route":if playback::enabled(){"browser_service"}else{"unavailable"},"real_service":playback::enabled()&&std::env::var_os("LAZYBUDDY_BROWSER_FIXTURE_FILE").is_none(), "native_texture_integrated":false,"tray":window.app_handle().tray_by_id("shell").is_some(),"desktop":dock::snapshot(&window)})
+}
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct DockRender {
+    docked: bool,
+    visible: bool,
+    viewport: [u32; 2],
+    button: [u32; 2],
+    icon: [u32; 2],
+    delay_ms: u32,
+}
+impl DockRender {
+    fn valid(&self) -> bool {
+        self.viewport
+            .iter()
+            .chain(&self.button)
+            .chain(&self.icon)
+            .all(|n| *n <= 16384)
+            && self.delay_ms <= 60000
+    }
+}
+#[tauri::command]
+fn dock_rendered(report: DockRender, window: tauri::WebviewWindow) -> Result<(), String> {
+    if !report.valid() {
+        return Err("invalid_render_diagnostic".into());
+    }
+    dock::trace(
+        &window,
+        "dock_rendered",
+        serde_json::json!({"render":report}),
+    );
+    Ok(())
 }
 fn visibility(window: &tauri::WebviewWindow, visible: bool) {
     let visible = visible && !dock::is_docked(window);
@@ -109,6 +151,11 @@ fn visibility(window: &tauri::WebviewWindow, visible: bool) {
         window.state::<host::State>().stop_news();
     }
     if changed {
+        dock::trace(
+            window,
+            "visibility_changed",
+            serde_json::json!({"visible":visible}),
+        );
         let _ = window.emit("shell-visibility", visible);
     }
 }
@@ -123,6 +170,17 @@ fn show_without_focus(window: &tauri::WebviewWindow) -> Result<(), String> {
 }
 #[tauri::command]
 fn window_action(action: &str, window: tauri::WebviewWindow) -> Result<(), String> {
+    if !matches!(
+        action,
+        "hide" | "close" | "minimize" | "show" | "expand" | "quit"
+    ) {
+        return Err("unknown window action".into());
+    }
+    dock::trace(
+        &window,
+        "window_action",
+        serde_json::json!({"action":action}),
+    );
     match action {
         "hide" | "close" | "minimize" => {
             visibility(&window, false);
@@ -229,6 +287,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             transition,
             snapshot,
+            dock_rendered,
             host::module_call,
             host::news_call,
             host::settings,
@@ -278,6 +337,15 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Focused(focused) = event {
+                if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
+                    dock::trace(
+                        &webview,
+                        "focus_changed",
+                        serde_json::json!({"focused":focused}),
+                    );
+                }
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
@@ -305,6 +373,21 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn render_diagnostic_is_bounded_and_does_not_accept_extra_fields() {
+        let valid = serde_json::json!({"docked":true,"visible":true,"viewport":[40,40],"button":[38,38],"icon":[28,28],"delay_ms":16});
+        assert!(
+            serde_json::from_value::<DockRender>(valid.clone())
+                .unwrap()
+                .valid()
+        );
+        let mut huge = valid.clone();
+        huge["icon"] = serde_json::json!([20000, 20000]);
+        assert!(!serde_json::from_value::<DockRender>(huge).unwrap().valid());
+        let mut secret = valid;
+        secret["cookie"] = serde_json::json!("must-not-be-logged");
+        assert!(serde_json::from_value::<DockRender>(secret).is_err());
+    }
     #[test]
     fn repeated_entry_does_not_renew_but_a_b_a_invalidates_old_results() {
         let mut model = Model::default();
