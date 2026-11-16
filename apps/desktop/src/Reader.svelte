@@ -8,7 +8,7 @@
   let preferences=$state<ReadingPreferences>({font_size:20,line_height:1.9,width:680});
   let chapter=$state(0),start=$state(0),total=$state(0),filter=$state(''),query=$state(''),encoding=$state('auto');
   let loading=$state(false),importing=$state(false),saving=$state(false),directory=$state(false),removing=$state<string>();
-  let failure=$state(''),importResults=$state<{name:string;message:string}[]>([]),images=$state<Record<string,string>>({});
+  let failure=$state(''),images=$state<Record<string,string>>({});
   let scroll=$state<HTMLElement>();let epoch=0;let initialized=false;let needsList=true;let lastBook=$state<string|null>(null);
   let currentPosition:Position|undefined;let restoring=false;let timer:ReturnType<typeof setTimeout>|undefined;
   let stagedPosition:Position|undefined;let checkpointWrites:Promise<unknown>=Promise.resolve();
@@ -131,25 +131,25 @@
   }
   const delay=()=>new Promise<void>(resolve=>{wake=resolve;waitTimer=setTimeout(()=>{wake=undefined;resolve();},150);});
   async function importBooks(){
-    if(importing)return;const ticket=lease();const run=++importRun;importing=true;failure='';importResults=[];
+    if(importing)return;const ticket=lease();const run=++importRun;importing=true;failure='';
+    const results:string[]=[];let imported=0,duplicates=0,failed=0;
     try{
       const paths=await invoke<string[]>('reader_pick',{generation:ticket.generation});
       if(!valid(ticket)||run!==importRun)return;
       for(const path of paths){
         if(!valid(ticket)||run!==importRun)break;
         const name=path.split(/[\\/]/).pop()??'文件';
+        notice(`正在导入：${name}`);
         const job=await call<{job:number}>('library.import',{path,encoding},ticket);
         let status:{status:string;error?:string;result?:{duplicate:boolean;warnings?:string[]}};
         do{await delay();if(!valid(ticket)||run!==importRun)return;status=await call('import.status',{job:job.job},ticket);}while(status.status==='pending');
-        importResults.push({name,message:status.status==='complete'?(status.result?.duplicate?'已在书库':'已导入'):(status.error?readerError(status.error):'已取消')});
+        if(status.status==='complete'){if(status.result?.duplicate)duplicates++;else imported++;}else failed++;
+        const message=status.status==='complete'?(status.result?.duplicate?'已在书库':'已导入'):(status.error?readerError(status.error):'已取消');
+        results.push(`${name}：${message}`);
         needsList=true;await list(ticket);
       }
-      if(importResults.length)notice(`导入结束，共处理 ${importResults.length} 本`);
-    }catch(error){report(error,ticket);}finally{if(valid(ticket)&&run===importRun)importing=false;}
-  }
-  async function cancelImport(){
-    const ticket=lease();importRun++;clearTimeout(waitTimer);wake?.();wake=undefined;
-    try{await call('import.cancel',{},ticket);notice('已取消剩余导入');}catch(error){report(error,ticket);}finally{if(valid(ticket))importing=false;}
+      if(results.length)notice([`导入完成：成功 ${imported} 本，已存在 ${duplicates} 本，失败 ${failed} 本`,...results].join('\n'));
+    }catch(error){if(valid(ticket)){failure=readerError(error);notice([`导入未完成：${failure}`,...results].join('\n'));}}finally{if(valid(ticket)&&run===importRun)importing=false;}
   }
   async function remove(entry:Entry){
     const ticket=lease();try{await call('library.remove',{book_id:entry.id},ticket);removing=undefined;await list(ticket);}catch(error){report(error,ticket);if(String(error)==='removal_cleanup_pending'){removing=undefined;await list(ticket);}}
@@ -181,9 +181,8 @@
     </article>
   </div>
 {:else}
-  <div class="collection-toolbar"><label class="search-box"><Icon name="search" size={16}/><input aria-label="筛选书名" placeholder="筛选书名" bind:value={filter}/></label><button title="导入TXT或EPUB文件" onclick={importBooks} disabled={importing}>导入小说</button>{#if importing}<button title="取消剩余导入" onclick={cancelImport}>取消</button>{/if}</div>
+  <div class="collection-toolbar"><label class="search-box"><Icon name="search" size={16}/><input aria-label="筛选书名" placeholder="筛选书名" bind:value={filter}/></label><button title="导入TXT或EPUB文件" onclick={importBooks} disabled={importing}>导入小说</button></div>
   <label class="reader-encoding">TXT编码<select aria-label="TXT编码" bind:value={encoding} disabled={importing}>{#each [['auto','自动识别'],['utf-8','UTF-8'],['gb18030','GB18030 / GBK'],['big5','Big5'],['utf-16le','UTF-16 LE'],['utf-16be','UTF-16 BE']] as [value,label]}<option {value}>{label}</option>{/each}</select></label>
-  {#if importResults.length}<details class="reader-import-results"><summary>导入结果（{importResults.length}）</summary>{#each importResults as result}<p>{result.name}：{result.message}</p>{/each}</details>{/if}
   {#if !entries.length}<div class="list-empty">{failure?'书库暂未载入':'导入TXT或EPUB，开始阅读'}{#if failure}<button title="重新读取书库" onclick={()=>{needsList=true;void activate();}}>重试</button>{/if}</div>
   {:else}<div class="reader-library">{#each filtered as entry (entry.id)}<div class="reader-book"><button class="reader-book-open" aria-label={`继续阅读《${entry.title}》`} title={`继续阅读《${entry.title}》`} disabled={loading} onclick={()=>open(entry)}><strong>{entry.title}</strong><span>{entry.author?`${entry.author} · `:''}{entry.source.format.toUpperCase()} · {progressLabel(entry)}{lastBook===entry.id?' · 最近阅读':''}</span></button>
     {#if removing===entry.id}<div class="reader-remove"><span>移除书库副本和阅读记录？原文件保留。</span><button title="确认移除书籍" onclick={()=>remove(entry)}>确认移除</button><button title="取消移除书籍" onclick={()=>removing=undefined}>取消</button></div>{:else}<button aria-label={`移除《${entry.title}》`} title={`移除《${entry.title}》`} onclick={()=>removing=entry.id}>移除</button>{/if}</div>{/each}{#if !filtered.length}<div class="list-empty">没有匹配的书籍</div>{/if}</div>{/if}
@@ -191,5 +190,5 @@
 </section>
 
 <style>
-  .reader-page{display:flex;flex-direction:column;min-height:0;height:100%;gap:10px;padding:12px 16px}.reader-page[hidden]{display:none}.reader-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-directory,.reader-encoding{display:flex;align-items:center;gap:12px;color:var(--muted)}.reader-directory select{flex:1;min-width:0}.reader-library{overflow:auto;scrollbar-gutter:stable;min-height:0}.reader-book{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);padding:8px 0}.reader-book-open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left;border:0}.reader-book-open strong{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-book-open span{font-size:11px;color:var(--muted)}.reader-remove{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;font-size:11px}.reader-remove span{width:100%;text-align:right}.reader-scroll{overflow:auto;min-height:0;flex:1;scrollbar-gutter:stable;background:var(--surface);overflow-anchor:none}.reader-scroll:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}.reader-body{max-width:var(--reader-width);margin:auto;padding:20px 24px 28px;font-size:var(--reader-font);line-height:var(--reader-height);overflow-wrap:anywhere}.reader-body h2{font-size:1.15em;margin-bottom:1.5em}.reader-paragraph{margin:0 0 1em;white-space:pre-wrap}.reader-heading{font-weight:600;font-size:1.1em}.reader-pre{font-family:monospace}.reader-strong{font-weight:700}.reader-emphasis{font-style:italic}figure{margin:1em 0;min-height:80px}figure img{display:block;max-width:100%;height:auto;margin:auto}figcaption{color:var(--muted);font-size:13px}.reader-navigation{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;margin-top:24px}.reader-import-results{font-size:12px;max-height:110px;overflow:auto;flex-shrink:0}.reader-import-results summary{cursor:pointer}.settings-layout{padding:0;width:100%}@media(max-width:520px){.reader-page{padding:10px}.reader-body{padding:16px}.reader-remove{max-width:160px}.reader-navigation{font-size:11px}}
+  .reader-page{display:flex;flex-direction:column;min-height:0;height:100%;gap:10px;padding:12px 16px}.reader-page[hidden]{display:none}.reader-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-directory,.reader-encoding{display:flex;align-items:center;gap:12px;color:var(--muted)}.reader-directory select{flex:1;min-width:0}.reader-library{overflow:auto;scrollbar-gutter:stable;min-height:0}.reader-book{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);padding:8px 0}.reader-book-open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left;border:0}.reader-book-open strong{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-book-open span{font-size:11px;color:var(--muted)}.reader-remove{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;font-size:11px}.reader-remove span{width:100%;text-align:right}.reader-scroll{overflow:auto;min-height:0;flex:1;scrollbar-gutter:stable;background:var(--surface);overflow-anchor:none}.reader-scroll:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}.reader-body{max-width:var(--reader-width);margin:auto;padding:20px 24px 28px;font-size:var(--reader-font);line-height:var(--reader-height);overflow-wrap:anywhere}.reader-body h2{font-size:1.15em;margin-bottom:1.5em}.reader-paragraph{margin:0 0 1em;white-space:pre-wrap}.reader-heading{font-weight:600;font-size:1.1em}.reader-pre{font-family:monospace}.reader-strong{font-weight:700}.reader-emphasis{font-style:italic}figure{margin:1em 0;min-height:80px}figure img{display:block;max-width:100%;height:auto;margin:auto}figcaption{color:var(--muted);font-size:13px}.reader-navigation{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;margin-top:24px}.settings-layout{padding:0;width:100%}@media(max-width:520px){.reader-page{padding:10px}.reader-body{padding:16px}.reader-remove{max-width:160px}.reader-navigation{font-size:11px}}
 </style>
