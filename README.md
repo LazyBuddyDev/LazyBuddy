@@ -7,7 +7,7 @@
 <p align="center"><strong>摸鱼，也要有个搭子。</strong><br>你的 Windows 桌面摸鱼搭子，喜欢什么就装什么。</p>
 
 <p align="center">
-  <a href="https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v1.0.2"><img src="https://img.shields.io/badge/release-v1.0.2-24745a?style=flat-square" alt="版本 1.0.2"></a>
+  <a href="https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v1.0.3"><img src="https://img.shields.io/badge/release-v1.0.3-24745a?style=flat-square" alt="版本 1.0.3"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20x64-5869e8?style=flat-square" alt="Windows x64">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-24745a?style=flat-square" alt="MIT License"></a>
   <a href="https://github.com/LazyBuddyDev/LazyBuddy/actions/workflows/checks.yml"><img src="https://img.shields.io/github/actions/workflow/status/LazyBuddyDev/LazyBuddy/checks.yml?branch=main&style=flat-square&label=checks" alt="构建检查状态"></a>
@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="https://lazybuddydev.github.io/LazyBuddy/"><strong>下载 Windows 版</strong></a> ·
-  <a href="https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v1.0.2">发布说明</a> ·
+  <a href="https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v1.0.3">发布说明</a> ·
   <a href="docs/README.md">文档</a> ·
   <a href="https://github.com/LazyBuddyDev/LazyBuddy/issues">反馈问题</a>
 </p>
@@ -36,15 +36,15 @@ LazyBuddy 是你的桌面摸鱼搭子，把喜欢的消遣放在手边。功能�
 
 ## 下载与开始使用
 
-**[前往下载页 →](https://lazybuddydev.github.io/LazyBuddy/)**　或直接下载 **[Windows x64 安装程序](https://github.com/LazyBuddyDev/LazyBuddy/releases/download/v1.0.2/LazyBuddy-Setup-windows-x86_64.exe)**。
+**[前往下载页 →](https://lazybuddydev.github.io/LazyBuddy/)**　或直接下载 **[Windows x64 安装程序](https://github.com/LazyBuddyDev/LazyBuddy/releases/download/v1.0.3/LazyBuddy-Setup-windows-x86_64.exe)**。
 
 1. 运行 EXE 安装向导，选择新的安装目录。界面需要 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/#download-section)，基础宿主不需要 Python、Go 或媒体 SDK。
 2. 打开「功能」，选择需要的功能，再从左上角下拉菜单切换。目前提供新闻速览和红果短剧。
 3. 在设置中调整外观与快捷键。窗口的「×」隐藏到托盘；彻底退出使用托盘菜单中的「退出」。
 
-目前仅支持 **Windows x64**。Release 中的 ZIP 用于应用内部更新，首次安装请使用 EXE。1.0.0 及更早版本升级到 1.0.2 需先退出并卸载原宿主，再手动安装一次；默认保留设置、账号与共享模块。详见[安装与卸载](docs/uninstall.md)及[发布说明](https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v1.0.2)。
+目前仅支持 **Windows x64**。Release 中的 ZIP 用于应用内部更新，首次安装请使用 EXE。1.0.0 及更早版本升级到 1.0.3 需先退出并卸载原宿主，再手动安装一次；默认保留设置、账号与共享模块。详见[安装与卸载](docs/uninstall.md)及[发布说明](https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v1.0.3)。
 
-部分新闻来源超时、部分剧集上游空响应仍在排查，账号和节目权限以实际服务为准。当前限制见[发布说明](https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v1.0.2)。
+短剧取源目前存在上游空响应，播放可能不可用，本版未修复；新闻来源也可能出现临时网络故障。当前限制见[发布说明](https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v1.0.3)。
 
 ## 从源码运行
 
