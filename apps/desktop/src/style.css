@@ -467,6 +467,23 @@ li button:hover {
   font-size: 13px;
   font-weight: 500;
 }
+.module-name { min-width: 0; overflow-wrap: anywhere; }
+.module-row .row-actions { flex-shrink: 0; }
+.module-progress-slot { flex: 1; min-width: 70px; max-width: 240px; }
+.module-progress { display: flex; flex-direction: column; gap: 5px; }
+.module-progress progress { appearance: none; width: 100%; height: 6px; border: 0; background: var(--line); }
+.module-progress progress::-webkit-progress-bar { background: var(--line); }
+.module-progress progress::-webkit-progress-value { background: var(--accent); }
+.module-progress progress:indeterminate::-webkit-progress-bar {
+  background: linear-gradient(90deg, var(--line) 25%, var(--accent) 50%, var(--line) 75%);
+  background-size: 200% 100%;
+  animation: module-progress 1.4s linear infinite;
+}
+@keyframes module-progress { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .module-progress progress:indeterminate::-webkit-progress-bar { animation: none; }
+}
+.module-progress span { color: var(--muted); font-size: 11px; }
 .version {
   font-size: 11px;
   color: var(--muted);

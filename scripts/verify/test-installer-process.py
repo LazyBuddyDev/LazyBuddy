@@ -20,6 +20,7 @@ parser.add_argument('--bundle', type=Path, required=True)
 parser.add_argument('--compiler', type=Path, required=True)
 args = parser.parse_args()
 payload = args.bundle.resolve() / 'LazyBuddy'
+version = json.loads((payload / 'build-info.json').read_text(encoding='utf-8'))['version']
 root = Path(tempfile.mkdtemp(prefix='qa-installer-process-', dir=ROOT / 'tmp')).resolve()
 assert root.is_relative_to((ROOT / 'tmp').resolve())
 instance = 'qa-installer-' + uuid.uuid4().hex
@@ -35,19 +36,19 @@ env = dict(os.environ, LAZYBUDDY_INSTANCE=instance, LAZYBUDDY_DATA_DIR=str(data)
            TEMP=str(scratch), TMP=str(scratch))
 subprocess.run([str(args.compiler.resolve()), '/V2', f'/DPAYLOAD={payload}',
                 f'/DPAYLOAD_FILES={payload_files(payload, root / "files.nsh")}',
-                f'/DOUTPUT={installer}', '/DVERSION=1.0.0', f'/DREGKEY={key}',
+                f'/DOUTPUT={installer}', f'/DVERSION={version}', f'/DREGKEY={key}',
                 str(ROOT / 'scripts/installer.nsi')], check=True)
 def run(*command):
     return subprocess.run(command, env=env, timeout=45, creationflags=subprocess.CREATE_NO_WINDOW)
 
 assert run(str(installer), '/S', '/D=' + str(install)).returncode == 0
 info = json.loads((install / 'build-info.json').read_text(encoding='utf-8'))
-assert info['version'] == '1.0.0'
+assert info['version'] == version
 for name, expected in info['files'].items():
     assert hashlib.sha256((install / name).read_bytes()).hexdigest() == expected, name
 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as registration:
     assert winreg.QueryValueEx(registration, 'InstallLocation')[0] == str(install)
-    assert winreg.QueryValueEx(registration, 'DisplayVersion')[0] == '1.0.0'
+    assert winreg.QueryValueEx(registration, 'DisplayVersion')[0] == version
     assert winreg.QueryValueEx(registration, 'UninstallString')[0] == f'"{install}\\uninstall.exe"'
 (install / 'keep.txt').write_text('user file')
 assert run(str(installer), '/S', '/D=' + str(install)).returncode != 0
