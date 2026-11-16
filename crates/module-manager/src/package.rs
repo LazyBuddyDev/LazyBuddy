@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
-    io::{self, Read},
+    io::{self, Read, Write},
     path::Path,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 fn download_agent(timeout: Duration) -> ureq::Agent {
@@ -162,6 +162,46 @@ pub fn download_signed_payload(url: &str, public_key: &[u8]) -> io::Result<(Vec<
 
 /// Download a bounded archive. Consumers verify its signed digest before unpacking.
 pub fn download_archive(url: &str, destination: &Path, bytes: u64) -> io::Result<()> {
+    download_archive_progress(url, destination, bytes, &mut |_| {})
+}
+
+fn copy_download(
+    source: impl Read,
+    mut destination: impl Write,
+    bytes: u64,
+    progress: &mut impl FnMut(u64),
+) -> io::Result<()> {
+    let mut source = source.take(bytes + 1);
+    let mut buffer = [0u8; 65536];
+    let mut downloaded = 0;
+    let mut reported = Instant::now();
+    loop {
+        let count = source.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        downloaded += count as u64;
+        if downloaded > bytes {
+            return Err(invalid("archive download incomplete"));
+        }
+        destination.write_all(&buffer[..count])?;
+        if reported.elapsed() >= Duration::from_millis(100) || downloaded == bytes {
+            progress(downloaded);
+            reported = Instant::now();
+        }
+    }
+    if downloaded != bytes {
+        return Err(invalid("archive download incomplete"));
+    }
+    Ok(())
+}
+
+fn download_archive_progress(
+    url: &str,
+    destination: &Path,
+    bytes: u64,
+    progress: &mut impl FnMut(u64),
+) -> io::Result<()> {
     if !url.starts_with("https://") || bytes == 0 || bytes > 1024 * 1024 * 1024 {
         return Err(invalid("invalid archive download"));
     }
@@ -174,13 +214,7 @@ pub fn download_archive(url: &str, destination: &Path, bytes: u64) -> io::Result
             .get(url)
             .call()
             .map_err(|error| download_error("archive", error))?;
-        if io::copy(
-            &mut response.body_mut().as_reader().take(bytes + 1),
-            &mut file,
-        )? != bytes
-        {
-            return Err(invalid("archive download incomplete"));
-        }
+        copy_download(response.body_mut().as_reader(), &mut file, bytes, progress)?;
         file.sync_all()
     })();
     drop(file);
@@ -222,19 +256,39 @@ pub fn verify_catalog(bytes: &[u8], signature: &[u8], public_key: &[u8]) -> io::
 
 impl Manager {
     pub fn install_from_catalog(&self, catalog: &Catalog, id: &str) -> io::Result<Manifest> {
+        self.install_from_catalog_progress(catalog, id, |_, _, _| {})
+    }
+
+    /// Download bytes include all missing dependencies; verification and activation have no byte total.
+    pub fn install_from_catalog_progress(
+        &self,
+        catalog: &Catalog,
+        id: &str,
+        mut progress: impl FnMut(&str, u64, u64),
+    ) -> io::Result<Manifest> {
         let _lock = self.lock()?;
         let mut staged = Vec::new();
         let result = (|| {
-            for package in catalog.installation_order(id)? {
-                if self
-                    .manifest(&package.id)
-                    .is_ok_and(|manifest| manifest.version == package.version)
-                {
-                    continue;
-                }
-                staged.push(self.download_staged(package)?);
+            let packages: Vec<_> = catalog
+                .installation_order(id)?
+                .into_iter()
+                .filter(|package| {
+                    !self
+                        .manifest(&package.id)
+                        .is_ok_and(|manifest| manifest.version == package.version)
+                })
+                .collect();
+            let total = packages.iter().map(|p| p.bytes).sum();
+            let mut downloaded = 0;
+            for package in packages {
+                progress("download", downloaded, total);
+                staged.push(self.download_staged(package, &mut |stage, bytes| {
+                    progress(stage, downloaded + bytes, total)
+                })?);
+                downloaded += package.bytes;
             }
             if !staged.is_empty() {
+                progress("install", downloaded, total);
                 self.activate_many(&staged)?;
             }
             self.manifest(id)
@@ -247,7 +301,7 @@ impl Manager {
 
     pub fn download_and_install(&self, package: &Package) -> io::Result<Manifest> {
         let _lock = self.lock()?;
-        let staged = self.download_staged(package)?;
+        let staged = self.download_staged(package, &mut |_, _| {})?;
         let result = self
             .activate_many(std::slice::from_ref(&staged))
             .map(|mut manifests| manifests.remove(0));
@@ -255,14 +309,21 @@ impl Manager {
         result
     }
 
-    fn download_staged(&self, package: &Package) -> io::Result<crate::Staged> {
+    fn download_staged(
+        &self,
+        package: &Package,
+        progress: &mut impl FnMut(&str, u64),
+    ) -> io::Result<crate::Staged> {
         if !valid_id(&package.id) || !package.url.starts_with("https://") {
             return Err(invalid("invalid package download"));
         }
         fs::create_dir_all(self.root())?;
         let archive = self.root().join(format!(".download-{}.zip", package.id));
         let result = (|| {
-            download_archive(&package.url, &archive, package.bytes)?;
+            download_archive_progress(&package.url, &archive, package.bytes, &mut |bytes| {
+                progress("download", bytes)
+            })?;
+            progress("verify", package.bytes);
             self.unpack_verified(&archive, package)
         })();
         let _ = fs::remove_file(&archive);
@@ -363,6 +424,40 @@ impl Manager {
 mod tests {
     use super::*;
     use ring::signature::{Ed25519KeyPair, KeyPair};
+    #[test]
+    fn download_progress_preserves_bytes_and_rejects_wrong_sizes() {
+        let source = vec![42; 150_000];
+        let mut output = Vec::new();
+        let mut progress = Vec::new();
+        copy_download(
+            source.as_slice(),
+            &mut output,
+            source.len() as u64,
+            &mut |n| progress.push(n),
+        )
+        .unwrap();
+        assert_eq!(output, source);
+        assert_eq!(progress.last(), Some(&150_000));
+        assert!(progress.windows(2).all(|p| p[0] < p[1]));
+        for expected in [149_999, 150_001] {
+            assert!(copy_download(source.as_slice(), io::sink(), expected, &mut |_| {}).is_err());
+        }
+        struct FailedWriter;
+        impl Write for FailedWriter {
+            fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+                Err(io::Error::other("disk full"))
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        assert!(
+            copy_download(source.as_slice(), FailedWriter, 150_000, &mut |_| panic!(
+                "failed writes must not report progress"
+            ))
+            .is_err()
+        );
+    }
     #[test]
     fn existing_archive_target_is_preserved_without_network() {
         let directory = Path::new(env!("CARGO_MANIFEST_DIR"))

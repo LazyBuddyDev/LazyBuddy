@@ -26,7 +26,7 @@ def info(directory):
     result=dict(schema=1,version='2.0.1',build=build,files=files)
     (directory/'build-info.json').write_text(json.dumps(result),encoding='utf-8')
     return result
-with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=TMP) as temporary:
+with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=TMP,ignore_cleanup_errors=True) as temporary:
     root=Path(temporary);install=root/'install';data=root/'data'
     install.mkdir()
     for name in ('lazybuddy.exe','lazybuddy-cli.exe','lazybuddy-updater.exe','uninstall.exe','module-catalog.json','app-update-source.json'):
@@ -132,6 +132,13 @@ with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=TMP) as tempora
                 time.sleep(.1)
             time.sleep(.2)
 
+# WebView2 may retain its profile briefly after the owned host exits.
+deadline=time.monotonic()+20
+while root.exists():
+    try:shutil.rmtree(root)
+    except PermissionError:
+        if time.monotonic()>=deadline:raise
+        time.sleep(.2)
 args.report.parent.mkdir(parents=True,exist_ok=True)
 args.report.write_text(json.dumps(report,indent=2),encoding="utf-8")
 print(json.dumps(report))

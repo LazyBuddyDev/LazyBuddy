@@ -1,0 +1,24 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><div id="app"></div><script type="module">
+import {mount} from 'svelte';import App from '/src/App.svelte';import '/src/style.css';
+let generation=0;
+const entries=[{id:'news',name:'新闻速览',version:'0.1.0',installed:false,update:false},{id:'hongguo',name:'红果短剧',version:'0.2.0',installed:true,update:true}];
+const list=()=>({entries,installed:entries.filter(m=>m.installed),catalog_ready:true});
+window.__TAURI_INTERNALS__={transformCallback:()=>0,invoke:async(command,args)=>{
+ if(command==='plugin:event|listen')return 0;
+ if(command==='settings')return {preferences:{root:'news',dark:false,topmost:false,auto_update:false,background_opacity:1,card_opacity:1},startup:false,isolated:true};
+ if(command==='module_call'){
+   if(args.action==='install')return new Promise((resolve,reject)=>{
+     window.installation={id:args.id,progress:value=>args.onProgress.onmessage(value),finish:fail=>{
+       if(fail)reject(new Error('样例安装失败'));
+       else{Object.assign(entries.find(m=>m.id===args.id),{installed:true,update:false});resolve(list());}
+     }};
+   });
+   return list();
+ }
+ if(command==='snapshot')return {media_route:'browser_service',view:{root:'news',section:'modules',visible:true,generation}};
+ if(command==='transition')return {...args,generation:++generation};
+ if(command==='news_call')return args.method==='sources'?[]:{preferences:{followed:[],hidden:[],order:[]},cache:{}};
+ if(command==='playback_call')return {};
+}};
+mount(App,{target:document.querySelector('#app')});
+</script></html>

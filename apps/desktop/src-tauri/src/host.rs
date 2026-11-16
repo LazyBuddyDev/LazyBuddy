@@ -127,6 +127,14 @@ pub async fn modules(
     action: String,
     id: Option<String>,
 ) -> Result<Value, String> {
+    modules_with_progress(app, action, id, None).await
+}
+async fn modules_with_progress(
+    app: tauri::AppHandle,
+    action: String,
+    id: Option<String>,
+    on_progress: Option<tauri::ipc::Channel<Value>>,
+) -> Result<Value, String> {
     let state = app.state::<State>();
     let _guard = state.operation.lock().await;
     if action != "list" && action != "catalog" {
@@ -166,9 +174,16 @@ pub async fn modules(
                     );
                 }
                 manager
-                    .install_from_catalog(
+                    .install_from_catalog_progress(
                         catalog.as_ref().ok_or("目录未就绪")?,
                         id.as_deref().ok_or("缺少功能 ID")?,
+                        |stage, downloaded, total| {
+                            if let Some(channel) = &on_progress {
+                                let _ = channel.send(
+                                    json!({"stage":stage,"downloaded":downloaded,"total":total}),
+                                );
+                            }
+                        },
                     )
                     .map_err(failure)?;
             }
@@ -206,8 +221,16 @@ pub async fn module_call(
     action: String,
     id: Option<String>,
     app: tauri::AppHandle,
+    webview: tauri::Webview,
+    on_progress: Option<tauri::ipc::JavaScriptChannelId>,
 ) -> Result<Value, String> {
-    modules(app, action, id).await
+    modules_with_progress(
+        app,
+        action,
+        id,
+        on_progress.map(|id| id.channel_on(webview)),
+    )
+    .await
 }
 
 #[tauri::command]

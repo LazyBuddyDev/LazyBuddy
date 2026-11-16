@@ -17,3 +17,9 @@
 业务接口分别由[新闻服务](https://github.com/LazyBuddyDev/news-service/blob/main/docs/module-api.md)和[红果服务](https://github.com/LazyBuddyDev/hongguo-service/blob/main/docs/module-api.md)维护，宿主不保留整份副本。
 
 `index.html`和`icon.svg`用于公开站点；`modules/`和`updates/`用于已发布机器端点。签名文件按原字节维护，不作为普通文档排版或清理。
+
+## 下载站点
+
+下载页源文件为`index.html`，通过[GitHub Pages](https://lazybuddydev.github.io/LazyBuddy/)提供。页面为纯静态HTML/CSS，无构建依赖；`.nojekyll`关闭Jekyll处理。下载按钮指向GitHub Release的EXE安装程序，版本、包大小与发布说明应在发版时一起核对。
+
+站点已在上述地址托管。若需重新配置，在仓库Settings → Pages选择“Deploy from a branch”、`main`分支和`/docs`目录，参见[GitHub Pages发布源说明](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site)。后续提交推送后由Pages发布；仅本地修改不会更新在线站点。必须发布完整`docs`目录，保留`modules/`和`updates/`及其签名的精确字节，不能只上传下载页覆盖现有机器端点。

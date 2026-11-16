@@ -1,13 +1,15 @@
 <script lang="ts">
-  import {onMount,tick} from 'svelte';import {invoke} from '@tauri-apps/api/core';import {listen} from '@tauri-apps/api/event';
+  import {onMount,tick} from 'svelte';import {invoke,Channel} from '@tauri-apps/api/core';import {listen} from '@tauri-apps/api/event';
   import ShortcutButton from './ShortcutButton.svelte';import Icon from './Icon.svelte';import Switch from './Switch.svelte';import Hongguo from './Hongguo.svelte';import News from './News.svelte';
   import {toggleSection,moduleTarget,type Root,type Section,type View} from './lifecycle';import logoUrl from '../../../assets/lazybuddy.svg';
   type Module={id:string;name:string;version:string;installed:boolean;update:boolean};
+  type ModuleProgress={stage:string;downloaded:number;total:number};
   type Preferences={dark:boolean;topmost:boolean;root:string|null;auto_update:boolean;background_opacity:number;card_opacity:number;shortcut:{modifiers:number;key:number};[key:string]:unknown};
   let root=$state<Root>('news');let section=$state<Section>('content');let category=$state('page');let visible=$state(false);let docked=$state(false);
   let view=$state<View>({root:'news',section:'content',visible:false,generation:0});let eventsReady=$state(false);let ready=$state(false);
   let preferences=$state<Preferences>();let dark=$derived(preferences?.dark??false);let pinned=$state(false);let startup=$state(false);let isolated=$state(false);
   let modules=$state<Module[]>([]);let roots=$state<{id:Root;name:string}[]>([]);let managerBusy=$state(false);let catalogReady=$state(false);
+  let installing=$state<string>();let moduleProgress=$state<ModuleProgress>();
   let servicePlayback=$state(false);let realHongguo=$state<Hongguo>();let serviceActive=$state(false);
   let notice=$state('正在启动');let updateReady=$state(false);let page:HTMLElement;let sequence=0;let lastAccountPage=false;
   let displayedCategory='page';
@@ -33,11 +35,13 @@
   }
   async function moduleAction(action:string,id?:string){
     if(managerBusy)return;managerBusy=true;if(action!=='list')notice=action==='catalog'?'正在读取功能目录':action==='uninstall'?'正在卸载':'正在下载安装';
-    try{const data=await call<{entries:Module[];installed:{id:Root;name:string}[];catalog_ready:boolean}>('module_call',{action,id});modules=data.entries;roots=data.installed;catalogReady=data.catalog_ready;
+    let finished=false;const onProgress=action==='install'?new Channel<ModuleProgress>():undefined;
+    if(onProgress){installing=id;moduleProgress=undefined;onProgress.onmessage=value=>{if(!finished)moduleProgress=value;};}
+    try{const data=await call<{entries:Module[];installed:{id:Root;name:string}[];catalog_ready:boolean}>('module_call',{action,id,onProgress});modules=data.entries;roots=data.installed;catalogReady=data.catalog_ready;
       servicePlayback=(await call<{media_route:string}>('snapshot')).media_route==='browser_service';
       if(ready&&!roots.some(m=>m.id===root)&&roots.length)await change(roots[0].id,section);
       if(action!=='list')notice='功能列表已更新';
-    }catch(error){notice=`功能操作失败：${error}`;}finally{managerBusy=false;}
+    }catch(error){notice=`功能操作失败：${error}`;}finally{finished=true;installing=undefined;moduleProgress=undefined;managerBusy=false;}
   }
   async function toggleModules(){await change(root,moduleTarget(section));if(section==='modules'){await moduleAction('list');if(!catalogReady)void moduleAction('catalog');}}
   async function action(action:string){if(action!=='show')await realHongguo?.suspend(action!=='quit');try{await call('window_action',{action});}catch(error){notice=String(error);}}
@@ -69,7 +73,7 @@
 {#if ready}
 {#if servicePlayback}<Hongguo bind:this={realHongguo} active={serviceActive&&!docked} showing={root==='hongguo'&&(section==='content'||section==='settings'&&category==='page')} accountOnly={section==='settings'} notice={text=>pageNotice('hongguo',text)} navigation={settingsNavigation}/>{/if}
 {#if roots.some(m=>m.id==='news')}<div hidden={root!=='news'||!(section==='content'||section==='settings'&&category==='page')}><News active={root==='news'&&visible&&!docked&&(section==='content'||section==='settings'&&category==='page')} settings={section==='settings'} generation={view.generation} notice={text=>pageNotice('news',text)} navigation={settingsNavigation}/></div>{/if}
-{#if section==='modules'}<section class="content-width module-page"><div class="module-heading"><h1>可用功能</h1><button onclick={toggleModules}><Icon name="arrow" size={16}/>返回</button></div><div class="module-list">{#each modules as module}<div class="module-row"><div><strong>{module.name}</strong><span class="version">{module.version}</span></div><div class="row-actions">{#if module.installed}<button disabled={managerBusy||!module.update} onclick={()=>moduleAction('install',module.id)}>更新</button><button class="subtle-danger" disabled={managerBusy} onclick={()=>moduleAction('uninstall',module.id)}>卸载</button>{:else}<button disabled={managerBusy||!catalogReady} onclick={()=>moduleAction('install',module.id)}>安装</button>{/if}</div></div>{/each}</div></section>
+{#if section==='modules'}<section class="content-width module-page"><div class="module-heading"><h1>可用功能</h1><button onclick={toggleModules}><Icon name="arrow" size={16}/>返回</button></div><div class="module-list">{#each modules as module}<div class="module-row"><div class="module-name"><strong>{module.name}</strong><span class="version">{module.version}</span></div><div class="module-progress-slot">{#if installing===module.id}{@const downloading=moduleProgress?.stage==='download'&&moduleProgress.total>0}{@const percent=downloading?Math.floor(moduleProgress!.downloaded/moduleProgress!.total*100):undefined}{@const label=downloading?`正在下载 ${percent}%`:moduleProgress?.stage==='verify'?'正在校验并解包':moduleProgress?.stage==='install'?'正在安装':'正在准备'}<div class="module-progress" title={`${module.name}：${label}`}>{#if downloading}<progress max="100" value={percent} aria-label={`${module.name}安装进度`} aria-valuetext={label}></progress>{:else}<progress aria-label={`${module.name}安装进度`} aria-valuetext={label}></progress>{/if}<span>{label}</span></div>{/if}</div><div class="row-actions">{#if module.installed}<button disabled={managerBusy||!module.update} onclick={()=>moduleAction('install',module.id)}>更新</button><button class="subtle-danger" disabled={managerBusy} onclick={()=>moduleAction('uninstall',module.id)}>卸载</button>{:else}<button disabled={managerBusy||!catalogReady} onclick={()=>moduleAction('install',module.id)}>安装</button>{/if}</div></div>{/each}</div></section>
 {:else if section==='settings'&&category!=='page'}<section class="settings-layout content-width">{@render settingsNavigation()}<div class="settings-content"><h1>{category==='appearance'?'显示设置':category==='system'?'系统设置':'关于我们'}</h1>
 {#if category==='appearance'}<div class="setting-row"><strong>深色模式</strong><Switch label="深色模式" checked={dark} onchange={value=>save({dark:value})}/></div><div class="setting-row"><label for="background-opacity">背景透明度</label><input id="background-opacity" aria-label="背景透明度" type="range" min="0" max="1" step=".05" value={preferences?.background_opacity??.94} onchange={event=>save({background_opacity:Number(event.currentTarget.value)})}/></div><div class="setting-row"><label for="card-opacity">卡片透明度</label><input id="card-opacity" aria-label="卡片透明度" type="range" min="0" max="1" step=".05" value={preferences?.card_opacity??.94} onchange={event=>save({card_opacity:Number(event.currentTarget.value)})}/></div>
 {:else if category==='system'}<div class="setting-row"><strong>开机启动</strong><Switch label="开机启动" checked={startup} disabled={isolated} onchange={value=>call('set_startup',{enabled:value}).then(()=>startup=value).catch(error=>notice=String(error))}/></div><div class="setting-row"><span>显示 / 隐藏快捷键</span><ShortcutButton active={visible&&!docked} label={shortcutLabel()} save={value=>save({shortcut:value})} notice={text=>notice=text}/></div><div class="setting-row"><strong>应用自动更新</strong><Switch label="应用自动更新" checked={preferences?.auto_update??true} onchange={value=>save({auto_update:value})}/></div><div class="setting-row"><button onclick={checkUpdate}>检查更新</button><button onclick={()=>call('open_logs').catch(error=>notice=String(error))}>打开日志</button></div>

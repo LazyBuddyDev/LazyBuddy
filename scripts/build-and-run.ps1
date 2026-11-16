@@ -6,7 +6,6 @@ $profile=if($Release){'release'}else{'debug'}
 $target=if($env:CARGO_TARGET_DIR){[IO.Path]::GetFullPath($env:CARGO_TARGET_DIR)}else{Join-Path $repoRoot 'target'}
 $application=Join-Path $target "$profile/lazybuddy.exe"
 $cli=Join-Path $target "$profile/lazybuddy-cli.exe"
-$candidate=$null
 $developmentPackages=if($ModulePackages){(Resolve-Path -LiteralPath $ModulePackages).Path}else{Join-Path $repoRoot 'target/packages/development'}
 function Invoke-Host([string]$Action){
     $ErrorActionPreference='Continue'
@@ -14,6 +13,12 @@ function Invoke-Host([string]$Action){
     $reply=& $cli host $request 2>$null
     if($LASTEXITCODE){return $null}
     return ($reply | ConvertFrom-Json)
+}
+function Stop-BuildHost($Status){
+    if([IO.Path]::GetFullPath($Status.data.exe) -ne [IO.Path]::GetFullPath($application)){throw 'Another installation is running; it will not be stopped.'}
+    $hostProcess=Get-Process -Id $Status.data.pid -ErrorAction Stop
+    $quit=Invoke-Host 'app.quit'
+    if(!$quit -or !$quit.ok -or !$hostProcess.WaitForExit(30000)){throw 'Host did not exit normally; files and modules were not replaced.'}
 }
 Push-Location $repoRoot
 try{
@@ -26,27 +31,19 @@ try{
         npm.cmd --prefix apps/desktop run build
         if($LASTEXITCODE){throw 'Frontend build failed; no old binary will be launched.'}
         Write-Host '[2/2] Building LazyBuddy host, CLI and updater...'
-        $running=Get-Process -Name lazybuddy -ErrorAction SilentlyContinue | Where-Object {$_.Path -eq $application}
-        $arguments=@('build','--locked','-p','lazybuddy-cli','-p','lazybuddy-app-updater')
-        if(!$running){$arguments+=@('-p','lazybuddy')}
+        if(Test-Path -LiteralPath $cli){
+            $status=Invoke-Host 'status'
+            if($status -and $status.ok){Stop-BuildHost $status}
+        }
+        $arguments=@('build','--locked','-p','lazybuddy-cli','-p','lazybuddy-app-updater','-p','lazybuddy')
         if($Release){$arguments+='--release'}
         & cargo @arguments
         if($LASTEXITCODE){throw 'Native build failed; no old binary will be launched.'}
-        if($running){
-            # Build alongside the running image; quit only after a new executable is ready.
-            $candidate=Join-Path $target "$profile/build-and-run/lazybuddy.exe"
-            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $candidate) | Out-Null
-            $hostArguments=@('rustc','--locked','-p','lazybuddy','--bin','lazybuddy')
-            if($Release){$hostArguments+='--release'}
-            $hostArguments+=@('--','-o',$candidate)
-            & cargo @hostArguments
-            if($LASTEXITCODE -or !(Test-Path -LiteralPath $candidate)){throw 'Host candidate build failed; running instance preserved.'}
-        }
         foreach($file in @('module-catalog.json','app-update-source.json')){Copy-Item -LiteralPath (Join-Path $repoRoot $file) -Destination (Join-Path $target "$profile/$file") -Force}
     }
     if(!(Test-Path -LiteralPath $application)){throw 'LazyBuddy executable missing; build it first.'}
     Write-Host "Build ready: $application"
-    if($BuildOnly){if($candidate){Write-Host "Candidate ready (running instance preserved): $candidate"};exit 0}
+    if($BuildOnly){exit 0}
     $installed=& $cli modules list
     if($LASTEXITCODE){throw 'Cannot read installed modules.'}
     $installed=($installed | ConvertFrom-Json)
@@ -69,16 +66,13 @@ try{
     $status=Invoke-Host 'status'
     if($status -and $status.ok){
         if([IO.Path]::GetFullPath($status.data.exe) -ne [IO.Path]::GetFullPath($application)){throw 'Another installation is running; it will not be stopped.'}
-        if(!$candidate -and !$updates.Count){
+        if(!$updates.Count){
             $shown=Invoke-Host 'window.show'
             if(!$shown -or !$shown.ok){throw 'Existing host did not respond.'}
             exit 0
         }
-        $hostProcess=Get-Process -Id $status.data.pid -ErrorAction Stop
-        $quit=Invoke-Host 'app.quit'
-        if(!$quit -or !$quit.ok -or !$hostProcess.WaitForExit(30000)){throw 'Host did not exit normally; files and modules were not replaced.'}
+        Stop-BuildHost $status
     }
-    if($candidate){Copy-Item -LiteralPath $candidate -Destination $application -Force}
     foreach($package in $updates){
         Write-Host "Installing prepared development module: $($package.id) $($package.version)"
         & $cli modules install-local $package.path
