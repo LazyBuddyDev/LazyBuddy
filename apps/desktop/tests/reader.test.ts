@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {pageStart,progressLabel,highlights,readerError,type Entry} from '../src/reader.ts';
+import {pageStart,progressLabel,markedRuns,matchOffsets,wrapMatch,readerError,type Entry,type Block} from '../src/reader.ts';
 import {active,accepts,type View} from '../src/lifecycle.ts';
 test('reading positions map to bounded pages and count chapters from zero',()=>{
   assert.equal(pageStart('b150'),96);assert.equal(pageStart('b192'),192);
@@ -8,13 +8,23 @@ test('reading positions map to bounded pages and count chapters from zero',()=>{
   assert.equal(progressLabel({position:{chapter_id:'c1'},chapters:10} as Entry),'第 2 / 10 章');
 });
 test('search highlighting retains the original text and treats markup as text',()=>{
-  const text='😀<script>你好你好';const result=highlights(text,'你好');
+  const text='😀<script>你好你好';const result=markedRuns({text,runs:[]} as unknown as Block,'你好');
   assert.equal(result.map(p=>p.text).join(''),text);assert.equal(result.filter(p=>p.match).length,2);
-  assert.deepEqual(highlights('abc',''),[{text:'abc',match:false}]);
+  assert.equal(markedRuns({text:'abc',runs:[]} as unknown as Block,'')[0].match,false);
   assert.match(readerError('encoding_required'),/编码/);
 });
 test('reader shares the host lifecycle and rejects A to B to A results',()=>{
   const view:View={root:'reader',section:'content',visible:true,generation:1};
   assert.equal(active(view,'reader'),true);assert.equal(accepts({...view,generation:3},view),false);
   assert.equal(active({...view,section:'settings'},'reader'),false);assert.equal(active({...view,visible:false},'reader'),false);
+});
+
+test('current match spans styled runs and repeated matches wrap both ways',()=>{
+  const block={text:'😀你好你好',runs:[{text:'😀你',strong:true,emphasis:false},{text:'好你好',strong:false,emphasis:true}]} as Block;
+  assert.deepEqual(matchOffsets(block.text,'你好'),[2,4]);
+  const parts=markedRuns(block,'你好',2);
+  assert.equal(parts.filter(p=>p.current).map(p=>p.text).join(''),'你好');
+  assert.equal(parts.filter(p=>p.match&&!p.current).map(p=>p.text).join(''),'你好');
+  assert.equal(parts.map(p=>p.text).join(''),block.text);
+  assert.equal(wrapMatch(-1,4),3);assert.equal(wrapMatch(4,4),0);assert.equal(wrapMatch(0,0),-1);
 });

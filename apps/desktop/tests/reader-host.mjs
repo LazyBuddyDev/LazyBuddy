@@ -22,7 +22,7 @@ let browser,page,service,hostStarted=false,hostPid,pickerStarted=false;let impor
 async function seed(){
   await mkdir(path.join(data,'services/reader'),{recursive:true});
   const txt=path.join(profile,'小说.txt');
-  await writeFile(txt,`第一章 起点\n${Array.from({length:220},(_,i)=>`第${i}段 春日的风吹过山谷，远方的灯火依次亮起。😀`).join('\n')}\n第二章 归途\n故事仍在继续。`);
+  await writeFile(txt,`第一章 起点\n${Array.from({length:220},(_,i)=>`第${i}段 春日春日的风吹过山谷，远方的灯火依次亮起。😀`).join('\n')}\n第二章 归途\n故事仍在继续。`);
   service=spawn(path.join(pack,'bin/reader-service.exe'),[],{env:{...env,LAZYBUDDY_DATA_DIR:path.join(data,'services/reader')},windowsHide:true,stdio:['pipe','pipe','pipe']});
   let next=0;const pending=new Map();const lines=createInterface({input:service.stdout});
   lines.on('line',line=>{const reply=JSON.parse(line);const done=pending.get(reply.id);pending.delete(reply.id);done(reply);});
@@ -73,8 +73,23 @@ try{
   await page.getByLabel('正文字号').selectOption('24');await wait(200);
   await page.getByRole('button',{name:'返回页面',exact:true}).click();await page.locator('.reader-scroll').waitFor();
   assert.ok(await page.locator('.reader-scroll').evaluate(e=>e.scrollTop>1000),'settings must restore the text anchor');
-  await page.getByLabel('章内查找').fill('第150段');await page.getByRole('button',{name:'查找',exact:true}).click();await page.locator('[data-block="b150"] mark').waitFor();
-  await page.getByRole('button',{name:'目录',exact:true}).click();await page.getByLabel('章节目录').selectOption('1');await page.getByRole('heading',{name:'第二章 归途'}).waitFor();
+  assert.equal(await page.getByRole('textbox',{name:'查找本章内容'}).count(),0);
+  await page.getByRole('button',{name:'章内查找',exact:true}).click();
+  await page.getByRole('textbox',{name:'查找本章内容'}).fill('第150段');await page.getByRole('button',{name:'下一处',exact:true}).click();await page.locator('[data-block="b150"] mark').waitFor();
+  await page.getByRole('textbox',{name:'查找本章内容'}).fill('春日');await page.getByRole('button',{name:'下一处',exact:true}).click();
+  const counter=page.getByLabel('查找匹配位置');await until(async()=>await counter.textContent()==='1/440','match total');
+  await page.getByRole('button',{name:'下一处',exact:true}).click();await until(async()=>await counter.textContent()==='2/440','same block second match');
+  assert.equal(await page.locator('[data-block="b0"] mark.current-match').textContent(),'春日');
+  await page.getByRole('button',{name:'上一处',exact:true}).click();await until(async()=>await counter.textContent()==='1/440');
+  await page.getByRole('button',{name:'上一处',exact:true}).click();await until(async()=>await counter.textContent()==='440/440','previous wraps to last');
+  await page.getByRole('button',{name:'下一处',exact:true}).click();await until(async()=>await counter.textContent()==='1/440','next wraps to first');
+  await page.getByRole('button',{name:'目录',exact:true}).click();
+  assert.equal(await page.getByRole('navigation',{name:'章节目录'}).evaluate(e=>getComputedStyle(e).scrollbarWidth),'none');
+  assert.ok(await page.locator('.reader-spread').evaluate(e=>e.querySelector('.reader-directory').getBoundingClientRect().right<=e.querySelector('.reader-scroll').getBoundingClientRect().left));
+  assert.doesNotMatch(await page.locator('.notice').textContent(),/inactive_reader_page/);
+  await page.screenshot({path:path.join(evidence,'search-directory.png')});
+  await page.getByRole('button',{name:'章内查找',exact:true}).click();assert.equal(await page.getByRole('textbox',{name:'查找本章内容'}).count(),0);
+  await page.getByRole('navigation',{name:'章节目录'}).getByRole('button',{name:'第二章 归途',exact:true}).click();await page.getByRole('heading',{name:'第二章 归途'}).waitFor();
   await page.getByLabel('选择功能').selectOption('news');const quiet=(await invoke('snapshot')).reader_requests;await wait(1000);assert.equal((await invoke('snapshot')).reader_requests,quiet,'inactive reader dispatches no requests');
   await page.getByLabel('选择功能').selectOption('reader');await page.getByRole('heading',{name:'第二章 归途'}).waitFor();
   const stale=await invoke('reader_call',{method:'chapter.read',args:{book_id:imported.id,chapter_id:'c0'},generation}).then(()=>'',String);assert.match(stale,/inactive_reader_page/);
@@ -114,7 +129,7 @@ with zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED) as z:
   await rm(blocker,{recursive:true});
   await invoke('reader_call',{method:'progress.flush',args:{},generation:(await invoke('snapshot')).view.generation});
   assert.deepEqual(JSON.parse(await readFile(indexPath,'utf8')).entries.find(e=>e.id===local.id).position,position);
-  const report={passed:true,real_packaged_service:true,bat_installs_new_module:true,source_file_independent:true,scroll_checkpoint:true,font_change_restores_anchor:true,chapter_search:true,chapter_navigation:true,root_switch_silent:true,rapid_root_switch:true,tall_settings_top_aligned:true,line_height_selection_round_trip:true,stale_generation_rejected:true,unselected_file_rejected:true,hidden_silent:true,reload_restores_progress:true,remove:true,epub_rich_text_and_image:true,save_failure_blocks_exit_and_retries:true,visuals:['light.png','dark-narrow.png'],native_file_dialog_cli_verified:true};
+  const report={passed:true,real_packaged_service:true,bat_installs_new_module:true,source_file_independent:true,scroll_checkpoint:true,font_change_restores_anchor:true,chapter_search:true,search_toggle_count_bidirectional_wrap:true,current_match_style:true,left_directory_hidden_scrollbar:true,chapter_navigation:true,root_switch_silent:true,rapid_root_switch:true,tall_settings_top_aligned:true,line_height_selection_round_trip:true,stale_generation_rejected:true,unselected_file_rejected:true,hidden_silent:true,reload_restores_progress:true,remove:true,epub_rich_text_and_image:true,save_failure_blocks_exit_and_retries:true,visuals:['light.png','dark-narrow.png'],native_file_dialog_cli_verified:true};
   await writeFile(path.join(evidence,'report.json'),JSON.stringify(report,null,2));console.log(report);
 }catch(error){
   if(page){console.error({notice:await page.locator('.notice').textContent().catch(()=>null)});await page.screenshot({path:path.join(evidence,'failure.png')}).catch(()=>{});}
