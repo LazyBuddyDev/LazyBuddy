@@ -33,6 +33,7 @@ with tempfile.TemporaryDirectory(prefix='dock-snap-',dir=ROOT/'tmp/profiles',ign
             left=native('drag-left');right=native('drag-right');left_again=native('drag-left')
             for capsule in (left,right,left_again):
                 assert not capsule['resizable'] and not capsule['maximizable'],capsule
+                assert capsule['frame_style']==0, 'capsule retains a native frame: '+str(capsule)
                 assert capsule['visible'], 'capsule must remain visible after native style changes'
                 assert capsule['after'][2]==capsule['after'][3]==round(40*capsule['dpi']/96)
                 assert capsule['region']['center'] and not capsule['region']['corner']
@@ -40,6 +41,7 @@ with tempfile.TemporaryDirectory(prefix='dock-snap-',dir=ROOT/'tmp/profiles',ign
             restored=native()
             assert restored['visible']
             assert restored['resizable']==original['resizable'] and restored['maximizable']==original['maximizable']
+            assert restored['frame_style']==original['frame_style']
             assert restored['after'][2:]==original['after'][2:]
             assert restored['topmost']==original['topmost']
             cycles.append(dict(left=left,right=right,left_again=left_again,restored=restored))
@@ -65,4 +67,4 @@ while root.exists():
     except PermissionError:
         if time.monotonic()>=deadline:raise
         time.sleep(.2)
-print('PASS: 3 left/right/left capsule cycles disable resizing/maximizing and restore original capabilities, dimensions and topmost state.')
+print('PASS: 3 left/right/left capsule cycles remove native borders, disable resizing/maximizing and restore original frame/capabilities, dimensions and topmost state.')

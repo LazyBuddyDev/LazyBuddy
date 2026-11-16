@@ -15,7 +15,7 @@ use windows_sys::Win32::{
 };
 
 const HOOK: usize = 0x4c4250;
-const SNAP_STYLE: u32 = WS_THICKFRAME | WS_MAXIMIZEBOX;
+const DOCK_STYLE: u32 = WS_CAPTION | WS_THICKFRAME | WS_MAXIMIZEBOX;
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Edge {
     Left,
@@ -47,7 +47,7 @@ impl Bounds {
 pub struct Dock {
     expanded: Option<Bounds>,
     was_topmost: bool,
-    snap_style: u32,
+    dock_style: u32,
 }
 struct Hook {
     window: WebviewWindow,
@@ -171,13 +171,13 @@ fn position(window: &WebviewWindow, bounds: Bounds, topmost: bool) -> io::Result
     }
     Ok(())
 }
-fn set_snap_style(window: &WebviewWindow, flags: u32) -> io::Result<()> {
+fn set_dock_style(window: &WebviewWindow, flags: u32) -> io::Result<()> {
     let handle = hwnd(window)?;
     // Tao's cached visibility differs from our no-focus Win32 show/hide path.
     unsafe {
         let style = GetWindowLongPtrW(handle, GWL_STYLE) as u32;
         SetLastError(0);
-        if SetWindowLongPtrW(handle, GWL_STYLE, ((style & !SNAP_STYLE) | flags) as isize) == 0
+        if SetWindowLongPtrW(handle, GWL_STYLE, ((style & !DOCK_STYLE) | flags) as isize) == 0
             && GetLastError() != 0
         {
             return Err(io::Error::last_os_error());
@@ -241,12 +241,12 @@ fn collapse_inner(window: &WebviewWindow) -> io::Result<bool> {
         state.expanded = Some(bounds.fit(work));
         state.was_topmost =
             unsafe { GetWindowLongPtrW(hwnd(window)?, GWL_EXSTYLE) } as u32 & WS_EX_TOPMOST != 0;
-        state.snap_style = style & SNAP_STYLE;
+        state.dock_style = style & DOCK_STYLE;
     }
     super::visibility(window, false);
     let _ = window.emit("shell-docked", true);
-    // A fixed-size, non-maximizable capsule must not participate in Windows Snap.
-    let result = set_snap_style(window, 0)
+    // Remove the native border as well: move/redock can repaint it despite WM_NCPAINT suppression.
+    let result = set_dock_style(window, 0)
         .and_then(|_| position(window, circle(bounds, work, dpi, edge), true))
         .and_then(|_| shape(window));
     if let Err(error) = result {
@@ -274,12 +274,12 @@ fn expand_inner(window: &WebviewWindow) -> io::Result<()> {
         return Ok(());
     };
     let (_, work, _) = geometry(window)?;
-    let (topmost, snap_style) = {
+    let (topmost, dock_style) = {
         let state = window.state::<Mutex<Dock>>();
         let state = state.lock().unwrap();
-        (state.was_topmost, state.snap_style)
+        (state.was_topmost, state.dock_style)
     };
-    set_snap_style(window, snap_style)?;
+    set_dock_style(window, dock_style)?;
     // State is released before resizing: native resize callbacks consult it synchronously.
     window.state::<Mutex<Dock>>().lock().unwrap().expanded = None;
     if let Err(error) = position(window, saved.fit(work), topmost) {

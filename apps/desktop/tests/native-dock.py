@@ -91,4 +91,5 @@ try:
     shape = dict(type=region_type,corner=bool(gdi.PtInRegion(region,0,0)),center=bool(gdi.PtInRegion(region,after[2]//2,after[3]//2)),corner_hits_prototype=hits_own_window(after[0],after[1]),center_hits_prototype=hits_own_window(after[0]+after[2]//2,after[1]+after[3]//2))
 finally: gdi.DeleteObject(region)
 style = user.GetWindowLongPtrW(hwnd,-16)
-print(json.dumps(dict(before=before,before_exit=before_exit,after=after,work_area=[info.work.left,info.work.top,info.work.right-info.work.left,info.work.bottom-info.work.top],dpi=user.GetDpiForWindow(hwnd),region=shape,visible=bool(style&0x10000000),topmost=bool(user.GetWindowLongPtrW(hwnd,-20)&8),resizable=bool(style&0x40000),maximizable=bool(style&0x10000),activation_result=activation_result)))
+frame_style = style & 0xC40000  # WS_CAPTION (border/dialog frame) | WS_THICKFRAME
+print(json.dumps(dict(before=before,before_exit=before_exit,after=after,work_area=[info.work.left,info.work.top,info.work.right-info.work.left,info.work.bottom-info.work.top],dpi=user.GetDpiForWindow(hwnd),region=shape,visible=bool(style&0x10000000),topmost=bool(user.GetWindowLongPtrW(hwnd,-20)&8),resizable=bool(style&0x40000),maximizable=bool(style&0x10000),frame_style=frame_style,activation_result=activation_result)))

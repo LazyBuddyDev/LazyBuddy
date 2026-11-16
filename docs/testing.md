@@ -27,7 +27,7 @@ cargo test --locked -p lazybuddy host::tests
 
 开发构建的原生更新限制用 `python scripts/verify/test-development-updates.py --host-dir target/debug` 验证；使用隐藏隔离实例，检查CLI拒绝更新、缓存未生成与偏好保留，结束后正常退出并清理数据。
 
-缩略窗的系统贴靠隔离用 `python scripts/verify/test-dock-snap.py --host-dir target/debug` 验证；隔离实例完成三轮左右移动和展开，读取原生缩放/最大化样式及恢复尺寸，不移动物理鼠标。该检查不代替实际拖动时的系统贴靠预览验收。
+缩略窗的系统贴靠隔离用 `python scripts/verify/test-dock-snap.py --host-dir target/debug` 验证；隔离实例完成三轮左右移动和展开，读取原生边框/缩放/最大化样式及恢复尺寸，不移动物理鼠标。该检查不代替实际拖动时的系统贴靠预览验收。
 
 显式界面验证（需 Windows 桌面与 WebView2，不移动物理鼠标）：
 
