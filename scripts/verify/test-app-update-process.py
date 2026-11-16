@@ -76,8 +76,7 @@ with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=TMP,ignore_clea
         wait(lambda state:state['pid']==old.pid and state['window'] is not None)
         if args.online:
             rpc('updates.check')
-            offered=wait(lambda state:not state['update_checking'],timeout=1900)
-            assert offered['update_ready'],offered['update_notice']
+            wait(lambda state:state['update_ready'],timeout=120)
             directories=[path for path in (data/'updates').iterdir() if path.is_dir() and len(path.name)==64]
             assert len(directories)==1
             directory=directories[0]
