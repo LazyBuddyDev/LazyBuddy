@@ -26,7 +26,7 @@ try{
   await until(()=>{page=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes('tauri.localhost'));return !!page;});
   await page.waitForSelector('[data-events-ready=true]');await invoke('window_action',{action:'show'});
   assert.equal((await invoke('snapshot')).tray,true);
-  assert.equal(await page.getByRole('button',{name:'收起',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'最小化',exact:true}).count(),0);
   await page.getByRole('button',{name:'设置',exact:true}).click();
   await page.getByRole('button',{name:'关闭到托盘',exact:true}).click();
   await until(async()=>!(await invoke('snapshot')).view.visible);

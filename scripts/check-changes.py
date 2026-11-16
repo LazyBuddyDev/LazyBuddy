@@ -62,7 +62,23 @@ def plan(paths, root=ROOT):
     return commands
 
 
-def changed_paths(base, root=ROOT):
+def changed_paths(base, root=ROOT, first_commit=None):
+    if base and set(base) != {'0'}:
+        present = lambda ref: subprocess.run(['git', 'cat-file', '-e', f'{ref}^{{commit}}'],
+                                             cwd=root, capture_output=True).returncode == 0
+        if not present(base):
+            subprocess.run(['git', 'fetch', '--no-tags', 'origin', base], cwd=root,
+                           capture_output=True)
+            if not present(base):
+                if not first_commit or not present(first_commit) or subprocess.run(
+                    ['git', 'merge-base', '--is-ancestor', first_commit, 'HEAD'],
+                    cwd=root, capture_output=True,
+                ).returncode:
+                    raise RuntimeError('Comparison base is unavailable; provide the first commit of this push or an existing base')
+                if not present(f'{first_commit}^'):
+                    return subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', 'HEAD'],
+                                                   cwd=root, text=True).splitlines()
+                base = f'{first_commit}^'
     if not base or set(base) == {'0'}:
         # A new branch has an all-zero event.before, not a repository-wide change.
         common = subprocess.run(['git', 'merge-base', 'HEAD', 'origin/main'], cwd=root,
@@ -82,9 +98,15 @@ def changed_paths(base, root=ROOT):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--base')
+    parser.add_argument('--first-commit', help='oldest commit included in the push event')
+    parser.add_argument('--paths-only', action='store_true', help='print changed paths as JSON')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
-    commands = plan(changed_paths(args.base))
+    paths = changed_paths(args.base, first_commit=args.first_commit)
+    if args.paths_only:
+        print(json.dumps(paths))
+        return
+    commands = plan(paths)
     for command in commands:
         print(json.dumps(command), flush=True)
         if not args.dry_run:

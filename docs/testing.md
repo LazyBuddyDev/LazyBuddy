@@ -20,9 +20,14 @@ cargo test --locked -p lazybuddy host::tests
 | 统一页签、集合工具栏、列表/网格与封面状态 | `apps/desktop/tests/hongguo-views.mjs` |
 | 画面点击、音量浮层与媒体快捷键 | `apps/desktop/tests/video-click.mjs` |
 | 根页面切换后的提示归属 | `apps/desktop/tests/feature-notices.mjs` |
+| 开发/正式构建的应用更新入口 | `apps/desktop/tests/development-updates.mjs` |
 | API诊断文本与运行日志归档 | `apps/desktop/tests/host-logs.mjs <宿主EXE绝对路径> <CLI绝对路径>` |
 
 这些样例不代替真实账号、系统窗口行为或音画验收。使用本地媒体样例的入口需先准备对应测试素材；宿主级诊断样例还需显式假服务产物，不能因此调用真实账号或加载相邻工作区业务实现。
+
+开发构建的原生更新限制用 `python scripts/verify/test-development-updates.py --host-dir target/debug` 验证；使用隐藏隔离实例，检查CLI拒绝更新、缓存未生成与偏好保留，结束后正常退出并清理数据。
+
+缩略窗的系统贴靠隔离用 `python scripts/verify/test-dock-snap.py --host-dir target/debug` 验证；隔离实例完成三轮左右移动和展开，读取原生缩放/最大化样式及恢复尺寸，不移动物理鼠标。该检查不代替实际拖动时的系统贴靠预览验收。
 
 显式界面验证（需 Windows 桌面与 WebView2，不移动物理鼠标）：
 

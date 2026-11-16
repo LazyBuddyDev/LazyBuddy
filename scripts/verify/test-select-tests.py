@@ -14,6 +14,51 @@ spec.loader.exec_module(selection)
 
 
 class Selection(unittest.TestCase):
+    def repository(self):
+        temporary = tempfile.TemporaryDirectory(prefix='qa-selection-', dir=TMP)
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        def git(*args):
+            return subprocess.check_output(['git', *args], cwd=root, text=True, stderr=subprocess.DEVNULL).strip()
+        git('init', '--initial-branch=main')
+        def commit(name):
+            (root / name).write_text(name, encoding='utf-8')
+            git('add', name)
+            git('-c', 'user.name=Unit', '-c', 'user.email=unit@example.invalid', 'commit', '-m', name)
+            return git('rev-parse', 'HEAD')
+        return root, git, commit
+
+    def test_missing_base_is_fetched_before_comparing(self):
+        root, git, commit = self.repository()
+        base = commit('baseline.rs')
+        commit('one.ts')
+        commit('two.rs')
+        clone = root / 'shallow'
+        git('clone', '--depth=1', root.as_uri(), str(clone))
+        self.assertNotEqual(subprocess.run(['git', 'cat-file', '-e', base], cwd=clone,
+                                          capture_output=True).returncode, 0)
+        self.assertEqual(sorted(selection.changed_paths(base, clone)), ['one.ts', 'two.rs'])
+
+    def test_unavailable_rewritten_base_covers_the_whole_push(self):
+        root, git, commit = self.repository()
+        commit('baseline.rs')
+        first = commit('one.ts')
+        commit('two.rs')
+        self.assertEqual(sorted(selection.changed_paths('f' * 40, root, first)), ['one.ts', 'two.rs'])
+
+    def test_unavailable_base_does_not_silently_check_only_the_last_commit(self):
+        root, git, commit = self.repository()
+        commit('baseline.rs')
+        commit('one.ts')
+        with self.assertRaisesRegex(RuntimeError, 'Comparison base is unavailable'):
+            selection.changed_paths('f' * 40, root)
+
+    def test_rewritten_push_starting_at_root_compares_the_complete_tree(self):
+        root, git, commit = self.repository()
+        first = commit('one.ts')
+        commit('two.rs')
+        self.assertEqual(sorted(selection.changed_paths('f' * 40, root, first)), ['one.ts', 'two.rs'])
+
     def test_new_branch_zero_before_compares_main_instead_of_all_files(self):
         with tempfile.TemporaryDirectory(prefix='qa-selection-',dir=TMP) as temporary:
             root = Path(temporary)

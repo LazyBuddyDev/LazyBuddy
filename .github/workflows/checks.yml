@@ -51,10 +51,11 @@ jobs:
         shell: pwsh
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          FIRST_COMMIT: ${{ github.event.commits[0].id }}
         run: |
-          $base=$env:BASE_SHA
-          if (!$base -or $base -match '^0+$') { $base='HEAD^' }
-          $changed=@(git diff --name-only $base HEAD | Where-Object { $_ -like 'apps/desktop/src/*' -or $_ -like 'apps/desktop/tests/*' -or $_ -like 'apps/desktop/package*.json' })
+          $paths=python -B scripts/check-changes.py --base "$env:BASE_SHA" --first-commit "$env:FIRST_COMMIT" --paths-only
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $changed=@(($paths | ConvertFrom-Json) | Where-Object { $_ -like 'apps/desktop/src/*' -or $_ -like 'apps/desktop/tests/*' -or $_ -like 'apps/desktop/package*.json' })
           if ($changed.Count) {
             npm.cmd --prefix apps/desktop run check
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -65,8 +66,9 @@ jobs:
         shell: pwsh
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          FIRST_COMMIT: ${{ github.event.commits[0].id }}
         run: |
           cargo fmt --all -- --check
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -B scripts/check-changes.py --base "$env:BASE_SHA"
+          python -B scripts/check-changes.py --base "$env:BASE_SHA" --first-commit "$env:FIRST_COMMIT"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

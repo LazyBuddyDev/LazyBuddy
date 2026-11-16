@@ -266,12 +266,14 @@ button {
 .tabs {
   display: flex;
   gap: 5px;
-  align-self: stretch;
+  align-self: flex-start;
 }
 .tabs button {
   border: 1px solid transparent;
   position: relative;
   font-size: 11px;
+  line-height: 17px;
+  min-width: 66px;
   min-height: 29px;
   padding: 5px 10px;
   color: var(--text);
@@ -1007,11 +1009,12 @@ li button:hover {
 .module-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 20px; }
 .module-heading h1 { margin: 0; }
 .module-heading button { flex-shrink: 0; }
-.app-shell.docked { border: 0; background: transparent; }
+/* Keep the antialiased edge inside the native window region. */
+.app-shell.docked { border: 0; padding: 1px; background: transparent; }
 .app-shell.docked > :not(.dock-button) { display: none; }
-.dock-button { width: 100%; height: 100%; min-height: 0; padding: 7px; border: 1.5px solid var(--accent); border-radius: 50%; background: var(--toolbar); }
+.dock-button { flex-shrink: 0; width: 38px; height: 38px; min-height: 0; padding: 6px; border: 1px solid var(--line); border-radius: 50%; background: var(--toolbar); transition: background-color .12s; touch-action: none; user-select: none; }
 .dock-button img { width: 100%; height: 100%; display: block; }
-.dock-button:focus-visible { outline: none; border-width: 3px; }
+.dock-button:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--muted); }
 
 /* Keep each source independently scrollable while its actions stay visible. */
 .news-page .source-card { height: 260px; min-width: 0; display: flex; flex-direction: column; }

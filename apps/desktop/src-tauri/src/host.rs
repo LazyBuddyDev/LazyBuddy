@@ -9,6 +9,15 @@ use serde_json::{Value, json};
 use std::{path::PathBuf, sync::Mutex};
 use tauri::{Emitter, Manager};
 
+const APP_UPDATES: bool = !cfg!(debug_assertions);
+fn require_app_updates() -> Result<(), String> {
+    if APP_UPDATES {
+        Ok(())
+    } else {
+        Err("开发版请通过 build_and_run.bat 重新构建启动".into())
+    }
+}
+
 pub struct State {
     pub data: PathBuf,
     logging: Option<lazybuddy_host_control::logs::Session>,
@@ -407,7 +416,7 @@ pub async fn settings(
         saved.await?;
     }
     Ok(
-        json!({"preferences":state.preferences(),"startup":crate::startup::enabled(),"isolated":lazybuddy_host_control::isolated(),"shortcut_capturing":crate::platform::capturing()}),
+        json!({"preferences":state.preferences(),"startup":crate::startup::enabled(),"isolated":lazybuddy_host_control::isolated(),"shortcut_capturing":crate::platform::capturing(),"app_updates":APP_UPDATES}),
     )
 }
 #[tauri::command]
@@ -430,6 +439,7 @@ pub async fn open_link(url: String) -> Result<(), String> {
 }
 #[tauri::command]
 pub async fn check_update(app: tauri::AppHandle) -> Result<bool, String> {
+    require_app_updates()?;
     use std::sync::atomic::Ordering;
     let state = app.state::<State>();
     if state.checking.swap(true, Ordering::AcqRel) {
@@ -455,6 +465,7 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<bool, String> {
 }
 #[tauri::command]
 pub async fn apply_update(app: tauri::AppHandle) -> Result<(), String> {
+    require_app_updates()?;
     let prepared = app
         .state::<State>()
         .prepared
@@ -482,10 +493,10 @@ pub fn start(app: tauri::AppHandle) -> Result<(), String> {
                     let state=app.state::<State>();
                     Ok(json!({"pid":std::process::id(),"exe":std::env::current_exe().ok(),"backend":"web","hidden":!view.visible,"view":view,
                         "window":app.get_webview_window("main").map(|w|crate::dock::snapshot(&w)["bounds"].clone()),
-                        "update_checking":state.checking.load(std::sync::atomic::Ordering::Acquire),"update_ready":state.prepared.lock().unwrap().is_some()}))
+                        "app_updates":APP_UPDATES,"update_checking":state.checking.load(std::sync::atomic::Ordering::Acquire),"update_ready":state.prepared.lock().unwrap().is_some()}))
                 },
                 (1,"modules.list")=>modules(app.clone(),"list".into(),None).await,
-                (1,"updates.check")=>{let handle=app.clone();tauri::async_runtime::spawn(async move{if let Err(error)=check_update(handle.clone()).await{let _=handle.emit("shell-error",error);}});Ok(json!({"accepted":true}))},
+                (1,"updates.check")=>require_app_updates().map(|()|{let handle=app.clone();tauri::async_runtime::spawn(async move{if let Err(error)=check_update(handle.clone()).await{let _=handle.emit("shell-error",error);}});json!({"accepted":true})}),
                 (1,"updates.apply")=>apply_update(app.clone()).await.map(|_|json!({"accepted":true})),
                 (1,"window.show"|"window.hide"|"app.quit")=>{
                     let action=match request.command.as_str(){"window.show"=>"show","window.hide"=>"hide",_=>"quit"};
@@ -499,17 +510,20 @@ pub fn start(app: tauri::AppHandle) -> Result<(), String> {
             let _=reply.send(match result{Ok(data)=>json!({"ok":true,"data":data}),Err(error)=>lazybuddy_host_control::error("host_request_failed",error)});
         });
     }).map_err(failure)?;
-    tauri::async_runtime::spawn(async move {
-        loop {
-            if !lazybuddy_host_control::isolated() && app.state::<State>().preferences().auto_update
-            {
-                if let Err(error) = check_update(app.clone()).await {
-                    let _ = app.emit("shell-error", format!("检查更新失败：{error}"));
+    if APP_UPDATES {
+        tauri::async_runtime::spawn(async move {
+            loop {
+                if !lazybuddy_host_control::isolated()
+                    && app.state::<State>().preferences().auto_update
+                {
+                    if let Err(error) = check_update(app.clone()).await {
+                        let _ = app.emit("shell-error", format!("检查更新失败：{error}"));
+                    }
                 }
+                tokio::time::sleep(std::time::Duration::from_secs(900)).await;
             }
-            tokio::time::sleep(std::time::Duration::from_secs(900)).await;
-        }
-    });
+        });
+    }
     Ok(())
 }
 #[cfg(test)]
