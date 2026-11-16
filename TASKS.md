@@ -39,6 +39,7 @@
 - 当前事实：响应读取失败已与真正空体分开；有限响应头、阶段与调用位置通过API交给宿主写LB.log。Cookie合并已修正，但不能证明是原故障原因。清晰度自动选档已由用户确认正常，与HTTP空体独立。
 - 1.0.3发布前真实账号实机复验：登录恢复与收藏读取成功，选取两个收藏条目均显示上游HTTP200空响应，尚未取得实际视频画面；未改收藏、凭据或尝试更换身份。用户决定先修复播放，再发布正式版；不得把本轮账号读取成功记作实际播放通过。
 - 用户确认上述同账号同剧集在官方客户端正常可播。独立源码已克隆至target/service-exports/hongguo-service（main@60aa873）；签名源码与上游bf8df22一致，SM3/Ladon/Argus固定向量及取源/凭据/空体诊断定向测试通过。原失败条目单次受控诊断仍HTTP200零长度、无会话Cookie刷新；未找到可验证功能修复。详见该服务tmp/verification-playback/report.md与wire.json。
+- 后续CLI对照：安装包与重建助手相关机器码一致；HTTP/1.1、SDK原生POST及绑定原安装ID均未解决空体。诊断偶发取得受保护元数据，不能当作稳定修复或实际播放。官网目录确认集ID映射正确；现有登录访问原剧第6集返回302至第1集，网站仅开放前5集，不能用网页预览替代客户端完整播放。真实安装服务CLI恢复账号/读取11收藏通过，原第1集仍未准备媒体。证据归服务tmp/verification-playback/report.md及official-episode6-access.json；服务无功能补丁，正式版仍为草稿。
 - 关键证据：本机LB.log在21:24:14/21:24:16记录series7689716417968491544第1集1080p/direct，HTTP200、declared_length=0、body_bytes=0、body_read_ok=true、HTTP2、请求ID存在、Date时差0。是上游明确返回空体，不是读取中断。
 - `[√]` 当前诊断分类、脱敏、服务/宿主透传及配套部署已验证；定向测试证据见tmp/verification-host-logs及tmp/verification-build-entry/response-metadata.json。
 - `[x]` 取得能够解释空体的接口/会话/签名证据并修复实际原因，或明确可核查的外部限制。
