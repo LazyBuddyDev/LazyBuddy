@@ -33,7 +33,7 @@ try{
         Write-Host '[2/2] Building LazyBuddy host, CLI and updater...'
         if(Test-Path -LiteralPath $cli){
             $status=Invoke-Host 'status'
-            if($status -and $status.ok){Stop-BuildHost $status}
+            if($status -and $status.ok -and [IO.Path]::GetFullPath($status.data.exe) -eq [IO.Path]::GetFullPath($application)){Stop-BuildHost $status}
         }
         $arguments=@('build','--locked','-p','lazybuddy-cli','-p','lazybuddy-app-updater','-p','lazybuddy')
         if($Release){$arguments+='--release'}
