@@ -58,6 +58,18 @@ try{
   await wait(900);let saved=JSON.parse(await readFile(path.join(data,'services/reader/library.json'),'utf8')).entries[0].position;assert.ok(Number(saved.block_id.slice(1))>5);
   const generation=(await invoke('snapshot')).view.generation;
   await page.getByRole('button',{name:'设置',exact:true}).click();await page.getByRole('heading',{name:'阅读设置'}).waitFor();
+  await invoke('resize',{width:880,height:1000});await wait(150);
+  const readingTop=await page.getByRole('heading',{name:'阅读设置'}).evaluate(e=>e.getBoundingClientRect().top);
+  await until(async()=>await page.getByLabel('行距',{exact:true}).inputValue()==='1.9','default line height selection');
+  await page.getByLabel('行距',{exact:true}).selectOption('2.1');
+  await until(async()=>await page.getByLabel('行距',{exact:true}).inputValue()==='2.1','saved line height selection');
+  await page.screenshot({path:path.join(evidence,'settings-tall.png')});
+  await page.getByRole('button',{name:'显示设置',exact:true}).click();
+  const sharedTop=await page.getByRole('heading',{name:'显示设置'}).evaluate(e=>e.getBoundingClientRect().top);
+  assert.ok(Math.abs(readingTop-sharedTop)<2,`settings tops differ: ${readingTop} vs ${sharedTop}`);
+  await page.getByRole('button',{name:'阅读设置',exact:true}).click();
+  await until(async()=>await page.getByLabel('行距',{exact:true}).inputValue()==='2.1','line height survives settings navigation');
+  await invoke('resize',{width:780,height:540});
   await page.getByLabel('正文字号').selectOption('24');await wait(200);
   await page.getByRole('button',{name:'返回页面',exact:true}).click();await page.locator('.reader-scroll').waitFor();
   assert.ok(await page.locator('.reader-scroll').evaluate(e=>e.scrollTop>1000),'settings must restore the text anchor');
@@ -102,7 +114,7 @@ with zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED) as z:
   await rm(blocker,{recursive:true});
   await invoke('reader_call',{method:'progress.flush',args:{},generation:(await invoke('snapshot')).view.generation});
   assert.deepEqual(JSON.parse(await readFile(indexPath,'utf8')).entries.find(e=>e.id===local.id).position,position);
-  const report={passed:true,real_packaged_service:true,bat_installs_new_module:true,source_file_independent:true,scroll_checkpoint:true,font_change_restores_anchor:true,chapter_search:true,chapter_navigation:true,root_switch_silent:true,rapid_root_switch:true,stale_generation_rejected:true,unselected_file_rejected:true,hidden_silent:true,reload_restores_progress:true,remove:true,epub_rich_text_and_image:true,save_failure_blocks_exit_and_retries:true,visuals:['light.png','dark-narrow.png'],native_file_dialog_cli_verified:true};
+  const report={passed:true,real_packaged_service:true,bat_installs_new_module:true,source_file_independent:true,scroll_checkpoint:true,font_change_restores_anchor:true,chapter_search:true,chapter_navigation:true,root_switch_silent:true,rapid_root_switch:true,tall_settings_top_aligned:true,line_height_selection_round_trip:true,stale_generation_rejected:true,unselected_file_rejected:true,hidden_silent:true,reload_restores_progress:true,remove:true,epub_rich_text_and_image:true,save_failure_blocks_exit_and_retries:true,visuals:['light.png','dark-narrow.png'],native_file_dialog_cli_verified:true};
   await writeFile(path.join(evidence,'report.json'),JSON.stringify(report,null,2));console.log(report);
 }catch(error){
   if(page){console.error({notice:await page.locator('.notice').textContent().catch(()=>null)});await page.screenshot({path:path.join(evidence,'failure.png')}).catch(()=>{});}
