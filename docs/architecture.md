@@ -9,6 +9,7 @@ LazyBuddy是Windows x64的Tauri/Svelte桌面宿主。前端资源嵌入EXE，Web
 | [LazyBuddy](https://github.com/LazyBuddyDev/LazyBuddy) | 界面、窗口/托盘/热键、通用设置、模块与应用更新管理、CLI、API调度 |
 | [news-service](https://github.com/LazyBuddyDev/news-service) | 新闻来源、解析、偏好、缓存及独立API |
 | [hongguo-service](https://github.com/LazyBuddyDev/hongguo-service) | 账号、搜索、官方收藏、观看进度、取源与受控浏览器媒体资源 |
+| reader-service（独立本地源码位于`target/service-exports/reader-service`，尚未建立远端） | 本地书库、TXT/EPUB解析、正文和图片、阅读偏好及位置；书籍、来源与内容版本分离 |
 
 宿主源码位于`apps/desktop`，通用Rust组件位于`crates`；具体归位见[文件放置规范](file-layout.md)。新业务的独立API可以被其他前端使用；接入当前宿主仍需实现相应受信页面与调度，不能仅靠清单声明自动执行任意界面。
 

@@ -8,6 +8,7 @@ mod host;
 mod platform;
 mod playback;
 mod preferences;
+mod reader;
 mod shortcut;
 mod startup;
 mod tray;
@@ -18,6 +19,7 @@ enum Root {
     #[default]
     News,
     Hongguo,
+    Reader,
 }
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -100,7 +102,7 @@ fn transition(
 fn snapshot(state: tauri::State<Mutex<Model>>, window: tauri::WebviewWindow) -> serde_json::Value {
     let state = state.lock().unwrap();
     serde_json::json!({"view":state.view,"feed_requests":state.feed_requests,"favorite_reads":window.state::<playback::State>().favorite_reads(),
-        "media_route":if playback::enabled(){"browser_service"}else{"unavailable"},"real_service":playback::enabled()&&std::env::var_os("LAZYBUDDY_BROWSER_FIXTURE_FILE").is_none(), "native_texture_integrated":false,"tray":window.app_handle().tray_by_id("shell").is_some(),"desktop":dock::snapshot(&window)})
+        "reader_requests":window.state::<reader::State>().requests(),"media_route":if playback::enabled(){"browser_service"}else{"unavailable"},"real_service":playback::enabled()&&std::env::var_os("LAZYBUDDY_BROWSER_FIXTURE_FILE").is_none(), "native_texture_integrated":false,"tray":window.app_handle().tray_by_id("shell").is_some(),"desktop":dock::snapshot(&window)})
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -149,6 +151,19 @@ fn visibility(window: &tauri::WebviewWindow, visible: bool) {
         .context(page, account, visible);
     if !visible {
         window.state::<host::State>().stop_news();
+        let app = window.app_handle().clone();
+        tauri::async_runtime::spawn(async move {
+            let inactive = {
+                let model = app.state::<Mutex<Model>>();
+                let model = model.lock().unwrap();
+                !model.view.visible || model.view.root != Root::Reader
+            };
+            if inactive {
+                if let Err(error) = app.state::<reader::State>().suspend(&app).await {
+                    let _ = app.emit("shell-error", format!("阅读进度保存失败：{error}"));
+                }
+            }
+        });
     }
     if changed {
         dock::trace(
@@ -203,11 +218,19 @@ fn window_action(action: &str, window: tauri::WebviewWindow) -> Result<(), Strin
         "show" => show_without_focus(&window)?,
         "expand" => dock::expand(&window).map_err(|_| "expand failed")?,
         "quit" => {
-            let Some(completed) = window.state::<playback::State>().shutdown() else {
+            if !window.state::<reader::State>().begin_exit() {
                 return Ok(());
-            };
+            }
             let app = window.app_handle().clone();
             tauri::async_runtime::spawn(async move {
+                if let Err(error) = app.state::<reader::State>().disconnect(&app).await {
+                    let _ = app.emit("shell-error", format!("阅读进度保存失败，未退出：{error}"));
+                    app.state::<reader::State>().cancel_exit();
+                    return;
+                }
+                let Some(completed) = app.state::<playback::State>().shutdown() else {
+                    return;
+                };
                 completed.await;
                 let state = app.state::<host::State>();
                 state.stop_news();
@@ -284,12 +307,17 @@ fn main() {
         .manage(Mutex::new(Model::default()))
         .manage(Mutex::new(dock::Dock::default()))
         .manage(playback::State::default())
+        .manage(reader::State::default())
         .invoke_handler(tauri::generate_handler![
             transition,
             snapshot,
             dock_rendered,
             host::module_call,
             host::news_call,
+            reader::reader_call,
+            reader::reader_pick,
+            reader::reader_checkpoint,
+            reader::reader_suspend,
             host::settings,
             host::set_startup,
             host::open_link,

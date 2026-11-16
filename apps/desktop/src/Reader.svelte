@@ -1,0 +1,195 @@
+<script lang="ts">
+  import {invoke} from '@tauri-apps/api/core';
+  import {tick,untrack,onDestroy,type Snippet} from 'svelte';
+  import Icon from './Icon.svelte';
+  import {pageSize,pageStart,progressLabel,readerError,highlights,visibleAnchor,restoreAnchor,type Position,type Entry,type Book,type Block,type ReadingPreferences} from './reader';
+  let {active,showing,settings,generation,notice,navigation}:{active:boolean;showing:boolean;settings:boolean;generation:number;notice:(text:string)=>void;navigation:Snippet}=$props();
+  let entries=$state<Entry[]>([]),book=$state<Book>(),blocks=$state<Block[]>([]);
+  let preferences=$state<ReadingPreferences>({font_size:20,line_height:1.9,width:680});
+  let chapter=$state(0),start=$state(0),total=$state(0),filter=$state(''),query=$state(''),encoding=$state('auto');
+  let loading=$state(false),importing=$state(false),saving=$state(false),directory=$state(false),removing=$state<string>();
+  let failure=$state(''),importResults=$state<{name:string;message:string}[]>([]),images=$state<Record<string,string>>({});
+  let scroll=$state<HTMLElement>();let epoch=0;let initialized=false;let needsList=true;let lastBook=$state<string|null>(null);
+  let currentPosition:Position|undefined;let restoring=false;let timer:ReturnType<typeof setTimeout>|undefined;
+  let stagedPosition:Position|undefined;let checkpointWrites:Promise<unknown>=Promise.resolve();
+  let suspended=true;
+  let importRun=0;let waitTimer:ReturnType<typeof setTimeout>|undefined;let wake:(()=>void)|undefined;
+  let observer:IntersectionObserver|undefined;let resourceQueue:string[]=[];let readingImages=false;
+  const filtered=$derived(entries.filter(e=>e.title.toLocaleLowerCase().includes(filter.toLocaleLowerCase())));
+  const lease=()=>({epoch,generation});
+  const valid=(ticket:ReturnType<typeof lease>)=>active&&ticket.epoch===epoch&&ticket.generation===generation;
+  async function call<T>(method:string,args:Record<string,unknown>={},ticket=lease()):Promise<T>{
+    if(!valid(ticket))throw Error('inactive_reader_page');
+    const result=await invoke<T>('reader_call',{method,args,generation:ticket.generation});
+    if(!valid(ticket))throw Error('stale_reader_reply');return result;
+  }
+  function report(error:unknown,ticket=lease()){if(valid(ticket)){failure=readerError(error);notice(failure);}}
+  async function list(ticket=lease()){
+    const all:Entry[]=[];let offset=0;
+    while(valid(ticket)){
+      const reply=await call<{entries:Entry[];total:number;last_book:string|null}>('library.list',{start:offset,limit:100},ticket);
+      all.push(...reply.entries);offset+=reply.entries.length;lastBook=reply.last_book;
+      if(offset>=reply.total)break;if(!reply.entries.length)throw Error('invalid_reader_reply');
+    }
+    if(valid(ticket)){entries=all.sort((a,b)=>b.updated_ms-a.updated_ms);needsList=false;}
+  }
+  async function activate(){
+    suspended=false;
+    const ticket=lease();failure='';
+    try{
+      preferences=await call<ReadingPreferences>('preferences.get',{},ticket);
+      if(!settings){if(needsList||!initialized)await list(ticket);if(book){await tick();if(currentPosition)if(scroll)restoreAnchor(scroll,currentPosition);watchImages();}}
+      initialized=true;
+    }catch(error){report(error,ticket);}
+  }
+  function stopLocal(){
+    suspended=true;
+    epoch++;importRun++;clearTimeout(timer);timer=undefined;clearTimeout(waitTimer);wake?.();wake=undefined;
+    observer?.disconnect();observer=undefined;resourceQueue=[];images={};readingImages=false;importing=false;loading=false;saving=false;
+  }
+  export async function suspend(capture=true){
+    if(capture&&active&&!settings)await checkpoint();
+    stopLocal();needsList=true;
+    await invoke('reader_suspend');
+  }
+  export function resume(){if(active&&suspended)void activate();}
+  $effect(()=>{const enabled=active;const gen=generation;const prefs=settings;untrack(()=>{stopLocal();if(enabled)void activate();});});
+  onDestroy(()=>stopLocal());
+  async function checkpoint(){
+    if(!active||settings||!book||!scroll||restoring||!blocks.length)return;
+    const anchor=visibleAnchor(scroll);if(!anchor)return;
+    const position:Position={book_id:book.id,content_version:book.content_version,chapter_id:book.chapters[chapter].id,...anchor};
+    currentPosition=position;
+    if(JSON.stringify(position)===JSON.stringify(stagedPosition)){await checkpointWrites;return;}
+    stagedPosition=position;const ownerGeneration=generation;
+    const entry=entries.find(e=>e.id===position.book_id);if(entry)entry.position=position;
+    const write=checkpointWrites.catch(()=>{}).then(()=>invoke('reader_checkpoint',{position,generation:ownerGeneration}));checkpointWrites=write;
+    try{await write;}catch(error){if(stagedPosition===position)stagedPosition=undefined;throw error;}
+  }
+  function onScroll(){
+    if(!active||settings||restoring)return;
+    const ticket=lease();void checkpoint().catch(error=>report(error,ticket));
+    clearTimeout(timer);timer=setTimeout(()=>{timer=undefined;void call('progress.flush',{},ticket).catch(error=>report(error,ticket));},600);
+  }
+  async function open(entry:Entry){
+    if(loading||!active)return;const ticket=lease();loading=true;failure='';
+    try{
+      await checkpoint();await call('progress.flush',{},ticket);
+      const result=await call<{book:Book;position:Position|null}>('book.open',{book_id:entry.id},ticket);
+      book=result.book;currentPosition=result.position??undefined;query='';
+      chapter=Math.max(0,book.chapters.findIndex(c=>c.id===result.position?.chapter_id));
+      await load(chapter,result.position?pageStart(result.position.block_id):0,result.position??undefined,ticket);
+      if(book.warnings.length)notice(book.warnings.join('；'));
+    }catch(error){report(error,ticket);}finally{if(valid(ticket))loading=false;}
+  }
+  async function load(nextChapter:number,nextStart=0,position?:Position,ticket=lease()){
+    if(!book)return;
+    observer?.disconnect();resourceQueue=[];images={};
+    const result=await call<{blocks:Block[];start:number;total:number}>('chapter.read',{book_id:book.id,chapter_id:book.chapters[nextChapter].id,start:nextStart},ticket);
+    restoring=true;blocks=result.blocks;chapter=nextChapter;start=result.start;total=result.total;
+    await tick();if(!valid(ticket)){restoring=false;return;}
+    if(!scroll){restoring=false;return;}scroll.scrollTop=0;if(position)restoreAnchor(scroll,position);restoring=false;
+    await checkpoint();watchImages();
+  }
+  async function move(nextChapter:number,nextStart=0){
+    if(!book||loading||nextChapter<0||nextChapter>=book.chapters.length)return;
+    const ticket=lease();loading=true;failure='';
+    try{await checkpoint();await call('progress.flush',{},ticket);await load(nextChapter,nextStart,undefined,ticket);}catch(error){report(error,ticket);}finally{if(valid(ticket))loading=false;}
+  }
+  async function back(){
+    const ticket=lease();try{await checkpoint();await call('progress.flush',{},ticket);book=undefined;blocks=[];observer?.disconnect();images={};needsList=true;await list(ticket);}catch(error){report(error,ticket);}
+  }
+  function watchImages(){
+    observer?.disconnect();if(!active||settings||!scroll)return;
+    const ticket=lease();
+    observer=new IntersectionObserver(rows=>{
+      if(!valid(ticket))return;
+      for(const row of rows)if(row.isIntersecting){const id=(row.target as HTMLElement).dataset.resource;if(id&&!images[id]&&!resourceQueue.includes(id))resourceQueue.push(id);observer?.unobserve(row.target);}
+      void drainImages(ticket);
+    },{root:scroll});
+    scroll.querySelectorAll('[data-resource]').forEach(element=>observer!.observe(element));
+  }
+  async function drainImages(ticket:ReturnType<typeof lease>){
+    if(readingImages)return;readingImages=true;const owner=book?.id;
+    try{while(resourceQueue.length&&valid(ticket)&&owner===book?.id){const id=resourceQueue.shift()!;try{const result=await call<{url:string}>('resource.read',{book_id:owner,resource_id:id},ticket);if(owner===book?.id)images[id]=result.url;}catch(error){report(error,ticket);}}}finally{if(valid(ticket))readingImages=false;}
+  }
+  async function find(next=false){
+    if(!book||!query.trim()||loading)return;
+    const ticket=lease();loading=true;failure='';
+    try{
+      const current=currentPosition?Number(currentPosition.block_id.slice(1))+1:0;
+      let result=await call<{match:{index:number;block_id:string;offset:number}|null}>('chapter.find',{book_id:book.id,chapter_id:book.chapters[chapter].id,query:query.trim(),start:next?current:0},ticket);
+      if(!result.match&&next)result=await call('chapter.find',{book_id:book.id,chapter_id:book.chapters[chapter].id,query:query.trim(),start:0},ticket);
+      if(!result.match){notice('本章未找到匹配内容');return;}
+      const target:Position={book_id:book.id,content_version:book.content_version,chapter_id:book.chapters[chapter].id,block_id:result.match.block_id,offset:result.match.offset};
+      await load(chapter,pageStart(target.block_id),target,ticket);
+    }catch(error){report(error,ticket);}finally{if(valid(ticket))loading=false;}
+  }
+  async function setPreference(key:keyof ReadingPreferences,value:number){
+    if(saving||!active)return;const ticket=lease();saving=true;
+    try{preferences=await call<ReadingPreferences>('preferences.set',{...preferences,[key]:value},ticket);}catch(error){report(error,ticket);}finally{if(valid(ticket))saving=false;}
+  }
+  const delay=()=>new Promise<void>(resolve=>{wake=resolve;waitTimer=setTimeout(()=>{wake=undefined;resolve();},150);});
+  async function importBooks(){
+    if(importing)return;const ticket=lease();const run=++importRun;importing=true;failure='';importResults=[];
+    try{
+      const paths=await invoke<string[]>('reader_pick',{generation:ticket.generation});
+      if(!valid(ticket)||run!==importRun)return;
+      for(const path of paths){
+        if(!valid(ticket)||run!==importRun)break;
+        const name=path.split(/[\\/]/).pop()??'文件';
+        const job=await call<{job:number}>('library.import',{path,encoding},ticket);
+        let status:{status:string;error?:string;result?:{duplicate:boolean;warnings?:string[]}};
+        do{await delay();if(!valid(ticket)||run!==importRun)return;status=await call('import.status',{job:job.job},ticket);}while(status.status==='pending');
+        importResults.push({name,message:status.status==='complete'?(status.result?.duplicate?'已在书库':'已导入'):(status.error?readerError(status.error):'已取消')});
+        needsList=true;await list(ticket);
+      }
+      if(importResults.length)notice(`导入结束，共处理 ${importResults.length} 本`);
+    }catch(error){report(error,ticket);}finally{if(valid(ticket)&&run===importRun)importing=false;}
+  }
+  async function cancelImport(){
+    const ticket=lease();importRun++;clearTimeout(waitTimer);wake?.();wake=undefined;
+    try{await call('import.cancel',{},ticket);notice('已取消剩余导入');}catch(error){report(error,ticket);}finally{if(valid(ticket))importing=false;}
+  }
+  async function remove(entry:Entry){
+    const ticket=lease();try{await call('library.remove',{book_id:entry.id},ticket);removing=undefined;await list(ticket);}catch(error){report(error,ticket);if(String(error)==='removal_cleanup_pending'){removing=undefined;await list(ticket);}}
+  }
+</script>
+
+<section hidden={!showing} class="reader-page" data-testid="reader" data-active={active}>
+{#if settings}
+  <section class="settings-layout content-width">{@render navigation()}<div class="settings-content"><h1>阅读设置</h1>
+    <div class="setting-row"><label for="reader-font">正文字号</label><select id="reader-font" disabled={saving} value={preferences.font_size} onchange={e=>setPreference('font_size',Number(e.currentTarget.value))}>{#each [14,16,18,20,22,24,28,32,36] as size}<option value={size}>{size}</option>{/each}</select></div>
+    <div class="setting-row"><label for="reader-height">行距</label><select id="reader-height" disabled={saving} value={preferences.line_height} onchange={e=>setPreference('line_height',Number(e.currentTarget.value))}>{#each [1.3,1.5,1.7,1.9,2.1,2.3,2.5] as height}<option value={height}>{height}</option>{/each}</select></div>
+    <div class="setting-row"><label for="reader-width">正文宽度</label><select id="reader-width" disabled={saving} value={preferences.width} onchange={e=>setPreference('width',Number(e.currentTarget.value))}>{#each [320,440,560,680,800,1000] as width}<option value={width}>{width}</option>{/each}</select></div>
+  </div></section>
+{:else if book}
+  <div class="collection-toolbar"><button title="返回书库" onclick={back} disabled={loading}><Icon name="arrow" size={16}/>书库</button><strong class="reader-title" title={book.title}>{book.title}</strong><button title="展开或收起章节目录" aria-expanded={directory} onclick={()=>directory=!directory}>目录</button></div>
+  <form class="collection-toolbar" onsubmit={e=>{e.preventDefault();void find();}}><label class="search-box"><Icon name="search" size={16}/><input aria-label="章内查找" placeholder="查找本章内容" maxlength="200" bind:value={query}/></label><button title="查找本章内容" disabled={loading||!query.trim()}>查找</button><button type="button" title="查找下一处" disabled={loading||!query.trim()} onclick={()=>find(true)}>下一处</button></form>
+  {#if directory}<label class="reader-directory">章节<select aria-label="章节目录" value={chapter} disabled={loading} onchange={e=>move(Number(e.currentTarget.value))}>{#each book.chapters as item,index}<option value={index}>{item.title}</option>{/each}</select></label>{/if}
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex (The scroll region needs focus for keyboard reading.) -->
+  <div class="reader-scroll" bind:this={scroll} onscroll={onScroll} role="region" aria-label="小说正文" tabindex="0" style:--reader-font={`${preferences.font_size}px`} style:--reader-height={preferences.line_height} style:--reader-width={`${preferences.width}px`}>
+    <article class="reader-body"><h2>{book.chapters[chapter]?.title}</h2>
+    {#each blocks as block (block.id)}
+      {#if block.kind==='image'}<figure data-block={block.id} data-kind="image" data-resource={block.resource??undefined}>{#if block.resource&&images[block.resource]}<img src={images[block.resource]} alt={block.text} onload={()=>{if(currentPosition&&!restoring&&scroll)restoreAnchor(scroll,currentPosition);}}/>{:else}<figcaption>{block.text||'插图'}</figcaption>{/if}</figure>
+      {:else}<div class:reader-heading={block.kind==='heading'} class:reader-pre={block.kind==='pre'} class="reader-paragraph" data-block={block.id} data-kind={block.kind}>
+        {#if block.runs.length}{#each block.runs as run}<span class:reader-strong={run.strong} class:reader-emphasis={run.emphasis}>{#each highlights(run.text,query.trim()) as part}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>{/each}
+        {:else}{#each highlights(block.text,query.trim()) as part}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}{/if}
+      </div>{/if}
+    {/each}
+    <div class="reader-navigation"><button title="阅读上一段或上一章" disabled={loading||chapter===0&&start===0} onclick={()=>start>0?move(chapter,Math.max(0,start-pageSize)):move(chapter-1,Math.floor((book!.chapters[chapter-1].blocks-1)/pageSize)*pageSize)}>上一段</button><span>{chapter+1} / {book.chapters.length} 章{total>pageSize?` · ${Math.floor(start/pageSize)+1} / ${Math.ceil(total/pageSize)} 段`:''}</span><button title="阅读下一段或下一章" disabled={loading||chapter===book.chapters.length-1&&start+blocks.length>=total} onclick={()=>start+blocks.length<total?move(chapter,start+blocks.length):move(chapter+1)}>下一段</button></div>
+    </article>
+  </div>
+{:else}
+  <div class="collection-toolbar"><label class="search-box"><Icon name="search" size={16}/><input aria-label="筛选书名" placeholder="筛选书名" bind:value={filter}/></label><button title="导入TXT或EPUB文件" onclick={importBooks} disabled={importing}>导入小说</button>{#if importing}<button title="取消剩余导入" onclick={cancelImport}>取消</button>{/if}</div>
+  <label class="reader-encoding">TXT编码<select aria-label="TXT编码" bind:value={encoding} disabled={importing}>{#each [['auto','自动识别'],['utf-8','UTF-8'],['gb18030','GB18030 / GBK'],['big5','Big5'],['utf-16le','UTF-16 LE'],['utf-16be','UTF-16 BE']] as [value,label]}<option {value}>{label}</option>{/each}</select></label>
+  {#if importResults.length}<details class="reader-import-results"><summary>导入结果（{importResults.length}）</summary>{#each importResults as result}<p>{result.name}：{result.message}</p>{/each}</details>{/if}
+  {#if !entries.length}<div class="list-empty">{failure?'书库暂未载入':'导入TXT或EPUB，开始阅读'}{#if failure}<button title="重新读取书库" onclick={()=>{needsList=true;void activate();}}>重试</button>{/if}</div>
+  {:else}<div class="reader-library">{#each filtered as entry (entry.id)}<div class="reader-book"><button class="reader-book-open" aria-label={`继续阅读《${entry.title}》`} title={`继续阅读《${entry.title}》`} disabled={loading} onclick={()=>open(entry)}><strong>{entry.title}</strong><span>{entry.author?`${entry.author} · `:''}{entry.source.format.toUpperCase()} · {progressLabel(entry)}{lastBook===entry.id?' · 最近阅读':''}</span></button>
+    {#if removing===entry.id}<div class="reader-remove"><span>移除书库副本和阅读记录？原文件保留。</span><button title="确认移除书籍" onclick={()=>remove(entry)}>确认移除</button><button title="取消移除书籍" onclick={()=>removing=undefined}>取消</button></div>{:else}<button aria-label={`移除《${entry.title}》`} title={`移除《${entry.title}》`} onclick={()=>removing=entry.id}>移除</button>{/if}</div>{/each}{#if !filtered.length}<div class="list-empty">没有匹配的书籍</div>{/if}</div>{/if}
+{/if}
+</section>
+
+<style>
+  .reader-page{display:flex;flex-direction:column;min-height:0;height:100%;gap:10px;padding:12px 16px}.reader-page[hidden]{display:none}.reader-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-directory,.reader-encoding{display:flex;align-items:center;gap:12px;color:var(--muted)}.reader-directory select{flex:1;min-width:0}.reader-library{overflow:auto;scrollbar-gutter:stable;min-height:0}.reader-book{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);padding:8px 0}.reader-book-open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left;border:0}.reader-book-open strong{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-book-open span{font-size:11px;color:var(--muted)}.reader-remove{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;font-size:11px}.reader-remove span{width:100%;text-align:right}.reader-scroll{overflow:auto;min-height:0;flex:1;scrollbar-gutter:stable;background:var(--surface);overflow-anchor:none}.reader-scroll:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}.reader-body{max-width:var(--reader-width);margin:auto;padding:20px 24px 28px;font-size:var(--reader-font);line-height:var(--reader-height);overflow-wrap:anywhere}.reader-body h2{font-size:1.15em;margin-bottom:1.5em}.reader-paragraph{margin:0 0 1em;white-space:pre-wrap}.reader-heading{font-weight:600;font-size:1.1em}.reader-pre{font-family:monospace}.reader-strong{font-weight:700}.reader-emphasis{font-style:italic}figure{margin:1em 0;min-height:80px}figure img{display:block;max-width:100%;height:auto;margin:auto}figcaption{color:var(--muted);font-size:13px}.reader-navigation{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;margin-top:24px}.reader-import-results{font-size:12px;max-height:110px;overflow:auto;flex-shrink:0}.reader-import-results summary{cursor:pointer}.settings-layout{padding:0;width:100%}@media(max-width:520px){.reader-page{padding:10px}.reader-body{padding:16px}.reader-remove{max-width:160px}.reader-navigation{font-size:11px}}
+</style>

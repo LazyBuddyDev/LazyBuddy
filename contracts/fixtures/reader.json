@@ -1,0 +1,1 @@
+{"schema":1,"id":"reader","name":"阅读","version":"0.1.0","service_api":1,"target":"windows-x86_64","entrypoint":"bin/reader.exe","page":{"template":"book_library","library_method":"library.list","read_method":"chapter.read"}}

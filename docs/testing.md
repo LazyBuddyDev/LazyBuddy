@@ -11,6 +11,10 @@ cargo test --locked -p lazybuddy host::tests
 
 窗口改动选 `dock::tests` / `tray::tests`，播放桥选 `playback::tests`，设置选 `preferences::tests`。签名包安装、私有会话、控制通道及更新器分别在对应 crates 中测试。CI 按变更选择 Rust 模块与相关 Python 单元，依赖变化只扩大编译检查。
 
+本地阅读边界用`node --experimental-strip-types --test apps/desktop/tests/reader.test.ts apps/desktop/tests/lifecycle.test.ts`、`cargo test --locked -p lazybuddy reader::tests`及`cargo test --locked -p lazybuddy-module-contract reading_template`。服务解析和持久化测试在独立reader-service仓库运行`cargo test --locked`。
+
+真实阅读包的隔离集成入口为`node apps/desktop/tests/reader-host.mjs <宿主EXE绝对路径> <完整reader包目录> <完整news包目录>`；新闻包仅用于离线根页面切换，脚本准备独立缓存，不访问上游。脚本通过BAT测试新模块首次安装，再以CDP验证阅读/设置/隐藏/迟到隔离/删除；报告与截图在`tmp/verification-reader`，结束时quit并清理隔离书库。同一入口通过仅操作自有进程控件的`native-reader-dialog.py`验证原生文件选择与EPUB导入，不移动物理鼠标；控件消息验收与手动操作验收分别报告。
+
 公共界面按[UI规范](ui-guidelines.md)验证，选择受影响的模式及已有使用方，不按功能重复建立外观标准。以下是现有模式验证入口，脚本名只表示当前实现位置：
 
 | 验证模式 | 无头样例入口 |

@@ -43,6 +43,10 @@ pub struct Dependency {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "template", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Page {
+    BookLibrary {
+        library_method: String,
+        read_method: String,
+    },
     NewsGrid {
         catalog_method: String,
         fetch_method: String,
@@ -152,6 +156,16 @@ mod tests {
 
     fn manifest() -> Manifest {
         serde_json::from_str(r#"{"schema":1,"id":"news","name":"新闻","version":"0.1.0","service_api":1,"target":"windows-x86_64","entrypoint":"bin/news.exe","page":{"template":"news_grid","catalog_method":"sources","fetch_method":"fetch"}}"#).unwrap()
+    }
+
+    #[test]
+    fn reading_template_is_explicit_and_round_trips() {
+        let manifest: Manifest =
+            serde_json::from_str(include_str!("../../../contracts/fixtures/reader.json")).unwrap();
+        assert_eq!(manifest.validate(), Ok(()));
+        assert!(matches!(manifest.page, Some(Page::BookLibrary { .. })));
+        let encoded = serde_json::to_string(&manifest).unwrap();
+        assert!(serde_json::from_str::<Manifest>(&encoded).is_ok());
     }
 
     #[test]

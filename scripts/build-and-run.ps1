@@ -49,15 +49,16 @@ try{
     $installed=($installed | ConvertFrom-Json)
     $updates=@()
     if(Test-Path -LiteralPath $developmentPackages){
-        foreach($module in $installed | Where-Object {$_.kind -eq 'feature'}){
-            $directory=Join-Path $developmentPackages $module.id
-            if(!(Test-Path -LiteralPath $directory)){continue}
+        foreach($directoryEntry in Get-ChildItem -LiteralPath $developmentPackages -Directory){
+            $directory=$directoryEntry.FullName
+            $module=$installed | Where-Object {$_.id -eq $directoryEntry.Name} | Select-Object -First 1
             $choices=@(Get-ChildItem -LiteralPath $directory -Directory | ForEach-Object {
                 $manifestPath=Join-Path $_.FullName 'module.json'
                 if(Test-Path -LiteralPath $manifestPath){
                     $manifest=Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-                    if($manifest.id -ne $module.id){throw 'Development package ID mismatch.'}
-                    if([version]$manifest.version -gt [version]$module.version){[pscustomobject]@{path=$_.FullName;version=[version]$manifest.version;id=$module.id}}
+                    if($manifest.id -ne $directoryEntry.Name -or $manifest.version -ne $_.Name){throw 'Development package identity mismatch.'}
+                    if($manifest.kind -eq 'runtime'){return}
+                    if(!$module -or [version]$manifest.version -gt [version]$module.version){[pscustomobject]@{path=$_.FullName;version=[version]$manifest.version;id=$manifest.id}}
                 }
             } | Sort-Object version -Descending)
             if($choices.Count){$updates+= $choices[0]}

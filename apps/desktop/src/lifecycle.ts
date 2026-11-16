@@ -1,4 +1,4 @@
-export type Root = 'news' | 'hongguo';
+export type Root = 'news' | 'hongguo' | 'reader';
 export type Section = 'content' | 'modules' | 'settings';
 export type View = { root: Root; section: Section; visible: boolean; generation: number };
 export function active(view: View, root: Root): boolean {

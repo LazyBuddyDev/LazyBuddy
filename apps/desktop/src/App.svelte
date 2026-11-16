@@ -3,6 +3,7 @@
   import {getCurrentWindow} from '@tauri-apps/api/window';
   import ShortcutButton from './ShortcutButton.svelte';import Icon from './Icon.svelte';import Switch from './Switch.svelte';import Hongguo from './Hongguo.svelte';import News from './News.svelte';
   import {toggleSection,moduleTarget,type Root,type Section,type View} from './lifecycle';import logoUrl from '../../../assets/lazybuddy.svg';
+  import Reader from './Reader.svelte';
   type Module={id:string;name:string;version:string;installed:boolean;update:boolean};
   type ModuleProgress={stage:string;downloaded:number;total:number};
   type Preferences={dark:boolean;topmost:boolean;root:string|null;auto_update:boolean;background_opacity:number;card_opacity:number;shortcut:{modifiers:number;key:number};[key:string]:unknown};
@@ -12,6 +13,8 @@
   let modules=$state<Module[]>([]);let roots=$state<{id:Root;name:string}[]>([]);let managerBusy=$state(false);let catalogReady=$state(false);
   let installing=$state<string>();let moduleProgress=$state<ModuleProgress>();
   let servicePlayback=$state(false);let realHongguo=$state<Hongguo>();let serviceActive=$state(false);
+  let reader=$state<Reader>();
+  let changing=false;
   let notice=$state('正在启动');let updateReady=$state(false);let appUpdates=$state(false);let page:HTMLElement;let sequence=0;let lastAccountPage=false;
   let displayedCategory='page';
   let dockPress:{id:number;x:number;y:number}|undefined;let dockDragged=false;
@@ -35,18 +38,20 @@
   function pageNotice(owner:Root,text:string){if(root===owner&&(section==='content'||section==='settings'&&category==='page'))notice=text;}
   async function change(nextRoot=root,nextSection=section,nextVisible=visible){
     const accountPage=nextSection==='settings'&&category==='page';
-    if(view.generation>0&&nextRoot===root&&nextSection===section&&nextVisible===visible&&accountPage===lastAccountPage&&category===displayedCategory)return;
+    if(!changing&&view.generation>0&&nextRoot===root&&nextSection===section&&nextVisible===visible&&accountPage===lastAccountPage&&category===displayedCategory)return;
     if(section==='settings')void call('capture_shortcut',{enabled:false}).catch(error=>notice=String(error));
-    const ticket=++sequence;serviceActive=false;await realHongguo?.suspend(nextRoot==='hongguo'&&nextSection==='content');if(ticket!==sequence)return;
+    const ticket=++sequence;changing=true;serviceActive=false;
+    try{await reader?.suspend(nextVisible);}catch(error){if(ticket===sequence){notice=`阅读进度保存失败：${error}`;changing=false;}return;}
+    await realHongguo?.suspend(nextRoot==='hongguo'&&nextSection==='content');if(ticket!==sequence)return;
     if(page&&visible&&!docked)scrollPositions.set(scrollKey(),page.scrollTop);
     if(root!==nextRoot)notice='就绪';
     root=nextRoot;section=nextSection;visible=nextVisible;lastAccountPage=accountPage;displayedCategory=category;
     try{const lease=await call<View>('transition',{root,section,visible,accountPage});if(ticket!==sequence)return;view=lease;
       serviceActive=root==='hongguo'&&visible&&(section==='content'||accountPage&&section==='settings');
-      await tick();if(ticket===sequence&&page)page.scrollTop=scrollPositions.get(scrollKey())??0;
+      await tick();if(ticket===sequence){if(page)page.scrollTop=scrollPositions.get(scrollKey())??0;reader?.resume();}
       if(preferences?.root!==root)void save({root});
       if(section==='modules'&&visible&&!catalogReady)void moduleAction('catalog');
-    }catch(error){if(ticket===sequence)notice=String(error);}
+    }catch(error){if(ticket===sequence)notice=String(error);}finally{if(ticket===sequence)changing=false;}
   }
   async function moduleAction(action:string,id?:string){
     if(managerBusy)return;managerBusy=true;if(action!=='list')notice=action==='catalog'?'正在读取功能目录':action==='uninstall'?'正在卸载':'正在下载安装';
@@ -59,7 +64,7 @@
     }catch(error){notice=`功能操作失败：${error}`;}finally{finished=true;installing=undefined;moduleProgress=undefined;managerBusy=false;}
   }
   async function toggleModules(){await change(root,moduleTarget(section));if(section==='modules'){await moduleAction('list');if(!catalogReady)void moduleAction('catalog');}}
-  async function action(action:string){if(action!=='show')await realHongguo?.suspend(action!=='quit');try{await call('window_action',{action});}catch(error){notice=String(error);}}
+  async function action(action:string){try{if(action!=='show'){await reader?.suspend();await realHongguo?.suspend(action!=='quit');}await call('window_action',{action});}catch(error){notice=String(error);}}
   async function togglePin(){try{pinned=await call<boolean>('toggle_pin');void save({topmost:pinned});}catch(error){notice=String(error);}}
   async function checkUpdate(){notice='正在检查应用更新';try{updateReady=await call<boolean>('check_update');notice=updateReady?'应用更新已就绪':'当前已是最新构建';}catch(error){notice=`更新检查失败：${error}`;}}
   function mediaKey(event:KeyboardEvent){if(event.target instanceof HTMLInputElement||event.target instanceof HTMLSelectElement||event.target instanceof HTMLButtonElement||!serviceActive||section!=='content')return;
@@ -78,7 +83,7 @@
   });
 </script>
 <svelte:window onkeydown={mediaKey}/>
-{#snippet settingsNavigation()}<aside class="settings-nav" aria-label="设置分类">{#if roots.some(m=>m.id===root)}<button class:chosen={category==='page'} onclick={()=>{category='page';void change();}}>{root==='news'?'新闻设置':'红果账号'}</button>{/if}{#each [['appearance','显示设置'],['system','系统设置'],['about','关于我们']] as [id,label]}<button class:chosen={category===id} onclick={()=>{category=id;void change();}}>{label}</button>{/each}<button class="back-button" onclick={()=>change(root,'content')}><Icon name="arrow" size={16}/>返回页面</button></aside>{/snippet}
+{#snippet settingsNavigation()}<aside class="settings-nav" aria-label="设置分类">{#if roots.some(m=>m.id===root)}<button class:chosen={category==='page'} onclick={()=>{category='page';void change();}}>{root==='news'?'新闻设置':root==='reader'?'阅读设置':'红果账号'}</button>{/if}{#each [['appearance','显示设置'],['system','系统设置'],['about','关于我们']] as [id,label]}<button class:chosen={category===id} onclick={()=>{category=id;void change();}}>{label}</button>{/each}<button class="back-button" onclick={()=>change(root,'content')}><Icon name="arrow" size={16}/>返回页面</button></aside>{/snippet}
 <div class:dark class:docked class="app-shell" style:--background-opacity={preferences?.background_opacity??.94} style:--card-opacity={preferences?.card_opacity??.94} data-testid="shell" data-root={root} data-section={section} data-visible={visible} data-docked={docked} data-events-ready={eventsReady}>
 {#if docked}<button class="dock-button" aria-label="展开 LazyBuddy" title="点击展开，拖动调整停靠位置" onpointerdown={pressDock} onpointermove={dragDock} onpointerup={releaseDock} onpointercancel={releaseDock} onlostpointercapture={releaseDock} onclick={clickDock}><img src={logoUrl} alt="" draggable="false"/></button>{/if}
 <header class="toolbar" data-tauri-drag-region><div class="identity" data-tauri-drag-region><img class="brand-logo" src={logoUrl} alt="" draggable="false" data-tauri-drag-region/><strong data-tauri-drag-region>LazyBuddy</strong><span class="divider" data-tauri-drag-region></span>
@@ -86,6 +91,7 @@
 <nav aria-label="全局操作" data-tauri-drag-region><button class="icon-button" class:chosen={pinned} aria-label="置顶" title="置顶" aria-pressed={pinned} onclick={togglePin}><Icon name="pin" size={21}/></button><button class="icon-button" class:chosen={section==='modules'} aria-label="功能" title="功能" onclick={toggleModules}><Icon name="box" size={21}/></button><button class="icon-button" class:chosen={section==='settings'} aria-label="设置" title="设置" onclick={()=>{if(!roots.length)category='appearance';void change(root,toggleSection(section,'settings'));}}><Icon name="settings" size={21}/></button><span class="divider" data-tauri-drag-region></span><button class="icon-button close-button" aria-label="关闭到托盘" title="关闭到托盘" onclick={()=>action('close')}><Icon name="close"/></button></nav></header>
 <main class="page" bind:this={page}>
 {#if ready}
+{#if roots.some(m=>m.id==='reader')}<Reader bind:this={reader} active={root==='reader'&&visible&&!docked&&(section==='content'||section==='settings'&&category==='page')} showing={root==='reader'&&(section==='content'||section==='settings'&&category==='page')} settings={section==='settings'} generation={view.generation} notice={text=>pageNotice('reader',text)} navigation={settingsNavigation}/>{/if}
 {#if servicePlayback}<Hongguo bind:this={realHongguo} active={serviceActive&&!docked} showing={root==='hongguo'&&(section==='content'||section==='settings'&&category==='page')} accountOnly={section==='settings'} notice={text=>pageNotice('hongguo',text)} navigation={settingsNavigation}/>{/if}
 {#if roots.some(m=>m.id==='news')}<div hidden={root!=='news'||!(section==='content'||section==='settings'&&category==='page')}><News active={root==='news'&&visible&&!docked&&(section==='content'||section==='settings'&&category==='page')} settings={section==='settings'} generation={view.generation} notice={text=>pageNotice('news',text)} navigation={settingsNavigation}/></div>{/if}
 {#if section==='modules'}<section class="content-width module-page"><div class="module-heading"><h1>可用功能</h1><button onclick={toggleModules}><Icon name="arrow" size={16}/>返回</button></div><div class="module-list">{#each modules as module}<div class="module-row"><div class="module-name"><strong>{module.name}</strong><span class="version">{module.version}</span></div><div class="module-progress-slot">{#if installing===module.id}{@const downloading=moduleProgress?.stage==='download'&&moduleProgress.total>0}{@const percent=downloading?Math.floor(moduleProgress!.downloaded/moduleProgress!.total*100):undefined}{@const label=downloading?`正在下载 ${percent}%`:moduleProgress?.stage==='verify'?'正在校验并解包':moduleProgress?.stage==='install'?'正在安装':'正在准备'}<div class="module-progress" title={`${module.name}：${label}`}>{#if downloading}<progress max="100" value={percent} aria-label={`${module.name}安装进度`} aria-valuetext={label}></progress>{:else}<progress aria-label={`${module.name}安装进度`} aria-valuetext={label}></progress>{/if}<span>{label}</span></div>{/if}</div><div class="row-actions">{#if module.installed}<button disabled={managerBusy||!module.update} onclick={()=>moduleAction('install',module.id)}>更新</button><button class="subtle-danger" disabled={managerBusy} onclick={()=>moduleAction('uninstall',module.id)}>卸载</button>{:else}<button disabled={managerBusy||!catalogReady} onclick={()=>moduleAction('install',module.id)}>安装</button>{/if}</div></div>{/each}</div></section>

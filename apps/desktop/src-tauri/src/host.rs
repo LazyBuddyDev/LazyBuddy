@@ -160,6 +160,7 @@ async fn modules_with_progress(
         state.stop_news();
         // Drain account/media transactions before immutable package directories can be reclaimed.
         app.state::<crate::playback::State>().disconnect().await;
+        app.state::<crate::reader::State>().disconnect(&app).await?;
     }
     let root = state.data.join("modules");
     let catalog = state.catalog.lock().unwrap().clone();

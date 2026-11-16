@@ -992,10 +992,10 @@ li button:hover {
 }
 .media-library { padding: 12px 14px; }
 .media-library .list-toolbar { margin-bottom: 12px; }
-.media-search { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.media-search .search-box { max-width: none; flex: 1; margin: 0; border: 1px solid var(--line); padding: 0 10px; }
-.media-search input { width: 100%; font-size: 12px; padding: 8px 0; }
-.media-search button { min-height: 33px; }
+.media-search, .collection-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+:is(.media-search, .collection-toolbar) .search-box { max-width: none; flex: 1; margin: 0; border: 1px solid var(--line); padding: 0 10px; }
+:is(.media-search, .collection-toolbar) input { width: 100%; font-size: 12px; padding: 8px 0; }
+:is(.media-search, .collection-toolbar) button { min-height: 33px; }
 .media-result { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .media-result h2 { font-size: 13px; }
 .media-result > div > span { display: block; color: var(--muted); font-size: 10px; margin-top: 5px; }
