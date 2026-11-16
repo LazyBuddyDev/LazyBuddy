@@ -40,6 +40,7 @@
 - 1.0.3发布前真实账号实机复验：登录恢复与收藏读取成功，选取两个收藏条目均显示上游HTTP200空响应，尚未取得实际视频画面；未改收藏、凭据或尝试更换身份。用户决定先修复播放，再发布正式版；不得把本轮账号读取成功记作实际播放通过。
 - 用户确认上述同账号同剧集在官方客户端正常可播。独立源码已克隆至target/service-exports/hongguo-service（main@60aa873）；签名源码与上游bf8df22一致，SM3/Ladon/Argus固定向量及取源/凭据/空体诊断定向测试通过。原失败条目单次受控诊断仍HTTP200零长度、无会话Cookie刷新；未找到可验证功能修复。详见该服务tmp/verification-playback/report.md与wire.json。
 - 后续CLI对照：安装包与重建助手相关机器码一致；HTTP/1.1、SDK原生POST及绑定原安装ID均未解决空体。诊断偶发取得受保护元数据，不能当作稳定修复或实际播放。官网目录确认集ID映射正确；现有登录访问原剧第6集返回302至第1集，网站仅开放前5集，不能用网页预览替代客户端完整播放。真实安装服务CLI恢复账号/读取11收藏通过，原第1集仍未准备媒体。证据归服务tmp/verification-playback/report.md及official-episode6-access.json；服务无功能补丁，正式版仍为草稿。
+- 本轮继续核对当前上游bf8df22/77a99f5：参考实现扫码后仅把网站Cookie和账号设备交给云端接口，播放器及集成测试明确使用独立共享匿名会话，没有账号换取播放授权步骤。CLI确认收藏读取使用的设备与已保存取源设备相同。官方网页后台验证中两个原第6集均跳离请求页面，原第1集在点击及排除自动播放策略后仍未实际推进（AbortError）；不能据此断言正常官方浏览器不可播。证据：服务tmp/verification-playback/official-browser-cases.json、official-browser.json；未改受保护媒体解包或轮换设备，未发布。
 - 关键证据：本机LB.log在21:24:14/21:24:16记录series7689716417968491544第1集1080p/direct，HTTP200、declared_length=0、body_bytes=0、body_read_ok=true、HTTP2、请求ID存在、Date时差0。是上游明确返回空体，不是读取中断。
 - `[√]` 当前诊断分类、脱敏、服务/宿主透传及配套部署已验证；定向测试证据见tmp/verification-host-logs及tmp/verification-build-entry/response-metadata.json。
 - `[x]` 取得能够解释空体的接口/会话/签名证据并修复实际原因，或明确可核查的外部限制。
