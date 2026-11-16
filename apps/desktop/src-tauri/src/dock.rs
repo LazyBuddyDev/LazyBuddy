@@ -15,6 +15,7 @@ use windows_sys::Win32::{
 };
 
 const HOOK: usize = 0x4c4250;
+const SNAP_STYLE: u32 = WS_THICKFRAME | WS_MAXIMIZEBOX;
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Edge {
     Left,
@@ -46,6 +47,7 @@ impl Bounds {
 pub struct Dock {
     expanded: Option<Bounds>,
     was_topmost: bool,
+    snap_style: u32,
 }
 struct Hook {
     window: WebviewWindow,
@@ -118,6 +120,35 @@ fn circle(bounds: Bounds, work: Bounds, dpi: u32, edge: Edge) -> Bounds {
         h: size,
     }
 }
+fn relocated(bounds: Bounds, expanded: Bounds, work: Bounds, dpi: u32) -> (Bounds, Bounds) {
+    let edge = if bounds.x + bounds.w / 2 <= work.x + work.w / 2 {
+        Edge::Left
+    } else {
+        Edge::Right
+    };
+    let docked = circle(bounds, work, dpi, edge);
+    let expanded = Bounds {
+        x: if edge == Edge::Left {
+            work.x
+        } else {
+            work.x + work.w - expanded.w
+        },
+        y: docked.y + (docked.h - expanded.h) / 2,
+        ..expanded
+    }
+    .fit(work);
+    (docked, expanded)
+}
+fn redock(window: &WebviewWindow) -> io::Result<()> {
+    let Some(expanded) = window.state::<Mutex<Dock>>().lock().unwrap().expanded else {
+        return Ok(());
+    };
+    let (bounds, work, dpi) = geometry(window)?;
+    let (docked, expanded) = relocated(bounds, expanded, work, dpi);
+    position(window, docked, true)?;
+    window.state::<Mutex<Dock>>().lock().unwrap().expanded = Some(expanded);
+    shape(window)
+}
 fn position(window: &WebviewWindow, bounds: Bounds, topmost: bool) -> io::Result<()> {
     if unsafe {
         SetWindowPos(
@@ -131,11 +162,25 @@ fn position(window: &WebviewWindow, bounds: Bounds, topmost: bool) -> io::Result
             bounds.y,
             bounds.w,
             bounds.h,
-            SWP_NOACTIVATE,
+            SWP_NOACTIVATE | SWP_FRAMECHANGED,
         )
     } == 0
     {
         return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+fn set_snap_style(window: &WebviewWindow, flags: u32) -> io::Result<()> {
+    let handle = hwnd(window)?;
+    // Tao's cached visibility differs from our no-focus Win32 show/hide path.
+    unsafe {
+        let style = GetWindowLongPtrW(handle, GWL_STYLE) as u32;
+        SetLastError(0);
+        if SetWindowLongPtrW(handle, GWL_STYLE, ((style & !SNAP_STYLE) | flags) as isize) == 0
+            && GetLastError() != 0
+        {
+            return Err(io::Error::last_os_error());
+        }
     }
     Ok(())
 }
@@ -177,18 +222,22 @@ pub fn collapse(window: &WebviewWindow) -> io::Result<bool> {
     let Some(edge) = edge(bounds, work, dpi) else {
         return Ok(false);
     };
+    let style = unsafe { GetWindowLongPtrW(hwnd(window)?, GWL_STYLE) } as u32;
     {
         let state = window.state::<Mutex<Dock>>();
         let mut state = state.lock().unwrap();
         state.expanded = Some(bounds.fit(work));
         state.was_topmost =
             unsafe { GetWindowLongPtrW(hwnd(window)?, GWL_EXSTYLE) } as u32 & WS_EX_TOPMOST != 0;
+        state.snap_style = style & SNAP_STYLE;
     }
     super::visibility(window, false);
     let _ = window.emit("shell-docked", true);
-    if let Err(error) =
-        position(window, circle(bounds, work, dpi, edge), true).and_then(|_| shape(window))
-    {
+    // A fixed-size, non-maximizable capsule must not participate in Windows Snap.
+    let result = set_snap_style(window, 0)
+        .and_then(|_| position(window, circle(bounds, work, dpi, edge), true))
+        .and_then(|_| shape(window));
+    if let Err(error) = result {
         let _ = expand(window);
         return Err(error);
     }
@@ -199,7 +248,12 @@ pub fn expand(window: &WebviewWindow) -> io::Result<()> {
         return Ok(());
     };
     let (_, work, _) = geometry(window)?;
-    let topmost = window.state::<Mutex<Dock>>().lock().unwrap().was_topmost;
+    let (topmost, snap_style) = {
+        let state = window.state::<Mutex<Dock>>();
+        let state = state.lock().unwrap();
+        (state.was_topmost, state.snap_style)
+    };
+    set_snap_style(window, snap_style)?;
     // State is released before resizing: native resize callbacks consult it synchronously.
     window.state::<Mutex<Dock>>().lock().unwrap().expanded = None;
     if let Err(error) = position(window, saved.fit(work), topmost) {
@@ -238,6 +292,11 @@ unsafe extern "system" fn subclass(
 ) -> LRESULT {
     let hook = unsafe { &*(data as *const Hook) };
     match event {
+        WM_NCACTIVATE if is_docked(&hook.window) => {
+            // Keep Tao's focus events, but do not repaint system chrome over the alpha edge.
+            return unsafe { DefSubclassProc(window, event, wparam, -1) };
+        }
+        WM_NCPAINT if is_docked(&hook.window) => return 0,
         WM_HOTKEY => {
             let visible =
                 unsafe { IsWindowVisible(window) } != 0 && unsafe { IsIconic(window) } == 0;
@@ -255,10 +314,15 @@ unsafe extern "system" fn subclass(
                 .state::<crate::host::State>()
                 .remember_window(&hook.window);
             if hook.moved.replace(false) {
-                if collapse(&hook.window).is_err() {
+                let result = if is_docked(&hook.window) {
+                    redock(&hook.window)
+                } else {
+                    collapse(&hook.window).map(|_| ())
+                };
+                if result.is_err() {
                     let _ = hook
                         .window
-                        .emit("shell-error", "贴边收起失败，请重新拖动窗口。");
+                        .emit("shell-error", "贴边停靠失败，请重新拖动窗口。");
                 }
             }
         }
@@ -275,6 +339,115 @@ unsafe extern "system" fn subclass(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn moving_a_collapsed_window_snaps_and_restores_on_the_new_side() {
+        let work = Bounds {
+            x: -1920,
+            y: 40,
+            w: 1920,
+            h: 1040,
+        };
+        let saved = Bounds {
+            x: -1920,
+            y: 200,
+            w: 780,
+            h: 540,
+        };
+        let (docked, expanded) = relocated(
+            Bounds {
+                x: -150,
+                y: 300,
+                w: 60,
+                h: 60,
+            },
+            saved,
+            work,
+            144,
+        );
+        assert_eq!(
+            docked,
+            Bounds {
+                x: -60,
+                y: 300,
+                w: 60,
+                h: 60
+            }
+        );
+        assert_eq!(
+            expanded,
+            Bounds {
+                x: -780,
+                y: 60,
+                w: 780,
+                h: 540
+            }
+        );
+        let (docked, expanded) = relocated(
+            Bounds {
+                x: -1600,
+                y: 10,
+                w: 60,
+                h: 60,
+            },
+            expanded,
+            work,
+            144,
+        );
+        assert_eq!(
+            docked,
+            Bounds {
+                x: -1920,
+                y: 40,
+                w: 60,
+                h: 60
+            }
+        );
+        assert_eq!(
+            expanded,
+            Bounds {
+                x: -1920,
+                y: 40,
+                w: 780,
+                h: 540
+            }
+        );
+    }
+    #[test]
+    fn moving_a_collapsed_window_fits_a_smaller_monitor_and_its_dpi() {
+        let saved = Bounds {
+            x: -1920,
+            y: 200,
+            w: 780,
+            h: 540,
+        };
+        let work = Bounds {
+            x: 0,
+            y: 0,
+            w: 640,
+            h: 480,
+        };
+        let (docked, expanded) = relocated(
+            Bounds {
+                x: 550,
+                y: 450,
+                w: 60,
+                h: 60,
+            },
+            saved,
+            work,
+            192,
+        );
+        assert_eq!(
+            docked,
+            Bounds {
+                x: 560,
+                y: 400,
+                w: 80,
+                h: 80
+            }
+        );
+        assert_eq!(expanded, work);
+    }
     #[test]
     fn docking_uses_work_area_and_only_near_left_or_right_edges() {
         let work = Bounds {

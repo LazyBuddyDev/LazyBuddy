@@ -7,9 +7,11 @@ from pathlib import PureWindowsPath
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--pid', type=int, required=True)
-parser.add_argument('--action', choices=['snapshot', 'drag-left', 'drag-right', 'drag-center', 'resize-left'], default='snapshot')
+parser.add_argument('--action', choices=['snapshot', 'drag-left', 'drag-right', 'drag-center', 'resize-left', 'activate', 'deactivate'], default='snapshot')
 args = parser.parse_args()
 user = ctypes.WinDLL('user32', use_last_error=True)
+user.SetThreadDpiAwarenessContext.argtypes = [w.HANDLE]
+user.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
 kernel = ctypes.WinDLL('kernel32', use_last_error=True)
 gdi = ctypes.WinDLL('gdi32', use_last_error=True)
 kernel.OpenProcess.argtypes = [w.DWORD, w.BOOL, w.DWORD]
@@ -52,23 +54,28 @@ def bounds():
     rect = w.RECT()
     if not user.GetWindowRect(hwnd, ctypes.byref(rect)): raise ctypes.WinError(ctypes.get_last_error())
     return [rect.left, rect.top, rect.right-rect.left, rect.bottom-rect.top]
-before = bounds(); before_exit = None
+before = bounds(); before_exit = None; activation_result = None
 if args.action != 'snapshot':
     user.SetWindowPos.argtypes = [w.HWND, w.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, w.UINT]
     user.SendMessageTimeoutW.argtypes = [w.HWND, w.UINT, w.WPARAM, w.LPARAM, w.UINT, w.UINT, ctypes.POINTER(ctypes.c_size_t)]
     user.SendMessageTimeoutW.restype = ctypes.c_ssize_t
-    def send(message, parameter=0):
+    def send(message, parameter=0, wparam=0):
         result = ctypes.c_size_t()
-        if not user.SendMessageTimeoutW(hwnd, message, 0, parameter, 2, 5000, ctypes.byref(result)): raise ctypes.WinError(ctypes.get_last_error())
-    send(0x231)
-    width = before[2] - (4 if args.action == 'resize-left' else 0)
-    x = info.work.left if args.action.endswith('left') else info.work.right-width if args.action == 'drag-right' else (info.work.left+info.work.right-width)//2
-    if not user.SetWindowPos(hwnd, None, x, before[1], width, before[3], 0x14): raise ctypes.WinError(ctypes.get_last_error())
-    if args.action != 'resize-left':
-        proposed = w.RECT(x,before[1],x+width,before[1]+before[3])
-        send(0x216, ctypes.addressof(proposed))
-    before_exit = bounds()
-    send(0x232)
+        if not user.SendMessageTimeoutW(hwnd, message, wparam, parameter, 2, 5000, ctypes.byref(result)): raise ctypes.WinError(ctypes.get_last_error())
+        return result.value
+    if args.action in ('activate','deactivate'):
+        activation_result = send(0x86,wparam=int(args.action=='activate'))
+        send(0x85, wparam=1)
+    else:
+        send(0x231)
+        width = before[2] - (4 if args.action == 'resize-left' else 0)
+        x = info.work.left if args.action.endswith('left') else info.work.right-width if args.action == 'drag-right' else (info.work.left+info.work.right-width)//2
+        if not user.SetWindowPos(hwnd, None, x, before[1], width, before[3], 0x14): raise ctypes.WinError(ctypes.get_last_error())
+        if args.action != 'resize-left':
+            proposed = w.RECT(x,before[1],x+width,before[1]+before[3])
+            send(0x216, ctypes.addressof(proposed))
+        before_exit = bounds()
+        send(0x232)
 
 gdi.CreateRectRgn.argtypes = [ctypes.c_int]*4; gdi.CreateRectRgn.restype = w.HANDLE
 gdi.DeleteObject.argtypes = [w.HANDLE]
@@ -83,4 +90,5 @@ try:
     region_type = user.GetWindowRgn(hwnd,region)
     shape = dict(type=region_type,corner=bool(gdi.PtInRegion(region,0,0)),center=bool(gdi.PtInRegion(region,after[2]//2,after[3]//2)),corner_hits_prototype=hits_own_window(after[0],after[1]),center_hits_prototype=hits_own_window(after[0]+after[2]//2,after[1]+after[3]//2))
 finally: gdi.DeleteObject(region)
-print(json.dumps(dict(before=before,before_exit=before_exit,after=after,dpi=user.GetDpiForWindow(hwnd),region=shape,topmost=bool(user.GetWindowLongPtrW(hwnd,-20)&8))))
+style = user.GetWindowLongPtrW(hwnd,-16)
+print(json.dumps(dict(before=before,before_exit=before_exit,after=after,work_area=[info.work.left,info.work.top,info.work.right-info.work.left,info.work.bottom-info.work.top],dpi=user.GetDpiForWindow(hwnd),region=shape,visible=bool(style&0x10000000),topmost=bool(user.GetWindowLongPtrW(hwnd,-20)&8),resizable=bool(style&0x40000),maximizable=bool(style&0x10000),activation_result=activation_result)))
