@@ -55,7 +55,7 @@ try{
   await page.evaluate(()=>window.holdFetch=true);
   const firstRefresh=page.getByRole('button',{name:'刷新来源甲',exact:true});
   const secondRefresh=page.getByRole('button',{name:'刷新来源乙',exact:true});
-  const globalRefresh=page.locator('.list-toolbar .refresh-button');
+  const globalRefresh=page.locator('.collection-toolbar .refresh-button');
   const unchanged=await secondRefresh.evaluate(el=>({opacity:getComputedStyle(el).opacity,html:el.innerHTML}));
   await firstRefresh.click();
   await page.waitForFunction(()=>window.pendingFetches?.length===1);
@@ -125,7 +125,7 @@ try{
   assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.command==='capture_shortcut').at(-1).enabled),false);
   await page.evaluate(()=>window.showHongguo());
   await page.waitForSelector('.media-library .tabs');
-  const tabs=page.locator('.media-library .list-toolbar');
+  const tabs=page.locator('.media-library .tab-bar');
   const searchBounds=await tabs.boundingBox();
   await page.locator('.media-library .tabs button').filter({hasText:'收藏'}).click();
   await page.waitForSelector('.media-result');

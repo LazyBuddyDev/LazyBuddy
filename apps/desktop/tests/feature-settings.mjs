@@ -20,6 +20,26 @@ try{
   const gear=page.locator('.toolbar').getByRole('button',{name:'设置',exact:true});
   const localSettings=()=>page.locator('main .tabs:visible').getByRole('button',{name:'设置',exact:true});
   const calls=()=>page.evaluate(()=>window.fixtureCalls.filter(c=>['news_call','reader_call','playback_call'].includes(c.command)).length);
+  const barBounds=()=>page.locator('main .tab-bar:visible').evaluate(e=>{
+    const r=e.getBoundingClientRect(),style=getComputedStyle(e);
+    return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,border:style.borderBottomWidth,margin:style.marginBottom};
+  });
+  await mkdir(output,{recursive:true});
+  for(const width of [780,440,1600]){
+    await page.setViewportSize({width,height:640});let baseline;
+    for(const id of ['news','hongguo','reader']){
+      await page.getByLabel('选择功能').selectOption(id);
+      await page.locator('main .tabs:visible button').first().click();
+      await page.waitForSelector('[data-section=content]');
+      const content=await barBounds();assert.equal(content.border,'1px');assert.equal(content.margin,'12px');
+      baseline??=content;assert.deepEqual(content,baseline,'feature tab separators share the same position');
+      await localSettings().click();await page.waitForSelector('[data-section=settings]');
+      assert.deepEqual(await barBounds(),baseline,'settings retain the same separator');
+      await page.screenshot({animations:'disabled',path:output+`${id}-separator-${width}.png`});
+    }
+  }
+  await page.setViewportSize({width:780,height:640});
+  await page.locator('main .tabs:visible button').first().click();
   for(const [id,heading,tabs] of [['news','新闻设置',['全部来源','已关注','设置']],['hongguo','红果账号',['搜索','收藏','设置']],['reader','阅读设置',['书架','设置']]]){
     await page.getByLabel('选择功能').selectOption(id);
     await localSettings().click();await page.getByRole('heading',{name:heading,exact:true}).waitFor();
