@@ -209,7 +209,11 @@ pub async fn reader_call(
 ) -> Result<Value, String> {
     if !matches!(
         method.as_str(),
-        "library.list"
+        "health"
+            | "online.search"
+            | "online.status"
+            | "online.cancel"
+            | "library.list"
             | "library.import"
             | "library.remove"
             | "import.status"
@@ -273,13 +277,16 @@ mod tests {
         m.transition(crate::Root::Reader, crate::Section::Content, true);
         let generation = m.view.generation;
         assert!(allowed(&m, generation, "chapter.read"));
+        assert!(allowed(&m, generation, "online.search"));
         m.transition(crate::Root::News, crate::Section::Content, true);
         m.transition(crate::Root::Reader, crate::Section::Content, true);
         assert!(!allowed(&m, generation, "chapter.read"));
+        assert!(!allowed(&m, generation, "online.status"));
         m.transition(crate::Root::Reader, crate::Section::Settings, true);
         m.account_page = true;
         assert!(allowed(&m, m.view.generation, "preferences.set"));
         assert!(!allowed(&m, m.view.generation, "chapter.read"));
+        assert!(!allowed(&m, m.view.generation, "online.search"));
         m.transition(crate::Root::Reader, crate::Section::Content, false);
         assert!(!allowed(&m, m.view.generation, "chapter.read"));
     }

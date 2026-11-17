@@ -21,7 +21,7 @@
 ```powershell
 python -B scripts/assemble-catalog.py --packages <news.zip> <hongguo.zip> <python-runtime.zip> --base-url <HTTPS模块资源目录> --output target/packages/catalog/web-catalog.json
 .\target\tools\release\Scripts\python.exe -B scripts/sign-catalog.py --catalog target/packages/catalog/web-catalog.json --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi" --source target/packages/catalog/module-catalog.json --url <HTTPS目录地址>
-.\build_and_run.bat -BuildOnly -Release
+.\start.bat -BuildOnly -Release
 python -B scripts/package_base.py --output target/packages/base
 ```
 

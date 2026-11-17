@@ -14,7 +14,7 @@ fn require_app_updates() -> Result<(), String> {
     if APP_UPDATES {
         Ok(())
     } else {
-        Err("开发版请通过 build_and_run.bat 重新构建启动".into())
+        Err("开发版请通过 start.bat 重新构建启动".into())
     }
 }
 

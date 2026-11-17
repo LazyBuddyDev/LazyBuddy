@@ -51,7 +51,7 @@ LazyBuddy 是你的桌面摸鱼搭子，把喜欢的消遣放在手边。功能�
 准备 Rust/MSVC、Windows SDK、Node.js 24 和 WebView2 Runtime，然后在仓库根目录运行统一入口：
 
 ```powershell
-.\build_and_run.bat
+.\start.bat
 ```
 
 仅构建使用 `-BuildOnly`，发布构建加 `-Release`。构建前会正常退出本项目对应实例；构建失败不会启动旧产物。前端资源嵌入 EXE，可选功能仍通过模块管理安装。小说功能支持本地TXT/EPUB导入和阅读，可在应用的“功能”入口按需安装。更多参数与开发包用法见[构建与 CLI](docs/cli.md)。

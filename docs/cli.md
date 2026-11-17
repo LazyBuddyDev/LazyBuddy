@@ -3,8 +3,8 @@
 唯一宿主为 `apps/desktop` 的 Tauri/Svelte 应用。先由根目录脚本构建前端，再构建 Rust；直接 cargo 构建前必须有 `apps/desktop/dist`。
 
 ```powershell
-.\build_and_run.bat -BuildOnly
-.\build_and_run.bat -Release
+.\start.bat -BuildOnly
+.\start.bat -Release
 ```
 
 默认输出在 `target/debug` 或 `target/release`；可显式设置 `CARGO_TARGET_DIR`。脚本仅在 node_modules 缺失时安装精确 npm 依赖，使用 npm.cmd。无需媒体 SDK，不自动下载业务运行时。构建前通过CLI正常退出与目标EXE路径匹配的本项目实例，等待退出后直接构建，不生成独立候选文件，不关闭其他安装实例。正常退出或构建失败时停止，不启动旧产物。`-LaunchOnly` 只启动已有新入口，`-ServicePackages <绝对目录>` 是显式红果开发包入口，不能代替可信线上安装。
@@ -25,7 +25,7 @@ $env:LAZYBUDDY_DATA_DIR=(Join-Path (Get-Location) 'tmp/profiles/local-qa')
 
 ## 开发包与统一启动
 
-用户统一运行根目录`build_and_run.bat`。已准备、完整的本地功能包按`target/packages/development/<id>/<version>/module.json`归位（目录不进Git），也可显式`-ModulePackages <目录>`指定同样结构的根目录。脚本为显式暂存的功能选择最新未安装版本或较新版本，正常退出当前工作区实例后通过CLI的`install-local`安装，再启动新宿主；不自动下载重运行时，不停止其他安装。依赖仍须准备齐全，不能把临时或不打算安装的包放入该暂存入口。
+用户统一运行根目录`start.bat`。已准备、完整的本地功能包按`target/packages/development/<id>/<version>/module.json`归位（目录不进Git），也可显式`-ModulePackages <目录>`指定同样结构的根目录。脚本为显式暂存的功能选择最新未安装版本或较新版本，正常退出当前工作区实例后通过CLI的`install-local`安装，再启动新宿主；不自动下载重运行时，不停止其他安装。依赖仍须准备齐全，不能把临时或不打算安装的包放入该暂存入口。
 
 本地阅读模块使用宿主数据根下`services/reader`，其书库副本不依赖原文件位置；卸载模块保留书库数据。1.0.4及后续宿主可通过在线功能目录安装；开发改动仍通过下述完整开发包交付。阅读设置提供左右翻页、上下翻页和连续滚动，默认左右翻页；←/→或上一页/下一页按实际可视区域导航，窗口及字号变化保留正文锚点，正文分块自动接续。服务源码、API和打包由独立[reader-service仓库](https://github.com/LazyBuddyDev/reader-service)维护。
 

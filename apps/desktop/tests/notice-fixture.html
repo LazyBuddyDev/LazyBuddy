@@ -1,7 +1,10 @@
 <!doctype html><html lang="zh-CN"><meta charset="utf-8"><div id="app"></div><script type="module">
 import {mount} from 'svelte';import App from '/src/App.svelte';import '/src/style.css';
 let generation=0;const callbacks=[];
-const preferences={root:'hongguo',dark:false,topmost:false,auto_update:false,background_opacity:1,card_opacity:1,...(window.fixturePersist?JSON.parse(localStorage.getItem('fixture.preferences')??'{}'):{})};
+const readerOnlineCase=new URLSearchParams(location.search).has('reader-online');if(readerOnlineCase)window.fixtureReader=true;
+const preferences={root:readerOnlineCase?'reader':'hongguo',dark:false,topmost:false,auto_update:false,background_opacity:1,card_opacity:1,...(window.fixturePersist?JSON.parse(localStorage.getItem('fixture.preferences')??'{}'):{})};
+let onlineNext=0;const onlineJobs=new Map();let releaseOnline;let releaseOnlineButton;
+if(readerOnlineCase){releaseOnlineButton=document.createElement('button');releaseOnlineButton.textContent='完成迟到搜索';releaseOnlineButton.hidden=true;releaseOnlineButton.style='position:fixed;bottom:32px;right:12px;z-index:999';releaseOnlineButton.onclick=()=>{releaseOnlineButton.hidden=true;releaseOnline?.();};document.body.append(releaseOnlineButton);}
 const news={auto_refresh:false,refresh_minutes:5,followed:[],hidden:[],order:[],default_followed:false};
 const readerPreferences={font_size:20,line_height:1.9,width:680,page_mode:'scroll',...window.fixtureReadingPreferences,...(window.fixturePersist?JSON.parse(localStorage.getItem('fixture.reader.preferences')??'{}'):{})};
 window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback),invoke:async(command,args)=>{
@@ -21,6 +24,13 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
    return {};
  }
  if(command==='reader_call'){
+   if(args.method==='health')return {capabilities:['online_search']};
+   if(args.method==='online.search'){const job=++onlineNext;onlineJobs.set(job,args.args);return {job,status:'pending'};}
+   if(args.method==='online.status'){
+     const request=onlineJobs.get(args.args.job);if(request.query==='错误')return {status:'failed',error:'source_access_denied'};
+     if(request.query==='迟到'){if(releaseOnlineButton)releaseOnlineButton.hidden=false;await new Promise(resolve=>releaseOnline=resolve);}
+     return {status:'complete',result:{source:'fanqie',cursor:request.cursor,next_cursor:request.cursor===0?37:null,entries:Array.from({length:10},(_,i)=>({id:String(request.cursor+i+1),title:`${request.query} · ${request.cursor+i+1}`,author:'作者样例',description:'这是简介样例。'.repeat(20)}))}};
+   }
    if(args.method==='book.open')return {book:{...window.fixtureReaderEntries[0],warnings:[],chapters:Array.from({length:window.fixtureChapterCount??20},(_,i)=>({id:`c${i}`,title:`第${i+1}章 布局检查`,blocks:window.fixtureChapterBlocks??30}))},position:window.fixtureReaderPosition??null};
    if(args.method==='chapter.read'){const start=args.args.start??0,total=window.fixtureChapterBlocks??30;const result={start,total,blocks:Array.from({length:Math.max(0,Math.min(96,total-start))},(_,i)=>({id:`b${start+i}`,kind:'paragraph',text:`${start+i} ${window.fixtureParagraph??'用于布局验证的正文内容，保持自然换行和滚动。'}`,runs:[],resource:null}))};if(window.fixtureHoldChapter)await new Promise(resolve=>(window.fixtureChapterPending??=[]).push(resolve));return result;}
    if(args.method==='preferences.get')return readerPreferences;

@@ -18,6 +18,13 @@ test('reader shares the host lifecycle and rejects A to B to A results',()=>{
   assert.equal(active(view,'reader'),true);assert.equal(accepts({...view,generation:3},view),false);
   assert.equal(active({...view,section:'settings'},'reader'),false);assert.equal(active({...view,visible:false},'reader'),false);
 });
+test('online search failures stay readable and never look like empty results',()=>{
+  assert.match(readerError('source_verification_required'),/验证/);
+  assert.match(readerError('source_empty_response'),/空响应/);
+  assert.match(readerError('source_access_denied'),/拒绝访问/);
+  assert.match(readerError('source_text_obfuscated'),/无法直接显示/);
+  assert.match(readerError('search_busy'),/收尾/);
+});
 
 test('current match spans styled runs and repeated matches wrap both ways',()=>{
   const block={text:'😀你好你好',runs:[{text:'😀你',strong:true,emphasis:false},{text:'好你好',strong:false,emphasis:true}]} as Block;

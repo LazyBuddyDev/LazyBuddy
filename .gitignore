@@ -30,7 +30,7 @@ app-update-error.log
 # Local Windows batch helpers
 *.bat
 
-!/build_and_run.bat
+!/start.bat
 
 # Generated Python bytecode
 __pycache__/

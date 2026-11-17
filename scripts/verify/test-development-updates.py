@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='qa-development-updates-',dir=ROOT/'tmp'
         assert status['data']['app_updates'] is False, 'requires a Debug host'
         for command in ['updates.check','updates.apply']:
             result=rpc(command);assert result['ok'] is False
-            assert 'build_and_run.bat' in json.dumps(result,ensure_ascii=False)
+            assert 'start.bat' in json.dumps(result,ensure_ascii=False)
         status=rpc('status')['data'];assert not status['update_checking'] and not status['update_ready']
         assert not (data/'updates').exists(), 'no downloaded or prepared update cache'
         assert json.loads(preferences.read_text())['auto_update'] is True
