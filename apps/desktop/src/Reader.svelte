@@ -2,7 +2,7 @@
   import {invoke} from '@tauri-apps/api/core';
   import {tick,untrack,onDestroy} from 'svelte';
   import Icon from './Icon.svelte';
-  import {pageSize,pageStart,progressLabel,readerError,matchOffsets,wrapMatch,markedRuns,visibleAnchor,restoreAnchor,viewportStep,pageOffset,type Position,type Entry,type Book,type Block,type ReadingPreferences,type OnlinePage,type OnlineEntry,type OnlineBook} from './reader';
+  import {hasChapterTitle,pageSize,pageStart,progressLabel,readerError,matchOffsets,wrapMatch,markedRuns,visibleAnchor,restoreAnchor,viewportStep,pageOffset,type Position,type Entry,type Book,type Block,type ReadingPreferences,type OnlinePage,type OnlineEntry,type OnlineBook} from './reader';
   let {active,showing,settings,generation,notice,settingsChange}:{active:boolean;showing:boolean;settings:boolean;generation:number;notice:(text:string)=>void;settingsChange:(settings:boolean)=>void}=$props();
   let entries=$state<Entry[]>([]),book=$state<Book>(),blocks=$state<Block[]>([]);
   let preferences=$state<ReadingPreferences>({font_size:20,line_height:1.9,width:680,page_mode:'horizontal'});
@@ -11,6 +11,7 @@
   let failure=$state(''),images=$state<Record<string,string>>({});
   let history=$state(false),historyAvailable=$state(false),historyEntries=$state<Entry[]>([]),historyFilter=$state('');
   let libraryScroll=$state<HTMLElement>();let shelfScrollTop=0,historyScrollTop=0;
+  let searchSource=$state<OnlinePage['source']>('fanqie');
   let online=$state(false),onlineAvailable=$state(false),onlineQuery=$state(''),onlineTerm=$state(''),onlineError=$state(''),onlineSearching=$state(false),changingView=$state(false);
   let onlinePage=$state<OnlinePage>(),onlineHistory=$state<number[]>([]),onlineScroll=$state<HTMLElement>();
   let onlineScrollTop=0;
@@ -310,7 +311,7 @@
     if(!term||cursor==null)return;
     const ticket=lease();onlineSearching=true;onlineError='';
     try{
-      const result=await onlineRequest<OnlinePage>('online.search',{source:'fanqie',query:term,cursor},ticket);if(!result)return;
+      const result=await onlineRequest<OnlinePage>('online.search',{source:searchSource,query:term,cursor},ticket);if(!result)return;
       onlineHistory=action==='search'?[]:action==='next'?[...onlineHistory,onlinePage!.cursor]:onlineHistory.slice(0,-1);
       onlineTerm=term;onlinePage=result;onlineScrollTop=0;await tick();if(valid(ticket)&&onlineScroll)onlineScroll.scrollTop=0;
     }catch(error){if(valid(ticket)){onlineError=readerError(error);notice(onlineError);}}finally{if(valid(ticket))onlineSearching=false;}
@@ -433,11 +434,11 @@
     </div>
     {#if onlineDetail&&onlineDetail.chapters.length>100}<nav class="reader-navigation row-actions" aria-label="章节目录分页"><button title="上一页目录" disabled={directoryPage===0} onclick={()=>directoryMove(-1)}>上一页</button><span>{directoryPage*100+1}–{Math.min((directoryPage+1)*100,onlineDetail.chapters.length)} / {onlineDetail.chapters.length} 章</span><button title="下一页目录" disabled={(directoryPage+1)*100>=onlineDetail.chapters.length} onclick={()=>directoryMove(1)}>下一页</button></nav>{/if}
   {:else}
-  <form class="collection-toolbar" onsubmit={e=>{e.preventDefault();void searchOnline();}}><label class="search-box"><Icon name="search" size={16}/><input aria-label="在线搜索书名或作者" placeholder="输入书名或作者" maxlength="100" bind:value={onlineQuery} disabled={onlineSearching}/></label><button title="搜索番茄小说" disabled={onlineSearching||!onlineQuery.trim()}>{onlineSearching?'搜索中…':'搜索'}</button></form>
+  <form class="collection-toolbar" onsubmit={e=>{e.preventDefault();void searchOnline();}}><label class="search-box"><Icon name="search" size={16}/><input aria-label="在线搜索书名或作者" placeholder="输入书名或作者" maxlength="100" bind:value={onlineQuery} disabled={onlineSearching}/></label><button title="搜索番茄小说" disabled={onlineSearching||!onlineQuery.trim()}>{onlineSearching?'搜索中…':'搜索'}</button><select aria-label="搜索源" title="选择搜索源" bind:value={searchSource} disabled={onlineSearching}><option value="fanqie">番茄小说</option></select></form>
   <div class="collection-options"><span>番茄小说{onlineTerm?` · ${onlineTerm}`:''}</span></div>
   {#if onlineError}<div role="alert" class="reader-online-error">{onlineError}</div>{/if}
   <div class="reader-library" bind:this={onlineScroll} aria-busy={onlineSearching} aria-label="在线搜索结果" onscroll={e=>{if(active&&!settings&&online&&e.currentTarget===onlineScroll)onlineScrollTop=e.currentTarget.scrollTop;}}>
-    {#if onlinePage}{#each onlinePage.entries as entry (entry.id)}<div class="collection-row"><div><strong class="item-title" title={entry.title}>{entry.title}</strong><span class="item-description">{entry.author||'作者未知'}</span>{#if entry.description}<p class="item-description">{entry.description}</p>{/if}</div>{#if detailsAvailable}<div class="row-actions"><button title={`查看《${entry.title}》详情与目录`} disabled={onlineSearching} onclick={()=>openOnline(entry)}>详情</button></div>{/if}</div>{/each}{#if !onlinePage.entries.length}<div class="list-empty">没有匹配的书籍</div>{/if}
+    {#if onlinePage}{#each onlinePage.entries as entry (entry.id)}<div class="collection-row"><div><div class="reader-search-heading"><strong class="item-title" title={entry.title}>{entry.title}</strong><span class="item-description"> - {entry.author||'作者未知'}</span></div>{#if entry.description}<p class="item-description">{entry.description}</p>{/if}</div>{#if detailsAvailable}<div class="row-actions"><button title={`查看《${entry.title}》详情与目录`} disabled={onlineSearching} onclick={()=>openOnline(entry)}>详情</button></div>{/if}</div>{/each}{#if !onlinePage.entries.length}<div class="list-empty">没有匹配的书籍</div>{/if}
     {:else if !onlineSearching&&!onlineError}<div class="list-empty">输入书名或作者，搜索番茄小说</div>{/if}
   </div>
   {#if onlinePage}<nav class="reader-navigation row-actions" aria-label="搜索结果分页"><button title="上一页搜索结果" disabled={onlineSearching||!onlineHistory.length} onclick={()=>searchOnline('previous')}>上一页</button><span>第 {onlineHistory.length+1} 页</span><button title="下一页搜索结果" disabled={onlineSearching||onlinePage.next_cursor===null} onclick={()=>searchOnline('next')}>下一页</button></nav>{/if}
@@ -449,7 +450,7 @@
   {#if directory}<nav class="reader-directory" aria-label="章节目录">{#each book.chapters as item,index}<button class:chosen={chapter===index} aria-current={chapter===index?'page':undefined} title={item.title} aria-disabled={loading||turning||extending} onclick={()=>{if(!turning&&!extending)void move(index);}}>{item.title}</button>{/each}</nav>{/if}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex (The scroll region needs focus for keyboard reading.) -->
   <div class="reader-viewport"><div class="reader-scroll focus-inset" bind:this={scroll} data-page-mode={preferences.page_mode} class:horizontal onscroll={onScroll} use:wheelInput role="region" aria-label="小说正文" aria-busy={loading||turning||extending} tabindex="0" style:--reader-font={`${preferences.font_size}px`} style:--reader-height={preferences.line_height} style:--reader-width={`${preferences.width}px`}>
-    <article class="reader-body" class:horizontal><h2>{book.chapters[chapter]?.title}</h2>
+    <article class="reader-body" class:horizontal>{#if !hasChapterTitle(blocks,book.chapters[chapter]?.title??'')}<h2>{book.chapters[chapter]?.title}</h2>{/if}
     {#each blocks as block (block.id)}
       {#if block.kind==='image'}<figure data-block={block.id} data-kind="image" data-resource={block.resource??undefined}>{#if block.resource&&images[block.resource]}<img src={images[block.resource]} alt={block.text} onload={()=>{if(currentPosition&&!restoring&&!turning&&!swapping&&scroll)restoreAnchor(scroll,currentPosition);}}/>{:else}<figcaption>{block.text||'插图'}</figcaption>{/if}</figure>
       {:else}<div class:reader-heading={block.kind==='heading'} class:reader-pre={block.kind==='pre'} class="reader-paragraph" data-block={block.id} data-kind={block.kind}>
@@ -478,6 +479,7 @@
 </section>
 
 <style>
+  .reader-search-heading{display:flex;align-items:baseline;gap:4px;min-width:0}.reader-search-heading .item-description{flex-shrink:0;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .import-dialog{width:min(440px,calc(100vw - 32px));max-height:calc(100vh - 116px);color:var(--text)}
   .reader-online-error{font-size:12px;margin-bottom:12px;overflow-wrap:anywhere}
   .reader-content{display:flex;flex-direction:column;min-height:0;height:100%}.reader-page[hidden]{display:none}.reader-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-library{overflow:auto;scrollbar-gutter:stable;min-height:0}.reader-book-open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left;border:0;padding:0;min-height:0}.reader-remove{flex-wrap:wrap;justify-content:flex-end;font-size:11px}.reader-remove span{width:100%;text-align:right}.reader-scroll{min-width:0;overflow:auto;min-height:0;flex:1;scrollbar-gutter:stable;background:var(--surface);overflow-anchor:none}.reader-body{--reader-padding:24px;max-width:var(--reader-width);margin:auto;padding:20px 24px 28px;font-size:var(--reader-font);line-height:var(--reader-height);overflow-wrap:anywhere}.reader-body h2{font-size:1.15em;margin-bottom:1.5em}.reader-paragraph{margin:0 0 1em;white-space:pre-wrap}.reader-heading{font-weight:600;font-size:1.1em}.reader-pre{font-family:monospace}.reader-strong{font-weight:700}.reader-emphasis{font-style:italic}figure{margin:1em 0;min-height:80px}figure img{display:block;max-width:100%;height:auto;margin:auto}figcaption{color:var(--muted);font-size:13px}.reader-navigation{display:flex;align-items:center;justify-content:space-between;font-size:12px;flex-shrink:0;margin-top:12px}@media(max-width:520px){.reader-body{--reader-padding:16px;padding:16px}.reader-remove{max-width:160px}.reader-navigation{font-size:11px}}

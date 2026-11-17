@@ -87,3 +87,16 @@ export function restoreAnchor(container:HTMLElement,position:Pick<Position,'bloc
   }else{container.scrollLeft=0;container.scrollTop+=rect.top-container.getBoundingClientRect().top-12;}
   return true;
 }
+
+export function hasChapterTitle(blocks:Block[],title:string):boolean {
+  const expected=title.replace(/\s/g,'');
+  if(!expected||blocks[0]?.id!=='b0')return false;
+  let text='';
+  for(const block of blocks.slice(0,3)){
+    if(block.kind==='image')return false;
+    text+=block.text.replace(/\s/g,'');
+    if(text===expected)return true;
+    if(!expected.startsWith(text))return false;
+  }
+  return false;
+}

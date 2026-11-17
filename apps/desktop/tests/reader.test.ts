@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {pageStart,viewportStep,pageOffset,progressLabel,markedRuns,matchOffsets,wrapMatch,readerError,type Entry,type Block} from '../src/reader.ts';
+import {hasChapterTitle,pageStart,viewportStep,pageOffset,progressLabel,markedRuns,matchOffsets,wrapMatch,readerError,type Entry,type Block} from '../src/reader.ts';
 import {active,accepts,type View} from '../src/lifecycle.ts';
 test('reading positions map to bounded pages and count chapters from zero',()=>{
   assert.equal(pageStart('b150'),96);assert.equal(pageStart('b192'),192);
@@ -48,4 +48,14 @@ test('viewport page steps stay bounded and keep a line of context',()=>{
   assert.equal(viewportStep(500,38),456);assert.equal(viewportStep(20,38),38);
   assert.equal(pageOffset(0,400,1200,-1),0);assert.equal(pageOffset(800,400,950,1),950);
   assert.equal(pageOffset(400,400,1200,-1),0);assert.equal(pageOffset(0,400,1200,1),400);
+});
+
+test('chapter headings reuse source titles without changing body anchors',()=>{
+ const blocks=(...texts:string[])=>texts.map((text,i)=>({id:`b${i}`,kind:'heading',text,runs:[],resource:null} as Block));
+ assert.equal(hasChapterTitle(blocks('第2章','我们在看着你','“是……鬼吗？”'),'第2章 我们在看着你'),true);
+ assert.equal(hasChapterTitle(blocks('第2章 我们在看着你'),'第2章 我们在看着你'),true);
+ assert.equal(hasChapterTitle(blocks('第一段正文'),'第2章 我们在看着你'),false);
+ assert.equal(hasChapterTitle(blocks('第2章','不同标题'),'第2章 我们在看着你'),false);
+ assert.equal(hasChapterTitle([{...blocks('第2章 我们在看着你')[0],id:'b96'}],'第2章 我们在看着你'),false);
+ assert.equal(hasChapterTitle([],''),false);
 });
