@@ -54,6 +54,7 @@ test('chapter headings reuse source titles without changing body anchors',()=>{
  const blocks=(...texts:string[])=>texts.map((text,i)=>({id:`b${i}`,kind:'heading',text,runs:[],resource:null} as Block));
  assert.equal(hasChapterTitle(blocks('第2章','我们在看着你','“是……鬼吗？”'),'第2章 我们在看着你'),true);
  assert.equal(hasChapterTitle(blocks('第2章 我们在看着你'),'第2章 我们在看着你'),true);
+ assert.equal(hasChapterTitle(blocks('第2章','\u200b','\u200b我们在看着你'),'第2章 我们在看着你'),true);
  assert.equal(hasChapterTitle(blocks('第一段正文'),'第2章 我们在看着你'),false);
  assert.equal(hasChapterTitle(blocks('第2章','不同标题'),'第2章 我们在看着你'),false);
  assert.equal(hasChapterTitle([{...blocks('第2章 我们在看着你')[0],id:'b96'}],'第2章 我们在看着你'),false);

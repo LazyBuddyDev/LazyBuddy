@@ -1736,7 +1736,7 @@ dependencies = [
 
 [[package]]
 name = "lazybuddy"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "futures",
  "lazybuddy-app-updater",

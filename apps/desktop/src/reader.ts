@@ -89,12 +89,12 @@ export function restoreAnchor(container:HTMLElement,position:Pick<Position,'bloc
 }
 
 export function hasChapterTitle(blocks:Block[],title:string):boolean {
-  const expected=title.replace(/\s/g,'');
+  const expected=title.replace(/[\s\u200B-\u200D\u2060\uFEFF]/g,'');
   if(!expected||blocks[0]?.id!=='b0')return false;
   let text='';
   for(const block of blocks.slice(0,3)){
     if(block.kind==='image')return false;
-    text+=block.text.replace(/\s/g,'');
+    text+=block.text.replace(/[\s\u200B-\u200D\u2060\uFEFF]/g,'');
     if(text===expected)return true;
     if(!expected.startsWith(text))return false;
   }
