@@ -13,7 +13,7 @@
   let currentPosition:Position|undefined;let restoring=false;let timer:ReturnType<typeof setTimeout>|undefined;
   let stagedPosition:Position|undefined;let checkpointWrites:Promise<unknown>=Promise.resolve();
   let suspended=true;let turning=$state(false),extending=$state(false),offset=$state(0),extent=$state(0);
-  let finishTurn:(()=>void)|undefined;
+  let finishTurn:(()=>void)|undefined;let swapping=false;
   const horizontal=$derived(preferences.page_mode==='horizontal');
   function needsMore(){return !!scroll&&start+blocks.length<total&&extent-offset<(horizontal?scroll.getBoundingClientRect().width:scroll.clientHeight)*2;}
   function metrics(){if(scroll){offset=horizontal?scroll.scrollLeft:scroll.scrollTop;extent=horizontal?scroll.scrollWidth-scroll.getBoundingClientRect().width:scroll.scrollHeight-scroll.clientHeight;}}
@@ -26,8 +26,8 @@
   let importRun=0;let waitTimer:ReturnType<typeof setTimeout>|undefined;let wake:(()=>void)|undefined;
   let observer:IntersectionObserver|undefined;let resourceQueue:string[]=[];let readingImages=false;
   const filtered=$derived(entries.filter(e=>e.title.toLocaleLowerCase().includes(filter.toLocaleLowerCase())));
-  const lease=()=>({epoch,generation});
-  const valid=(ticket:ReturnType<typeof lease>)=>active&&ticket.epoch===epoch&&ticket.generation===generation;
+  const lease=()=>({epoch,generation,cancelled:false});
+  const valid=(ticket:ReturnType<typeof lease>)=>!ticket.cancelled&&active&&ticket.epoch===epoch&&ticket.generation===generation;
   async function call<T>(method:string,args:Record<string,unknown>={},ticket=lease()):Promise<T>{
     if(!valid(ticket))throw Error('inactive_reader_page');
     const result=await invoke<T>('reader_call',{method,args,generation:ticket.generation});
@@ -48,12 +48,12 @@
     const ticket=lease();failure='';
     try{
       preferences=await call<ReadingPreferences>('preferences.get',{},ticket);
-      if(!settings){if(needsList||!initialized)await list(ticket);if(book){await tick();if(currentPosition)if(scroll)restoreAnchor(scroll,currentPosition);metrics();if(needsMore())await extend(1);watchImages();}}
+      if(!settings){if(needsList||!initialized)await list(ticket);if(book){await tick();if(currentPosition)if(scroll)restoreAnchor(scroll,currentPosition);metrics();if(needsMore())await extend(1,ticket);watchImages();}}
       initialized=true;
     }catch(error){report(error,ticket);}
   }
   function stopLocal(){
-    suspended=true;finishTurn?.();if(scroll)scroll.scrollTo({left:scroll.scrollLeft,top:scroll.scrollTop,behavior:'instant'});turning=false;extending=false;restoring=false;
+    suspended=true;finishTurn?.();if(scroll)scroll.scrollTo({left:scroll.scrollLeft,top:scroll.scrollTop,behavior:'instant'});turning=false;extending=false;restoring=false;swapping=false;
     epoch++;searchRun++;importRun++;clearTimeout(timer);timer=undefined;clearTimeout(waitTimer);wake?.();wake=undefined;
     observer?.disconnect();observer=undefined;resourceQueue=[];images={};readingImages=false;importing=false;loading=false;saving=false;
   }
@@ -66,7 +66,7 @@
   $effect(()=>{const enabled=active;const gen=generation;const prefs=settings;untrack(()=>{stopLocal();if(enabled)void activate();});});
   onDestroy(()=>stopLocal());
   async function checkpoint(){
-    if(!active||settings||!book||!scroll||restoring||!blocks.length)return;
+    if(!active||settings||!book||!scroll||restoring||swapping||!blocks.length)return;
     const anchor=visibleAnchor(scroll);if(!anchor)return;
     const position:Position={book_id:book.id,content_version:book.content_version,chapter_id:book.chapters[chapter].id,...anchor};
     currentPosition=position;
@@ -98,24 +98,24 @@
     observer?.disconnect();resourceQueue=[];images={};
     const result=await call<{blocks:Block[];start:number;total:number}>('chapter.read',{book_id:book.id,chapter_id:book.chapters[nextChapter].id,start:nextStart},ticket);
     restoring=true;blocks=result.blocks;chapter=nextChapter;start=result.start;total=result.total;
-    await tick();if(!valid(ticket)){restoring=false;return;}
+    await tick();if(!valid(ticket))return;
     if(!scroll){restoring=false;return;}scroll.scrollTop=0;scroll.scrollLeft=0;if(position)restoreAnchor(scroll,position);restoring=false;
-    metrics();if(needsMore())await extend(1);if(!valid(ticket))return;await checkpoint();watchImages();
+    metrics();if(needsMore())await extend(1,ticket);if(!valid(ticket))return;await checkpoint();watchImages();
   }
-  async function move(nextChapter:number,nextStart=0){
+  async function move(nextChapter:number,nextStart=0,ticket=lease()){
     if(!book||loading||nextChapter<0||nextChapter>=book.chapters.length)return;
     if(nextChapter!==chapter)clearSearch();
-    const ticket=lease();loading=true;failure='';finishTurn?.();
+    loading=true;failure='';
     try{await checkpoint();await call('progress.flush',{},ticket);await load(nextChapter,nextStart,undefined,ticket);}catch(error){report(error,ticket);}finally{if(valid(ticket))loading=false;}
   }
   async function back(){
     const ticket=lease();try{await checkpoint();await call('progress.flush',{},ticket);book=undefined;blocks=[];observer?.disconnect();images={};needsList=true;await list(ticket);}catch(error){report(error,ticket);}
   }
-  async function extend(direction:number){
+  async function extend(direction:number,ticket=lease()){
     if(!book||!scroll||extending)return;
     const next=direction>0?start+blocks.length:Math.max(0,start-pageSize);
     if(direction>0?next>=total:start===0)return;
-    const ticket=lease();extending=true;
+    extending=true;
     try{
       const result=await call<{blocks:Block[];start:number}>('chapter.read',{book_id:book.id,chapter_id:book.chapters[chapter].id,start:next},ticket);
       if(!result.blocks.length)throw Error('invalid_reader_reply');
@@ -131,35 +131,61 @@
       if(anchor)restoreAnchor(scroll,anchor);metrics();watchImages();
     }finally{if(valid(ticket)){restoring=false;extending=false;}}
   }
-  function animateTo(target:number,ticket:ReturnType<typeof lease>){
-    if(!scroll)return Promise.resolve();
-    const element=scroll;
-    if(preferences.page_mode==='scroll'||matchMedia('(prefers-reduced-motion: reduce)').matches){element.scrollTo({left:horizontal?target:0,top:horizontal?0:target,behavior:'instant'});return Promise.resolve();}
-    return new Promise<void>(resolve=>{
-      const reached=()=>{if(Math.abs((horizontal?element.scrollLeft:element.scrollTop)-target)<1)finish();};
-      const finish=()=>{clearTimeout(timeout);element.removeEventListener('scrollend',reached);if(finishTurn===finish)finishTurn=undefined;resolve();};
-      const timeout=setTimeout(()=>{if(valid(ticket))element.scrollTo({left:horizontal?target:0,top:horizontal?0:target,behavior:'instant'});finish();},650);
-      finishTurn=finish;element.addEventListener('scrollend',reached);
-      if(valid(ticket))element.scrollTo({left:horizontal?target:0,top:horizontal?0:target,behavior:'smooth'});else finish();
-    });
+  async function exchangePage(direction:number,ticket:ReturnType<typeof lease>,change:()=>Promise<boolean|void>){
+    if(!scroll)return false;
+    const element=scroll,frame=element.parentElement!;
+    const old={chapter,start,total,blocks,images,currentPosition,x:element.scrollLeft,y:element.scrollTop};
+    const ghost=element.cloneNode(true) as HTMLElement;
+    ghost.classList.remove('reader-scroll');ghost.setAttribute('aria-hidden','true');ghost.inert=true;
+    ghost.querySelectorAll('[data-block],[data-resource]').forEach(node=>{node.removeAttribute('data-block');node.removeAttribute('data-resource');});
+    Object.assign(ghost.style,{position:'absolute',inset:'0',width:'100%',height:'100%',overflow:'hidden',pointerEvents:'none',containerType:'size',scrollbarGutter:getComputedStyle(element).scrollbarGutter,background:getComputedStyle(element).background});
+    ghost.dataset.readerSnapshot='true';frame.append(ghost);ghost.scrollLeft=old.x;ghost.scrollTop=old.y;
+    let done=false,cancelled=false;const animations:Animation[]=[];swapping=true;element.style.opacity='0';
+    const finish=(rollback:boolean)=>{
+      if(done)return;done=true;cancelled=rollback;animations.forEach(animation=>animation.cancel());ghost.remove();element.style.opacity='';
+      if(finishTurn===cancel)finishTurn=undefined;
+      if(rollback){ticket.cancelled=true;turning=false;loading=false;extending=false;restoring=false;resourceQueue=[];observer?.disconnect();chapter=old.chapter;start=old.start;total=old.total;blocks=old.blocks;images=old.images;currentPosition=old.currentPosition;
+        const restored=lease();void tick().then(()=>{if(valid(restored)&&scroll===element&&!turning&&!loading){if(old.currentPosition)restoreAnchor(element,old.currentPosition);else{element.scrollLeft=old.x;element.scrollTop=old.y;}metrics();watchImages();}});
+      }
+      swapping=false;
+    };
+    const cancel=()=>finish(true);finishTurn=cancel;
+    try{
+      const changed=await change();if(changed===false||cancelled||!valid(ticket))return false;
+      await tick();if(cancelled||!valid(ticket))return false;
+      element.style.opacity='';
+      if(preferences.page_mode!=='scroll'&&!matchMedia('(prefers-reduced-motion: reduce)').matches){
+        const axis=horizontal?'X':'Y',distance=horizontal?element.getBoundingClientRect().width:element.clientHeight;
+        const timing={duration:240,easing:'cubic-bezier(.2,.8,.2,1)',fill:'both' as FillMode};
+        animations.push(ghost.animate([{transform:`translate${axis}(0)`},{transform:`translate${axis}(${-direction*distance}px)`}],timing));
+        animations.push(element.animate([{transform:`translate${axis}(${direction*distance}px)`},{transform:`translate${axis}(0)`}],timing));
+        await Promise.allSettled(animations.map(animation=>animation.finished));
+      }
+      if(cancelled||!valid(ticket))return false;finish(false);return true;
+    }finally{if(!done)finish(true);}
   }
   async function turn(direction:number){
     if(!active||settings||suspended||!book||!scroll||loading||turning||extending)return;
     const ticket=lease();turning=true;
     try{
-      const step=horizontal?scroll.getBoundingClientRect().width:viewportStep(scroll.clientHeight,preferences.font_size*preferences.line_height);
+      await checkpoint();if(!valid(ticket)||!scroll)return;
+      let step=horizontal?scroll.getBoundingClientRect().width:viewportStep(scroll.clientHeight,preferences.font_size*preferences.line_height);
       metrics();
-      if(direction>0&&extent-offset<step*2&&start+blocks.length<total||direction<0&&offset<step&&start>0)await extend(direction);
-      if(!valid(ticket))return;metrics();
+      if(direction>0&&extent-offset<step*2&&start+blocks.length<total||direction<0&&offset<step&&start>0)await extend(direction,ticket);
+      if(!valid(ticket))return;metrics();step=horizontal?scroll.getBoundingClientRect().width:viewportStep(scroll.clientHeight,preferences.font_size*preferences.line_height);
       if(direction>0&&offset>=extent-1||direction<0&&offset<=1){
         const next=chapter+direction;if(next<0||next>=book.chapters.length)return;
         const blockStart=direction>0?0:Math.floor((book.chapters[next].blocks-1)/pageSize)*pageSize;
-        await move(next,blockStart);if(!valid(ticket))return;
-        if(direction<0){metrics();restoring=true;scroll.scrollTo({left:horizontal?extent:0,top:horizontal?0:extent,behavior:'instant'});restoring=false;}
+        const changed=await exchangePage(direction,ticket,async()=>{
+          await move(next,blockStart,ticket);if(!valid(ticket)||chapter!==next||!scroll)return false;
+          if(direction<0){metrics();scroll.scrollTo({left:horizontal?extent:0,top:horizontal?0:extent,behavior:'instant'});}
+        });if(!changed)return;
       }else{
-        restoring=true;await animateTo(pageOffset(offset,step,extent,direction),ticket);if(!valid(ticket))return;restoring=false;
+        restoring=true;const target=pageOffset(offset,step,extent,direction);
+        const changed=await exchangePage(direction,ticket,async()=>{scroll!.scrollTo({left:horizontal?target:0,top:horizontal?0:target,behavior:'instant'});});
+        if(!changed)return;restoring=false;
       }
-      metrics();await checkpoint();if(needsMore())await extend(1);
+      metrics();await checkpoint();if(needsMore())await extend(1,ticket);
     }catch(error){report(error,ticket);}finally{if(valid(ticket)){turning=false;restoring=false;}}
   }
   function readingKey(event:KeyboardEvent){
@@ -177,9 +203,12 @@
   function wheelInput(element:HTMLElement){element.addEventListener('wheel',wheel,{passive:false});return{destroy:()=>element.removeEventListener('wheel',wheel)};}
   $effect(()=>{
     const element=scroll;if(!element||!active||settings)return;
+    let size=element.getBoundingClientRect();
     const resize=new ResizeObserver(()=>{
-      if(!active||suspended||restoring||turning)return;
-      restoring=true;if(currentPosition)restoreAnchor(element,currentPosition);metrics();restoring=false;
+      const next=element.getBoundingClientRect();if(next.width===size.width&&next.height===size.height)return;size=next;
+      if(!active||suspended)return;
+      if(turning&&finishTurn){finishTurn();return;}
+      if(restoring)return;restoring=true;if(currentPosition)restoreAnchor(element,currentPosition);metrics();restoring=false;
     });resize.observe(element);return()=>resize.disconnect();
   });
   function watchImages(){
@@ -197,7 +226,7 @@
     try{while(resourceQueue.length&&valid(ticket)&&owner===book?.id){const id=resourceQueue.shift()!;try{const result=await call<{url:string}>('resource.read',{book_id:owner,resource_id:id},ticket);if(owner===book?.id&&blocks.some(b=>b.resource===id))images[id]=result.url;}catch(error){report(error,ticket);}}}finally{if(valid(ticket))readingImages=false;}
   }
   async function find(direction=0){
-    if(!book||!query.trim()||loading)return;
+    if(!book||!query.trim()||loading||turning)return;
     const ticket=lease();const run=++searchRun;loading=true;failure='';
     const needle=query.trim();
     try{
@@ -264,22 +293,22 @@
     <div class="setting-row"><label for="reader-width">正文宽度</label><select id="reader-width" disabled={saving} value={preferences.width} onchange={e=>setPreference('width',Number(e.currentTarget.value))}>{#each [320,440,560,680,800,1000] as width}<option value={width}>{width}</option>{/each}</select></div>
   </div></section>
 {:else if book}
-  <div class="collection-toolbar"><button title="返回书库" onclick={back} disabled={loading}><Icon name="arrow" size={16}/>书库</button><strong class="reader-title" title={book.title}>{book.title}</strong><button title="展开或收起查找栏" aria-label="章内查找" aria-expanded={searchOpen} onclick={()=>searchOpen=!searchOpen}><Icon name="search" size={16}/></button><button title="展开或收起章节目录" aria-expanded={directory} onclick={toggleDirectory}>目录</button></div>
-  {#if searchOpen}<form class="collection-toolbar" onsubmit={e=>{e.preventDefault();void find(1);}}><label class="search-box"><Icon name="search" size={16}/><input aria-label="查找本章内容" placeholder="查找本章内容" maxlength="200" bind:value={query} oninput={clearSearch}/></label><output class="reader-match-count" aria-label="查找匹配位置" aria-live="polite">{matchCurrent+1}/{matchTotal}</output><button type="button" title="查找上一处" disabled={loading||!query.trim()} onclick={()=>find(-1)}>上一处</button><button title="查找下一处" disabled={loading||!query.trim()}>下一处</button></form>{/if}
+  <div class="collection-toolbar"><button title="返回书库" onclick={back} disabled={loading}><Icon name="arrow" size={16}/>书库</button><strong class="reader-title" title={book.title}>{book.title}</strong><button title="展开或收起查找栏" aria-label="章内查找" aria-expanded={searchOpen} disabled={loading||turning} onclick={()=>searchOpen=!searchOpen}><Icon name="search" size={16}/></button><button title="展开或收起章节目录" aria-expanded={directory} disabled={loading||turning} onclick={toggleDirectory}>目录</button></div>
+  {#if searchOpen}<form class="collection-toolbar" onsubmit={e=>{e.preventDefault();void find(1);}}><label class="search-box"><Icon name="search" size={16}/><input aria-label="查找本章内容" placeholder="查找本章内容" maxlength="200" bind:value={query} oninput={clearSearch}/></label><output class="reader-match-count" aria-label="查找匹配位置" aria-live="polite">{matchCurrent+1}/{matchTotal}</output><button type="button" title="查找上一处" disabled={loading||turning||!query.trim()} onclick={()=>find(-1)}>上一处</button><button title="查找下一处" disabled={loading||turning||!query.trim()}>下一处</button></form>{/if}
   <div class="reader-spread">
-  {#if directory}<nav class="reader-directory" aria-label="章节目录">{#each book.chapters as item,index}<button class:chosen={chapter===index} aria-current={chapter===index?'page':undefined} title={item.title} disabled={loading} onclick={()=>move(index)}>{item.title}</button>{/each}</nav>{/if}
+  {#if directory}<nav class="reader-directory" aria-label="章节目录">{#each book.chapters as item,index}<button class:chosen={chapter===index} aria-current={chapter===index?'page':undefined} title={item.title} disabled={loading||turning||extending} onclick={()=>move(index)}>{item.title}</button>{/each}</nav>{/if}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex (The scroll region needs focus for keyboard reading.) -->
-  <div class="reader-scroll" bind:this={scroll} data-page-mode={preferences.page_mode} class:horizontal onscroll={onScroll} use:wheelInput role="region" aria-label="小说正文" tabindex="0" style:--reader-font={`${preferences.font_size}px`} style:--reader-height={preferences.line_height} style:--reader-width={`${preferences.width}px`}>
+  <div class="reader-viewport"><div class="reader-scroll" bind:this={scroll} data-page-mode={preferences.page_mode} class:horizontal onscroll={onScroll} use:wheelInput role="region" aria-label="小说正文" aria-busy={loading||turning} tabindex="0" style:--reader-font={`${preferences.font_size}px`} style:--reader-height={preferences.line_height} style:--reader-width={`${preferences.width}px`}>
     <article class="reader-body" class:horizontal><h2>{book.chapters[chapter]?.title}</h2>
     {#each blocks as block (block.id)}
-      {#if block.kind==='image'}<figure data-block={block.id} data-kind="image" data-resource={block.resource??undefined}>{#if block.resource&&images[block.resource]}<img src={images[block.resource]} alt={block.text} onload={()=>{if(currentPosition&&!restoring&&scroll)restoreAnchor(scroll,currentPosition);}}/>{:else}<figcaption>{block.text||'插图'}</figcaption>{/if}</figure>
+      {#if block.kind==='image'}<figure data-block={block.id} data-kind="image" data-resource={block.resource??undefined}>{#if block.resource&&images[block.resource]}<img src={images[block.resource]} alt={block.text} onload={()=>{if(currentPosition&&!restoring&&!turning&&!swapping&&scroll)restoreAnchor(scroll,currentPosition);}}/>{:else}<figcaption>{block.text||'插图'}</figcaption>{/if}</figure>
       {:else}<div class:reader-heading={block.kind==='heading'} class:reader-pre={block.kind==='pre'} class="reader-paragraph" data-block={block.id} data-kind={block.kind}>
         {#each markedRuns(block,searchOpen?searchQuery:'',selectedMatch?.id===block.id?selectedMatch.offset:-1) as part}<span class:reader-strong={part.strong} class:reader-emphasis={part.emphasis}>{#if part.match}<mark class:current-match={part.current} aria-current={part.current?'true':undefined}>{part.text}</mark>{:else}{part.text}{/if}</span>{/each}
       </div>{/if}
     {/each}
 
     </article>
-  </div>
+  </div></div>
   </div>
   <div class="reader-navigation row-actions"><button title="上一页（←）" disabled={loading||turning||extending||chapter===0&&start===0&&offset<=1} onclick={()=>turn(-1)}>上一页</button><span>{chapter+1} / {book.chapters.length} 章</span><button title="下一页（→）" disabled={loading||turning||extending||chapter===book.chapters.length-1&&start+blocks.length>=total&&offset>=extent-1} onclick={()=>turn(1)}>下一页</button></div>
 {:else}
@@ -293,6 +322,7 @@
 
 <style>
   .reader-content{display:flex;flex-direction:column;min-height:0;height:100%}.reader-page[hidden]{display:none}.reader-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-library{overflow:auto;scrollbar-gutter:stable;min-height:0}.reader-book-open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left;border:0;padding:0;min-height:0}.reader-remove{flex-wrap:wrap;justify-content:flex-end;font-size:11px}.reader-remove span{width:100%;text-align:right}.reader-scroll{min-width:0;overflow:auto;min-height:0;flex:1;scrollbar-gutter:stable;background:var(--surface);overflow-anchor:none}.reader-scroll:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}.reader-body{--reader-padding:24px;max-width:var(--reader-width);margin:auto;padding:20px 24px 28px;font-size:var(--reader-font);line-height:var(--reader-height);overflow-wrap:anywhere}.reader-body h2{font-size:1.15em;margin-bottom:1.5em}.reader-paragraph{margin:0 0 1em;white-space:pre-wrap}.reader-heading{font-weight:600;font-size:1.1em}.reader-pre{font-family:monospace}.reader-strong{font-weight:700}.reader-emphasis{font-style:italic}figure{margin:1em 0;min-height:80px}figure img{display:block;max-width:100%;height:auto;margin:auto}figcaption{color:var(--muted);font-size:13px}.reader-navigation{display:flex;align-items:center;justify-content:space-between;font-size:12px;flex-shrink:0;margin-top:12px}@media(max-width:520px){.reader-body{--reader-padding:16px;padding:16px}.reader-remove{max-width:160px}.reader-navigation{font-size:11px}}
+  .reader-viewport{position:relative;display:flex;flex:1;min-width:0;min-height:0;overflow:hidden}
   .reader-spread{display:flex;flex:1;min-height:0;gap:12px}.reader-directory{position:relative;flex:0 0 clamp(110px,28%,210px);overflow-y:auto;scrollbar-gutter:stable;min-height:0}.reader-directory button{display:block;width:100%;text-align:left;border:0;padding:9px 10px;overflow-wrap:anywhere}.reader-directory .chosen{background:var(--selected);font-weight:600;box-shadow:inset 3px 0 var(--accent)}.reader-match-count{flex-shrink:0;min-width:3ch;text-align:center;font-variant-numeric:tabular-nums}.reader-body mark{background:#f8e599;color:#302400}.reader-body mark.current-match{background:#c84913;color:#fff;outline:2px solid #702400;outline-offset:1px}
 
   .reader-scroll.horizontal{overflow:hidden;scrollbar-gutter:auto}
