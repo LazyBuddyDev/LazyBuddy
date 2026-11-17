@@ -4,7 +4,7 @@ let generation=0;const callbacks=[];
 const readerOnlineCase=new URLSearchParams(location.search).has('reader-online');if(readerOnlineCase)window.fixtureReader=true;
 const preferences={root:readerOnlineCase?'reader':'hongguo',dark:false,topmost:false,auto_update:false,background_opacity:1,card_opacity:1,...(window.fixturePersist?JSON.parse(localStorage.getItem('fixture.preferences')??'{}'):{})};
 let onlineNext=0;const onlineJobs=new Map();let releaseOnline;let releaseOnlineButton;
-if(readerOnlineCase){releaseOnlineButton=document.createElement('button');releaseOnlineButton.textContent='完成迟到搜索';releaseOnlineButton.hidden=true;releaseOnlineButton.style='position:fixed;bottom:32px;right:12px;z-index:999';releaseOnlineButton.onclick=()=>{releaseOnlineButton.hidden=true;releaseOnline?.();};document.body.append(releaseOnlineButton);}
+if(readerOnlineCase){releaseOnlineButton=document.createElement('button');releaseOnlineButton.textContent='完成迟到搜索';releaseOnlineButton.hidden=true;releaseOnlineButton.style='position:fixed;bottom:32px;right:12px;z-index:999;display:none';releaseOnlineButton.onclick=()=>{releaseOnlineButton.hidden=true;releaseOnlineButton.style.display='none';releaseOnline?.();};document.body.append(releaseOnlineButton);}
 const news={auto_refresh:false,refresh_minutes:5,followed:[],hidden:[],order:[],default_followed:false};
 const readerPreferences={font_size:20,line_height:1.9,width:680,page_mode:'scroll',...window.fixtureReadingPreferences,...(window.fixturePersist?JSON.parse(localStorage.getItem('fixture.reader.preferences')??'{}'):{})};
 window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback),invoke:async(command,args)=>{
@@ -24,11 +24,17 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
    return {};
  }
  if(command==='reader_call'){
-   if(args.method==='health')return {capabilities:['online_search']};
+   if(args.method==='health')return {capabilities:['online_search','online_details']};
    if(args.method==='online.search'){const job=++onlineNext;onlineJobs.set(job,args.args);return {job,status:'pending'};}
+   if(args.method==='online.detail'){const job=++onlineNext;onlineJobs.set(job,{detail:true,...args.args});return {job,status:'pending'};}
    if(args.method==='online.status'){
      const request=onlineJobs.get(args.args.job);if(request.query==='错误')return {status:'failed',error:'source_access_denied'};
-     if(request.query==='迟到'){if(releaseOnlineButton)releaseOnlineButton.hidden=false;await new Promise(resolve=>releaseOnline=resolve);}
+     if(request.detail){
+       if(request.book_id==='2'){if(releaseOnlineButton){releaseOnlineButton.hidden=false;releaseOnlineButton.style.display='inline-flex';}await new Promise(resolve=>releaseOnline=resolve);}
+       if(request.book_id==='3')return {status:'failed',error:'incomplete_source_directory'};
+       return {status:'complete',result:{source:'fanqie',id:request.book_id,title:`详情样例 ${request.book_id}`,author:'目录作者',description:'书籍简介 \u003cscript>只是文字\u003c/script>',chapters:Array.from({length:203},(_,i)=>({id:String(900+i),title:`第${i+1}章 目录样例`}))}};
+     }
+     if(request.query==='迟到'){if(releaseOnlineButton){releaseOnlineButton.hidden=false;releaseOnlineButton.style.display='inline-flex';}await new Promise(resolve=>releaseOnline=resolve);}
      return {status:'complete',result:{source:'fanqie',cursor:request.cursor,next_cursor:request.cursor===0?37:null,entries:Array.from({length:10},(_,i)=>({id:String(request.cursor+i+1),title:`${request.query} · ${request.cursor+i+1}`,author:'作者样例',description:'这是简介样例。'.repeat(20)}))}};
    }
    if(args.method==='book.open')return {book:{...window.fixtureReaderEntries[0],warnings:[],chapters:Array.from({length:window.fixtureChapterCount??20},(_,i)=>({id:`c${i}`,title:`第${i+1}章 布局检查`,blocks:window.fixtureChapterBlocks??30}))},position:window.fixtureReaderPosition??null};

@@ -211,6 +211,7 @@ pub async fn reader_call(
         method.as_str(),
         "health"
             | "online.search"
+            | "online.detail"
             | "online.status"
             | "online.cancel"
             | "library.list"
@@ -278,6 +279,7 @@ mod tests {
         let generation = m.view.generation;
         assert!(allowed(&m, generation, "chapter.read"));
         assert!(allowed(&m, generation, "online.search"));
+        assert!(allowed(&m, generation, "online.detail"));
         m.transition(crate::Root::News, crate::Section::Content, true);
         m.transition(crate::Root::Reader, crate::Section::Content, true);
         assert!(!allowed(&m, generation, "chapter.read"));
@@ -287,6 +289,7 @@ mod tests {
         assert!(allowed(&m, m.view.generation, "preferences.set"));
         assert!(!allowed(&m, m.view.generation, "chapter.read"));
         assert!(!allowed(&m, m.view.generation, "online.search"));
+        assert!(!allowed(&m, m.view.generation, "online.detail"));
         m.transition(crate::Root::Reader, crate::Section::Content, false);
         assert!(!allowed(&m, m.view.generation, "chapter.read"));
     }

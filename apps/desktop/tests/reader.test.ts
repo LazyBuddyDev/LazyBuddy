@@ -24,6 +24,8 @@ test('online search failures stay readable and never look like empty results',()
   assert.match(readerError('source_access_denied'),/拒绝访问/);
   assert.match(readerError('source_text_obfuscated'),/无法直接显示/);
   assert.match(readerError('search_busy'),/收尾/);
+  assert.match(readerError('incomplete_source_directory'),/目录不完整/);
+  assert.match(readerError('invalid_source_book'),/书籍标识/);
 });
 
 test('current match spans styled runs and repeated matches wrap both ways',()=>{
