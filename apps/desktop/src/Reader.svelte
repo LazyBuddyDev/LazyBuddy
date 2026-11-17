@@ -2,17 +2,21 @@
   import {invoke} from '@tauri-apps/api/core';
   import {tick,untrack,onDestroy} from 'svelte';
   import Icon from './Icon.svelte';
-  import {pageSize,pageStart,progressLabel,readerError,matchOffsets,wrapMatch,markedRuns,visibleAnchor,restoreAnchor,type Position,type Entry,type Book,type Block,type ReadingPreferences} from './reader';
+  import {pageSize,pageStart,progressLabel,readerError,matchOffsets,wrapMatch,markedRuns,visibleAnchor,restoreAnchor,viewportStep,pageOffset,type Position,type Entry,type Book,type Block,type ReadingPreferences} from './reader';
   let {active,showing,settings,generation,notice,settingsChange}:{active:boolean;showing:boolean;settings:boolean;generation:number;notice:(text:string)=>void;settingsChange:(settings:boolean)=>void}=$props();
   let entries=$state<Entry[]>([]),book=$state<Book>(),blocks=$state<Block[]>([]);
-  let preferences=$state<ReadingPreferences>({font_size:20,line_height:1.9,width:680});
+  let preferences=$state<ReadingPreferences>({font_size:20,line_height:1.9,width:680,page_mode:'horizontal'});
   let chapter=$state(0),start=$state(0),total=$state(0),filter=$state(''),query=$state(''),encoding=$state('auto');
   let loading=$state(false),importing=$state(false),saving=$state(false),directory=$state(false),removing=$state<string>();
   let failure=$state(''),images=$state<Record<string,string>>({});
   let scroll=$state<HTMLElement>();let epoch=0;let initialized=false;let needsList=true;let lastBook=$state<string|null>(null);
   let currentPosition:Position|undefined;let restoring=false;let timer:ReturnType<typeof setTimeout>|undefined;
   let stagedPosition:Position|undefined;let checkpointWrites:Promise<unknown>=Promise.resolve();
-  let suspended=true;
+  let suspended=true;let turning=$state(false),extending=$state(false),offset=$state(0),extent=$state(0);
+  let finishTurn:(()=>void)|undefined;
+  const horizontal=$derived(preferences.page_mode==='horizontal');
+  function needsMore(){return !!scroll&&start+blocks.length<total&&extent-offset<(horizontal?scroll.getBoundingClientRect().width:scroll.clientHeight)*2;}
+  function metrics(){if(scroll){offset=horizontal?scroll.scrollLeft:scroll.scrollTop;extent=horizontal?scroll.scrollWidth-scroll.getBoundingClientRect().width:scroll.scrollHeight-scroll.clientHeight;}}
   let searchOpen=$state(false),searchQuery=$state(''),matchCurrent=$state(-1),matchTotal=$state(0);
   let searchBlocks:{id:string;index:number;count:number}[]=[];let searchRun=0;
   let selectedMatch=$state<{id:string;offset:number}>();
@@ -44,12 +48,12 @@
     const ticket=lease();failure='';
     try{
       preferences=await call<ReadingPreferences>('preferences.get',{},ticket);
-      if(!settings){if(needsList||!initialized)await list(ticket);if(book){await tick();if(currentPosition)if(scroll)restoreAnchor(scroll,currentPosition);watchImages();}}
+      if(!settings){if(needsList||!initialized)await list(ticket);if(book){await tick();if(currentPosition)if(scroll)restoreAnchor(scroll,currentPosition);metrics();if(needsMore())await extend(1);watchImages();}}
       initialized=true;
     }catch(error){report(error,ticket);}
   }
   function stopLocal(){
-    suspended=true;
+    suspended=true;finishTurn?.();if(scroll)scroll.scrollTo({left:scroll.scrollLeft,top:scroll.scrollTop,behavior:'instant'});turning=false;extending=false;restoring=false;
     epoch++;searchRun++;importRun++;clearTimeout(timer);timer=undefined;clearTimeout(waitTimer);wake?.();wake=undefined;
     observer?.disconnect();observer=undefined;resourceQueue=[];images={};readingImages=false;importing=false;loading=false;saving=false;
   }
@@ -73,7 +77,8 @@
     try{await write;}catch(error){if(stagedPosition===position)stagedPosition=undefined;throw error;}
   }
   function onScroll(){
-    if(!active||settings||restoring)return;
+    if(!active||settings||suspended||restoring||turning)return;metrics();
+    if(!loading&&!extending&&needsMore())void extend(1).catch(error=>report(error));
     const ticket=lease();void checkpoint().catch(error=>report(error,ticket));
     clearTimeout(timer);timer=setTimeout(()=>{timer=undefined;void call('progress.flush',{},ticket).catch(error=>report(error,ticket));},600);
   }
@@ -94,18 +99,89 @@
     const result=await call<{blocks:Block[];start:number;total:number}>('chapter.read',{book_id:book.id,chapter_id:book.chapters[nextChapter].id,start:nextStart},ticket);
     restoring=true;blocks=result.blocks;chapter=nextChapter;start=result.start;total=result.total;
     await tick();if(!valid(ticket)){restoring=false;return;}
-    if(!scroll){restoring=false;return;}scroll.scrollTop=0;if(position)restoreAnchor(scroll,position);restoring=false;
-    await checkpoint();watchImages();
+    if(!scroll){restoring=false;return;}scroll.scrollTop=0;scroll.scrollLeft=0;if(position)restoreAnchor(scroll,position);restoring=false;
+    metrics();if(needsMore())await extend(1);if(!valid(ticket))return;await checkpoint();watchImages();
   }
   async function move(nextChapter:number,nextStart=0){
     if(!book||loading||nextChapter<0||nextChapter>=book.chapters.length)return;
     if(nextChapter!==chapter)clearSearch();
-    const ticket=lease();loading=true;failure='';
+    const ticket=lease();loading=true;failure='';finishTurn?.();
     try{await checkpoint();await call('progress.flush',{},ticket);await load(nextChapter,nextStart,undefined,ticket);}catch(error){report(error,ticket);}finally{if(valid(ticket))loading=false;}
   }
   async function back(){
     const ticket=lease();try{await checkpoint();await call('progress.flush',{},ticket);book=undefined;blocks=[];observer?.disconnect();images={};needsList=true;await list(ticket);}catch(error){report(error,ticket);}
   }
+  async function extend(direction:number){
+    if(!book||!scroll||extending)return;
+    const next=direction>0?start+blocks.length:Math.max(0,start-pageSize);
+    if(direction>0?next>=total:start===0)return;
+    const ticket=lease();extending=true;
+    try{
+      const result=await call<{blocks:Block[];start:number}>('chapter.read',{book_id:book.id,chapter_id:book.chapters[chapter].id,start:next},ticket);
+      if(!result.blocks.length)throw Error('invalid_reader_reply');
+      const anchor=visibleAnchor(scroll);restoring=true;
+      let combined=direction>0?[...blocks,...result.blocks]:[...result.blocks,...blocks];
+      if(direction<0)start=result.start;
+      if(combined.length>pageSize*3){
+        if(direction>0){start+=pageSize;combined=combined.slice(pageSize);}else combined=combined.slice(0,pageSize*3);
+      }
+      blocks=combined;resourceQueue=[];
+      const resources=new Set(blocks.map(b=>b.resource));images=Object.fromEntries(Object.entries(images).filter(([id])=>resources.has(id)));
+      await tick();if(!valid(ticket))return;
+      if(anchor)restoreAnchor(scroll,anchor);metrics();watchImages();
+    }finally{if(valid(ticket)){restoring=false;extending=false;}}
+  }
+  function animateTo(target:number,ticket:ReturnType<typeof lease>){
+    if(!scroll)return Promise.resolve();
+    const element=scroll;
+    if(preferences.page_mode==='scroll'||matchMedia('(prefers-reduced-motion: reduce)').matches){element.scrollTo({left:horizontal?target:0,top:horizontal?0:target,behavior:'instant'});return Promise.resolve();}
+    return new Promise<void>(resolve=>{
+      const reached=()=>{if(Math.abs((horizontal?element.scrollLeft:element.scrollTop)-target)<1)finish();};
+      const finish=()=>{clearTimeout(timeout);element.removeEventListener('scrollend',reached);if(finishTurn===finish)finishTurn=undefined;resolve();};
+      const timeout=setTimeout(()=>{if(valid(ticket))element.scrollTo({left:horizontal?target:0,top:horizontal?0:target,behavior:'instant'});finish();},650);
+      finishTurn=finish;element.addEventListener('scrollend',reached);
+      if(valid(ticket))element.scrollTo({left:horizontal?target:0,top:horizontal?0:target,behavior:'smooth'});else finish();
+    });
+  }
+  async function turn(direction:number){
+    if(!active||settings||suspended||!book||!scroll||loading||turning||extending)return;
+    const ticket=lease();turning=true;
+    try{
+      const step=horizontal?scroll.getBoundingClientRect().width:viewportStep(scroll.clientHeight,preferences.font_size*preferences.line_height);
+      metrics();
+      if(direction>0&&extent-offset<step*2&&start+blocks.length<total||direction<0&&offset<step&&start>0)await extend(direction);
+      if(!valid(ticket))return;metrics();
+      if(direction>0&&offset>=extent-1||direction<0&&offset<=1){
+        const next=chapter+direction;if(next<0||next>=book.chapters.length)return;
+        const blockStart=direction>0?0:Math.floor((book.chapters[next].blocks-1)/pageSize)*pageSize;
+        await move(next,blockStart);if(!valid(ticket))return;
+        if(direction<0){metrics();restoring=true;scroll.scrollTo({left:horizontal?extent:0,top:horizontal?0:extent,behavior:'instant'});restoring=false;}
+      }else{
+        restoring=true;await animateTo(pageOffset(offset,step,extent,direction),ticket);if(!valid(ticket))return;restoring=false;
+      }
+      metrics();await checkpoint();if(needsMore())await extend(1);
+    }catch(error){report(error,ticket);}finally{if(valid(ticket)){turning=false;restoring=false;}}
+  }
+  function readingKey(event:KeyboardEvent){
+    if(!active||settings||!book||event.defaultPrevented||event.ctrlKey||event.altKey||event.metaKey||event.shiftKey)return;
+    if(event.target instanceof Element){
+      if(event.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]'))return;
+      if(event.target.closest('button')&&!event.target.closest('.reader-navigation'))return;
+    }
+    if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();void turn(event.key==='ArrowRight'?1:-1);}
+  }
+  function wheel(event:WheelEvent){
+    if(preferences.page_mode==='scroll'||event.ctrlKey||!active||settings||suspended)return;
+    event.preventDefault();if(Math.abs(event.deltaY||event.deltaX)>8)void turn((event.deltaY||event.deltaX)>0?1:-1);
+  }
+  function wheelInput(element:HTMLElement){element.addEventListener('wheel',wheel,{passive:false});return{destroy:()=>element.removeEventListener('wheel',wheel)};}
+  $effect(()=>{
+    const element=scroll;if(!element||!active||settings)return;
+    const resize=new ResizeObserver(()=>{
+      if(!active||suspended||restoring||turning)return;
+      restoring=true;if(currentPosition)restoreAnchor(element,currentPosition);metrics();restoring=false;
+    });resize.observe(element);return()=>resize.disconnect();
+  });
   function watchImages(){
     observer?.disconnect();if(!active||settings||!scroll)return;
     const ticket=lease();
@@ -118,7 +194,7 @@
   }
   async function drainImages(ticket:ReturnType<typeof lease>){
     if(readingImages)return;readingImages=true;const owner=book?.id;
-    try{while(resourceQueue.length&&valid(ticket)&&owner===book?.id){const id=resourceQueue.shift()!;try{const result=await call<{url:string}>('resource.read',{book_id:owner,resource_id:id},ticket);if(owner===book?.id)images[id]=result.url;}catch(error){report(error,ticket);}}}finally{if(valid(ticket))readingImages=false;}
+    try{while(resourceQueue.length&&valid(ticket)&&owner===book?.id){const id=resourceQueue.shift()!;try{const result=await call<{url:string}>('resource.read',{book_id:owner,resource_id:id},ticket);if(owner===book?.id&&blocks.some(b=>b.resource===id))images[id]=result.url;}catch(error){report(error,ticket);}}}finally{if(valid(ticket))readingImages=false;}
   }
   async function find(direction=0){
     if(!book||!query.trim()||loading)return;
@@ -146,7 +222,7 @@
       await load(chapter,pageStart(block.id),target,ticket);
     }catch(error){report(error,ticket);}finally{if(valid(ticket))loading=false;}
   }
-  async function setPreference(key:keyof ReadingPreferences,value:number){
+  async function setPreference<K extends keyof ReadingPreferences>(key:K,value:ReadingPreferences[K]){
     if(saving||!active)return;const ticket=lease();saving=true;
     try{preferences=await call<ReadingPreferences>('preferences.set',{...preferences,[key]:value},ticket);}catch(error){report(error,ticket);}finally{if(valid(ticket))saving=false;}
   }
@@ -176,11 +252,13 @@
     const ticket=lease();try{await call('library.remove',{book_id:entry.id},ticket);removing=undefined;await list(ticket);}catch(error){report(error,ticket);if(String(error)==='removal_cleanup_pending'){removing=undefined;await list(ticket);}}
   }
 </script>
+<svelte:window onkeydown={readingKey}/>
 
 <section hidden={!showing} class="reader-page feature-page" class:reader-content={!settings} data-testid="reader" data-active={active}>
 <div class="tab-bar"><div class="tabs" aria-label="小说页签"><button class:active={!settings} aria-pressed={!settings} title="书架" onclick={()=>settingsChange(false)}>书架</button><button class:active={settings} aria-pressed={settings} title="阅读设置" onclick={()=>settingsChange(true)}>设置</button></div></div>
 {#if settings}
   <section><div class="settings-content"><h1>阅读设置</h1>
+    <div class="setting-row"><label for="reader-page-mode">翻页模式</label><select id="reader-page-mode" disabled={saving} value={preferences.page_mode} onchange={e=>setPreference('page_mode',e.currentTarget.value as ReadingPreferences['page_mode'])}><option value="horizontal">左右翻页</option><option value="vertical">上下翻页</option><option value="scroll">连续滚动</option></select></div>
     <div class="setting-row"><label for="reader-font">正文字号</label><select id="reader-font" disabled={saving} value={preferences.font_size} onchange={e=>setPreference('font_size',Number(e.currentTarget.value))}>{#each [14,16,18,20,22,24,28,32,36] as size}<option value={size}>{size}</option>{/each}</select></div>
     <div class="setting-row"><label for="reader-height">行距</label><select id="reader-height" disabled={saving} value={Math.round(preferences.line_height*10)/10} onchange={e=>setPreference('line_height',Number(e.currentTarget.value))}>{#each [1.3,1.5,1.7,1.9,2.1,2.3,2.5] as height}<option value={height}>{height}</option>{/each}</select></div>
     <div class="setting-row"><label for="reader-width">正文宽度</label><select id="reader-width" disabled={saving} value={preferences.width} onchange={e=>setPreference('width',Number(e.currentTarget.value))}>{#each [320,440,560,680,800,1000] as width}<option value={width}>{width}</option>{/each}</select></div>
@@ -191,18 +269,19 @@
   <div class="reader-spread">
   {#if directory}<nav class="reader-directory" aria-label="章节目录">{#each book.chapters as item,index}<button class:chosen={chapter===index} aria-current={chapter===index?'page':undefined} title={item.title} disabled={loading} onclick={()=>move(index)}>{item.title}</button>{/each}</nav>{/if}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex (The scroll region needs focus for keyboard reading.) -->
-  <div class="reader-scroll" bind:this={scroll} onscroll={onScroll} role="region" aria-label="小说正文" tabindex="0" style:--reader-font={`${preferences.font_size}px`} style:--reader-height={preferences.line_height} style:--reader-width={`${preferences.width}px`}>
-    <article class="reader-body"><h2>{book.chapters[chapter]?.title}</h2>
+  <div class="reader-scroll" bind:this={scroll} data-page-mode={preferences.page_mode} class:horizontal onscroll={onScroll} use:wheelInput role="region" aria-label="小说正文" tabindex="0" style:--reader-font={`${preferences.font_size}px`} style:--reader-height={preferences.line_height} style:--reader-width={`${preferences.width}px`}>
+    <article class="reader-body" class:horizontal><h2>{book.chapters[chapter]?.title}</h2>
     {#each blocks as block (block.id)}
       {#if block.kind==='image'}<figure data-block={block.id} data-kind="image" data-resource={block.resource??undefined}>{#if block.resource&&images[block.resource]}<img src={images[block.resource]} alt={block.text} onload={()=>{if(currentPosition&&!restoring&&scroll)restoreAnchor(scroll,currentPosition);}}/>{:else}<figcaption>{block.text||'插图'}</figcaption>{/if}</figure>
       {:else}<div class:reader-heading={block.kind==='heading'} class:reader-pre={block.kind==='pre'} class="reader-paragraph" data-block={block.id} data-kind={block.kind}>
         {#each markedRuns(block,searchOpen?searchQuery:'',selectedMatch?.id===block.id?selectedMatch.offset:-1) as part}<span class:reader-strong={part.strong} class:reader-emphasis={part.emphasis}>{#if part.match}<mark class:current-match={part.current} aria-current={part.current?'true':undefined}>{part.text}</mark>{:else}{part.text}{/if}</span>{/each}
       </div>{/if}
     {/each}
-    <div class="reader-navigation"><button title="阅读上一段或上一章" disabled={loading||chapter===0&&start===0} onclick={()=>start>0?move(chapter,Math.max(0,start-pageSize)):move(chapter-1,Math.floor((book!.chapters[chapter-1].blocks-1)/pageSize)*pageSize)}>上一段</button><span>{chapter+1} / {book.chapters.length} 章{total>pageSize?` · ${Math.floor(start/pageSize)+1} / ${Math.ceil(total/pageSize)} 段`:''}</span><button title="阅读下一段或下一章" disabled={loading||chapter===book.chapters.length-1&&start+blocks.length>=total} onclick={()=>start+blocks.length<total?move(chapter,start+blocks.length):move(chapter+1)}>下一段</button></div>
+
     </article>
   </div>
   </div>
+  <div class="reader-navigation row-actions"><button title="上一页（←）" disabled={loading||turning||extending||chapter===0&&start===0&&offset<=1} onclick={()=>turn(-1)}>上一页</button><span>{chapter+1} / {book.chapters.length} 章</span><button title="下一页（→）" disabled={loading||turning||extending||chapter===book.chapters.length-1&&start+blocks.length>=total&&offset>=extent-1} onclick={()=>turn(1)}>下一页</button></div>
 {:else}
   <div class="collection-toolbar"><label class="search-box"><Icon name="search" size={16}/><input aria-label="筛选书名" placeholder="筛选书名" bind:value={filter}/></label><button title="导入TXT或EPUB文件" onclick={importBooks} disabled={importing}>导入小说</button></div>
   <label class="collection-options">TXT编码<select aria-label="TXT编码" bind:value={encoding} disabled={importing}>{#each [['auto','自动识别'],['utf-8','UTF-8'],['gb18030','GB18030 / GBK'],['big5','Big5'],['utf-16le','UTF-16 LE'],['utf-16be','UTF-16 BE']] as [value,label]}<option {value}>{label}</option>{/each}</select></label>
@@ -213,6 +292,13 @@
 </section>
 
 <style>
-  .reader-content{display:flex;flex-direction:column;min-height:0;height:100%}.reader-page[hidden]{display:none}.reader-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-library{overflow:auto;scrollbar-gutter:stable;min-height:0}.reader-book-open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left;border:0;padding:0;min-height:0}.reader-remove{flex-wrap:wrap;justify-content:flex-end;font-size:11px}.reader-remove span{width:100%;text-align:right}.reader-scroll{min-width:0;overflow:auto;min-height:0;flex:1;scrollbar-gutter:stable;background:var(--surface);overflow-anchor:none}.reader-scroll:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}.reader-body{max-width:var(--reader-width);margin:auto;padding:20px 24px 28px;font-size:var(--reader-font);line-height:var(--reader-height);overflow-wrap:anywhere}.reader-body h2{font-size:1.15em;margin-bottom:1.5em}.reader-paragraph{margin:0 0 1em;white-space:pre-wrap}.reader-heading{font-weight:600;font-size:1.1em}.reader-pre{font-family:monospace}.reader-strong{font-weight:700}.reader-emphasis{font-style:italic}figure{margin:1em 0;min-height:80px}figure img{display:block;max-width:100%;height:auto;margin:auto}figcaption{color:var(--muted);font-size:13px}.reader-navigation{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;margin-top:24px}@media(max-width:520px){.reader-body{padding:16px}.reader-remove{max-width:160px}.reader-navigation{font-size:11px}}
+  .reader-content{display:flex;flex-direction:column;min-height:0;height:100%}.reader-page[hidden]{display:none}.reader-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-library{overflow:auto;scrollbar-gutter:stable;min-height:0}.reader-book-open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left;border:0;padding:0;min-height:0}.reader-remove{flex-wrap:wrap;justify-content:flex-end;font-size:11px}.reader-remove span{width:100%;text-align:right}.reader-scroll{min-width:0;overflow:auto;min-height:0;flex:1;scrollbar-gutter:stable;background:var(--surface);overflow-anchor:none}.reader-scroll:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}.reader-body{--reader-padding:24px;max-width:var(--reader-width);margin:auto;padding:20px 24px 28px;font-size:var(--reader-font);line-height:var(--reader-height);overflow-wrap:anywhere}.reader-body h2{font-size:1.15em;margin-bottom:1.5em}.reader-paragraph{margin:0 0 1em;white-space:pre-wrap}.reader-heading{font-weight:600;font-size:1.1em}.reader-pre{font-family:monospace}.reader-strong{font-weight:700}.reader-emphasis{font-style:italic}figure{margin:1em 0;min-height:80px}figure img{display:block;max-width:100%;height:auto;margin:auto}figcaption{color:var(--muted);font-size:13px}.reader-navigation{display:flex;align-items:center;justify-content:space-between;font-size:12px;flex-shrink:0;margin-top:12px}@media(max-width:520px){.reader-body{--reader-padding:16px;padding:16px}.reader-remove{max-width:160px}.reader-navigation{font-size:11px}}
   .reader-spread{display:flex;flex:1;min-height:0;gap:12px}.reader-directory{position:relative;flex:0 0 clamp(110px,28%,210px);overflow-y:auto;scrollbar-gutter:stable;min-height:0}.reader-directory button{display:block;width:100%;text-align:left;border:0;padding:9px 10px;overflow-wrap:anywhere}.reader-directory .chosen{background:var(--selected);font-weight:600;box-shadow:inset 3px 0 var(--accent)}.reader-match-count{flex-shrink:0;min-width:3ch;text-align:center;font-variant-numeric:tabular-nums}.reader-body mark{background:#f8e599;color:#302400}.reader-body mark.current-match{background:#c84913;color:#fff;outline:2px solid #702400;outline-offset:1px}
+
+  .reader-scroll.horizontal{overflow:hidden;scrollbar-gutter:auto}
+  .reader-body.horizontal{width:100%;max-width:none;height:100%;margin:0;padding:16px 0;column-count:1;column-gap:0;column-fill:auto}
+  .reader-body.horizontal > *{margin-left:max(var(--reader-padding),calc((100% - var(--reader-width))/2 + var(--reader-padding)));margin-right:max(var(--reader-padding),calc((100% - var(--reader-width))/2 + var(--reader-padding)))}
+  .reader-body.horizontal figure{break-inside:avoid;min-height:0;margin-top:0;margin-bottom:1em}
+  .reader-body.horizontal img{max-height:calc(100cqh - 80px);object-fit:contain}
+  .reader-scroll{container-type:size}
 </style>

@@ -27,7 +27,7 @@ $env:LAZYBUDDY_DATA_DIR=(Join-Path (Get-Location) 'tmp/profiles/local-qa')
 
 用户统一运行根目录`build_and_run.bat`。已准备、完整的本地功能包按`target/packages/development/<id>/<version>/module.json`归位（目录不进Git），也可显式`-ModulePackages <目录>`指定同样结构的根目录。脚本为显式暂存的功能选择最新未安装版本或较新版本，正常退出当前工作区实例后通过CLI的`install-local`安装，再启动新宿主；不自动下载重运行时，不停止其他安装。依赖仍须准备齐全，不能把临时或不打算安装的包放入该暂存入口。
 
-本地阅读模块使用宿主数据根下`services/reader`，其书库副本不依赖原文件位置；卸载模块保留书库数据。当前通过本地开发包交付，已发布1.0.3及线上目录尚不包含阅读入口。服务源码、API和打包由独立[reader-service仓库](https://github.com/LazyBuddyDev/reader-service)维护。
+本地阅读模块使用宿主数据根下`services/reader`，其书库副本不依赖原文件位置；卸载模块保留书库数据。当前通过本地开发包交付，已发布1.0.3及线上目录尚不包含阅读入口。阅读设置提供左右翻页、上下翻页和连续滚动，默认左右翻页；←/→或上一页/下一页按实际可视区域导航，窗口及字号变化保留正文锚点，正文分块自动接续。服务源码、API和打包由独立[reader-service仓库](https://github.com/LazyBuddyDev/reader-service)维护。
 
 这些是明确准备的开发包，不是在线失败回退，也不从相邻服务仓库源码加载实现。服务改动必须先在独立仓库构建并打成新版本完整包，再交付到上述目录；仅修改服务源码不会改变已安装模块。开发包准备属于开发交付，用户不需要手动调用独立服务脚本。`-BuildOnly`构建前同样正常退出匹配实例，但不安装模块或启动应用。`-LaunchOnly`跳过构建，但仍应用已准备的较新本地功能包。
 

@@ -53,6 +53,9 @@ try{
   browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   await until(()=>{page=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes('tauri.localhost'));return !!page;},'WebView');
   await page.waitForSelector('[data-events-ready=true]');await invoke('window_action',{action:'show'});
+  await page.locator('[aria-label=小说页签]').getByRole('button',{name:'设置',exact:true}).click();
+  await page.getByLabel('翻页模式',{exact:true}).selectOption('scroll');
+  await page.getByRole('button',{name:'书架',exact:true}).click();
   await page.getByRole('button',{name:`继续阅读《${imported.title}》`}).click();await page.locator('[data-block="b20"]').waitFor();
   await page.locator('.reader-scroll').evaluate(e=>{e.scrollTop=1800;e.dispatchEvent(new Event('scroll'));});
   await wait(900);let saved=JSON.parse(await readFile(path.join(data,'services/reader/library.json'),'utf8')).entries[0].position;assert.ok(Number(saved.block_id.slice(1))>5);

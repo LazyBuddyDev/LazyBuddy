@@ -23,6 +23,7 @@ cargo test --locked -p lazybuddy host::tests
 | 平台视觉、公共工具栏、主题与窄窗口 | `apps/desktop/tests/news-design.mjs` |
 | 统一页签、集合工具栏、列表/网格与封面状态 | `apps/desktop/tests/hongguo-views.mjs` |
 | 画面点击、音量浮层与媒体快捷键 | `apps/desktop/tests/video-click.mjs` |
+| 书页方向键、三种模式、重排锚点、有界分块、章节边界与静默 | `apps/desktop/tests/reader-paging.mjs` |
 | 内容及设置的公共行、标签、下拉框、工具栏、宽窄窗口和浅深主题 | `apps/desktop/tests/ui-consistency.mjs` |
 | 功能设置页签、全局设置隔离、局部透明度保存与静默 | `apps/desktop/tests/feature-settings.mjs` |
 | 根页面切换后的提示归属 | `apps/desktop/tests/feature-notices.mjs` |

@@ -4,7 +4,10 @@ export type Entry = {id:string;title:string;author:string;source:Source;content_
 export type Chapter = {id:string;title:string;blocks:number};
 export type Book = {id:string;title:string;author:string;content_version:string;chapters:Chapter[];warnings:string[]};
 export type Block = {id:string;kind:string;text:string;runs:{text:string;strong:boolean;emphasis:boolean;link?:string}[];resource:string|null};
-export type ReadingPreferences = {font_size:number;line_height:number;width:number};
+export type PageMode = 'horizontal'|'vertical'|'scroll';
+export type ReadingPreferences = {font_size:number;line_height:number;width:number;page_mode:PageMode};
+export function viewportStep(height:number,line:number):number { return Math.max(line,Math.floor((height-32)/line)*line); }
+export function pageOffset(offset:number,step:number,extent:number,direction:number):number { return Math.max(0,Math.min(extent,offset+direction*step)); }
 export const pageSize=96;
 export function matchOffsets(text:string,query:string):number[]{
   if(!query)return [];const offsets:number[]=[];let start=0,index:number;
@@ -48,18 +51,27 @@ export function textRange(element:HTMLElement,offset:number):Range|null {
   return null;
 }
 export function visibleAnchor(container:HTMLElement):{block_id:string;offset:number}|null {
-  const top=container.getBoundingClientRect().top+12;
-  const block=Array.from(container.querySelectorAll<HTMLElement>('[data-block]')).find(b=>b.getBoundingClientRect().bottom>top);
+  const viewport=container.getBoundingClientRect(),top=viewport.top+12;
+  const horizontal=container.dataset.pageMode==='horizontal';
+  const block=Array.from(container.querySelectorAll<HTMLElement>('[data-block]')).find(b=>Array.from(b.getClientRects()).some(r=>r.bottom>top&&r.top<viewport.bottom&&(!horizontal||r.right>viewport.left&&r.left<viewport.right)));
   if(!block)return null;
   const length=Array.from(block.textContent??'').length;
   let low=0,high=length;
-  if(block.dataset.kind!=='image')while(low<high){const mid=Math.floor((low+high)/2);const rect=textRange(block,mid)?.getBoundingClientRect();if(rect&&rect.bottom<=top)low=mid+1;else high=mid;}
+  if(block.dataset.kind!=='image')while(low<high){
+    const mid=Math.floor((low+high)/2),rect=textRange(block,mid)?.getBoundingClientRect();
+    const before=rect&&(horizontal?(rect.right<=viewport.left+1||rect.left<viewport.right&&rect.bottom<=top):rect.bottom<=top);
+    if(before)low=mid+1;else high=mid;
+  }
   return {block_id:block.dataset.block!,offset:block.dataset.kind==='image'?0:low};
 }
 export function restoreAnchor(container:HTMLElement,position:Pick<Position,'block_id'|'offset'>):boolean {
   const block=Array.from(container.querySelectorAll<HTMLElement>('[data-block]')).find(b=>b.dataset.block===position.block_id);
   if(!block)return false;
-  const rect=position.offset?textRange(block,position.offset)?.getBoundingClientRect():block.getBoundingClientRect();
+  const rect=block.dataset.kind==='image'?block.getBoundingClientRect():textRange(block,position.offset)?.getBoundingClientRect();
   if(!rect)return false;
-  container.scrollTop+=rect.top-container.getBoundingClientRect().top-12;return true;
+  if(container.dataset.pageMode==='horizontal'){
+    const page=Math.floor((rect.left-container.getBoundingClientRect().left+container.scrollLeft)/container.getBoundingClientRect().width);
+    container.scrollTop=0;container.scrollLeft=page*container.getBoundingClientRect().width;
+  }else{container.scrollLeft=0;container.scrollTop+=rect.top-container.getBoundingClientRect().top-12;}
+  return true;
 }

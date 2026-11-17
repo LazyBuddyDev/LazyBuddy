@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {pageStart,progressLabel,markedRuns,matchOffsets,wrapMatch,readerError,type Entry,type Block} from '../src/reader.ts';
+import {pageStart,viewportStep,pageOffset,progressLabel,markedRuns,matchOffsets,wrapMatch,readerError,type Entry,type Block} from '../src/reader.ts';
 import {active,accepts,type View} from '../src/lifecycle.ts';
 test('reading positions map to bounded pages and count chapters from zero',()=>{
   assert.equal(pageStart('b150'),96);assert.equal(pageStart('b192'),192);
@@ -27,4 +27,10 @@ test('current match spans styled runs and repeated matches wrap both ways',()=>{
   assert.equal(parts.filter(p=>p.match&&!p.current).map(p=>p.text).join(''),'你好');
   assert.equal(parts.map(p=>p.text).join(''),block.text);
   assert.equal(wrapMatch(-1,4),3);assert.equal(wrapMatch(4,4),0);assert.equal(wrapMatch(0,0),-1);
+});
+
+test('viewport page steps stay bounded and keep a line of context',()=>{
+  assert.equal(viewportStep(500,38),456);assert.equal(viewportStep(20,38),38);
+  assert.equal(pageOffset(0,400,1200,-1),0);assert.equal(pageOffset(800,400,950,1),950);
+  assert.equal(pageOffset(400,400,1200,-1),0);assert.equal(pageOffset(0,400,1200,1),400);
 });
