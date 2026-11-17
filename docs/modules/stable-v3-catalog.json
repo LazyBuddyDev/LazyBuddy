@@ -43,12 +43,12 @@
       "id": "reader",
       "name": "小说",
       "kind": "feature",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "target": "windows-x86_64",
       "dependencies": [],
-      "url": "https://github.com/LazyBuddyDev/LazyBuddy/releases/download/v1.0.4/reader-0.1.2.zip",
-      "sha256": "c7d9b7968ce56d3c06bfa10e9efb62bb5dc115e3181ade2b39ca505fa9239070",
-      "bytes": 670800
+      "url": "https://github.com/LazyBuddyDev/LazyBuddy/releases/download/v1.0.4/reader-0.1.3.zip",
+      "sha256": "14e2e134257a00a090f3e088d11038a02e3b2155c6b02c883de08c4c3beb49e2",
+      "bytes": 670799
     }
   ]
 }
