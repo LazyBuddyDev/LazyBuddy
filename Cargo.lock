@@ -1736,7 +1736,7 @@ dependencies = [
 
 [[package]]
 name = "lazybuddy"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "futures",
  "lazybuddy-app-updater",
@@ -1770,7 +1770,7 @@ dependencies = [
 
 [[package]]
 name = "lazybuddy-cli"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "lazybuddy-host-control",
  "lazybuddy-module-manager",
