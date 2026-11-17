@@ -273,10 +273,10 @@
       {#if tab==='favorites'&&favorites.length===0&&account.operation!=='pending'}<div class="list-empty">暂无收藏</div>{:else if tab==='favorites'&&visibleFavorites.length===0}<div class="list-empty">没有匹配的收藏</div>{:else if tab==='search'&&searched&&items.length===0}<div class="list-empty">没有搜索结果</div>{/if}
     </section>
   {/if}
-  {#if loginPending(account.state)}<div class="qr-backdrop"><div class="qr-dialog" role="dialog" aria-modal="true" aria-label="扫码登录" tabindex="-1"><h2>使用红果短剧 App 扫码</h2>{#if account.qr_png}<img src={`data:image/png;base64,${account.qr_png}`} alt="红果登录二维码"/>{/if}<button onclick={cancelLogin}>取消</button></div></div>{/if}
+  {#if loginPending(account.state)}<div class="dialog-backdrop"><div class="dialog-surface qr-dialog" role="dialog" aria-modal="true" aria-label="扫码登录" tabindex="-1"><h2>使用红果短剧 App 扫码</h2>{#if account.qr_png}<img src={`data:image/png;base64,${account.qr_png}`} alt="红果登录二维码"/>{/if}<button onclick={cancelLogin}>取消</button></div></div>{/if}
 {/if}
 
 <style>
-  .qr-backdrop{position:fixed;inset:62px 0 30px;display:grid;place-items:center;background:#0005;z-index:10}.qr-dialog{display:flex;flex-direction:column;align-items:center;gap:12px;padding:20px;background:var(--surface);border:1px solid var(--line)}.qr-dialog h2{font-size:15px;margin:0}.qr-dialog img{width:220px;height:220px;object-fit:contain;background:white}.qr-dialog button{align-self:stretch}
+  .qr-dialog{align-items:center}.qr-dialog img{width:220px;height:220px;object-fit:contain;background:white}.qr-dialog button{align-self:stretch}
   .video-controls select{width:auto;max-width:85px;min-width:44px;color:white;background:#222c;padding:3px;border:0;font-size:11px}.video-controls{flex-wrap:wrap}.video-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>

@@ -219,12 +219,14 @@ pub async fn reader_call(
             | "online.search"
             | "online.detail"
             | "online.chapter"
+            | "online.open"
             | "online.status"
             | "online.cancel"
             | "library.list"
             | "library.import"
             | "library.remove"
             | "library.add"
+            | "library.favorite"
             | "import.status"
             | "import.cancel"
             | "book.open"
@@ -289,12 +291,16 @@ mod tests {
         assert!(allowed(&m, generation, "online.search"));
         assert!(allowed(&m, generation, "online.detail"));
         assert!(allowed(&m, generation, "online.chapter"));
+        assert!(allowed(&m, generation, "online.open"));
+        assert!(allowed(&m, generation, "library.favorite"));
         assert!(allowed(&m, generation, "library.add"));
         m.transition(crate::Root::News, crate::Section::Content, true);
         m.transition(crate::Root::Reader, crate::Section::Content, true);
         assert!(!allowed(&m, generation, "chapter.read"));
         assert!(!allowed(&m, generation, "online.status"));
         assert!(!allowed(&m, generation, "online.chapter"));
+        assert!(!allowed(&m, generation, "online.open"));
+        assert!(!allowed(&m, generation, "library.favorite"));
         assert!(!allowed(&m, generation, "library.add"));
         m.transition(crate::Root::Reader, crate::Section::Settings, true);
         m.account_page = true;
@@ -303,6 +309,8 @@ mod tests {
         assert!(!allowed(&m, m.view.generation, "online.search"));
         assert!(!allowed(&m, m.view.generation, "online.detail"));
         assert!(!allowed(&m, m.view.generation, "online.chapter"));
+        assert!(!allowed(&m, m.view.generation, "online.open"));
+        assert!(!allowed(&m, m.view.generation, "library.favorite"));
         assert!(!allowed(&m, m.view.generation, "library.add"));
         m.transition(crate::Root::Reader, crate::Section::Content, false);
         assert!(!allowed(&m, m.view.generation, "chapter.read"));

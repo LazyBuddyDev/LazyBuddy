@@ -1,6 +1,6 @@
 export type Position = {book_id:string;content_version:string;chapter_id:string;block_id:string;offset:number;chapter_version?:string};
 export type Source = {kind:string;id:string;format:string;encoding:string};
-export type Entry = {id:string;title:string;author:string;source:Source;content_version:string;chapters:number;position:Position|null;revision:number;updated_ms:number};
+export type Entry = {id:string;title:string;author:string;source:Source;content_version:string;chapters:number;position:Position|null;revision:number;updated_ms:number;in_shelf?:boolean};
 export type Chapter = {id:string;title:string;blocks:number};
 export type Book = {id:string;title:string;author:string;source:Source;description?:string;content_version:string;chapters:Chapter[];warnings:string[]};
 export type OnlineEntry = {id:string;title:string;author:string;description:string};
