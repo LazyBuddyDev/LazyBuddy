@@ -65,7 +65,11 @@ export function textRange(element:HTMLElement,offset:number):Range|null {
 export function visibleAnchor(container:HTMLElement):{block_id:string;offset:number}|null {
   const viewport=container.getBoundingClientRect(),top=viewport.top+12;
   const horizontal=container.dataset.pageMode==='horizontal';
-  const block=Array.from(container.querySelectorAll<HTMLElement>('[data-block]')).find(b=>Array.from(b.getClientRects()).some(r=>r.bottom>top&&r.top<viewport.bottom&&(!horizontal||r.right>viewport.left&&r.left<viewport.right)));
+  const block=Array.from(container.querySelectorAll<HTMLElement>('[data-block]')).find(b=>{
+    const range=document.createRange();range.selectNodeContents(b);
+    const rects=b.dataset.kind==='image'?b.getClientRects():range.getClientRects();
+    return Array.from(rects).some(r=>r.bottom>top&&r.top<viewport.bottom&&(!horizontal||r.right>viewport.left+1&&r.left<viewport.right));
+  });
   if(!block)return null;
   const length=Array.from(block.textContent??'').length;
   let low=0,high=length;

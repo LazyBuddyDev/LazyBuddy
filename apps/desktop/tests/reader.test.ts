@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {hasChapterTitle,pageStart,viewportStep,pageOffset,progressLabel,markedRuns,matchOffsets,wrapMatch,readerError,type Entry,type Block} from '../src/reader.ts';
+import {visibleAnchor,hasChapterTitle,pageStart,viewportStep,pageOffset,progressLabel,markedRuns,matchOffsets,wrapMatch,readerError,type Entry,type Block} from '../src/reader.ts';
 import {active,accepts,type View} from '../src/lifecycle.ts';
 test('reading positions map to bounded pages and count chapters from zero',()=>{
   assert.equal(pageStart('b150'),96);assert.equal(pageStart('b192'),192);
@@ -59,4 +59,14 @@ test('chapter headings reuse source titles without changing body anchors',()=>{
  assert.equal(hasChapterTitle(blocks('第2章','不同标题'),'第2章 我们在看着你'),false);
  assert.equal(hasChapterTitle([{...blocks('第2章 我们在看着你')[0],id:'b96'}],'第2章 我们在看着你'),false);
  assert.equal(hasChapterTitle([],''),false);
+});
+
+test('horizontal anchors ignore a previous paragraph box without visible text',()=>{
+ const saved=Object.getOwnPropertyDescriptor(globalThis,'document');
+ const visible={top:20,bottom:40,left:10,right:90},previous={...visible,left:-90,right:-10};
+ const paragraph={dataset:{block:'b4',kind:'paragraph'},textContent:'previous page',getClientRects:()=>[visible],textRects:[previous]};
+ const image={dataset:{block:'b5',kind:'image'},textContent:'',getClientRects:()=>[visible]};
+ Object.defineProperty(globalThis,'document',{configurable:true,value:{createRange:()=>{let selected:any;return {selectNodeContents:(e:any)=>selected=e,getClientRects:()=>selected.textRects};}}});
+ try {assert.deepEqual(visibleAnchor({dataset:{pageMode:'horizontal'},getBoundingClientRect:()=>({top:0,bottom:100,left:0,right:100}),querySelectorAll:()=>[paragraph,image]} as unknown as HTMLElement),{block_id:'b5',offset:0});}
+ finally {if(saved)Object.defineProperty(globalThis,'document',saved);else delete (globalThis as any).document;}
 });
