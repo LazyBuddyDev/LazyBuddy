@@ -8,7 +8,7 @@
   let {active,showing,accountOnly,notice,settingsChange}: {active:boolean;showing:boolean;accountOnly:boolean;notice:(text:string)=>void;settingsChange:(settings:boolean)=>void}=$props();
   function savedPlayer(){try{return playerPreferences(JSON.parse(localStorage.getItem('lazybuddy.hongguo.player')??'null'));}catch{return playerPreferences(null);}}
   const saved=savedPlayer();let defaultFavorites=$state(saved.favorites);
-  let account=$state<Account>({state:'idle',name:''});
+  let account=$state<Account>({state:'idle',name:''});let signedOut=false;
   let tab=$state<'search'|'favorites'>(saved.favorites?'favorites':'search');
   let mode=$state<'list'|'player'>('list');
   let favoritesView=$state(localStorage.getItem('lazybuddy.hongguo.favoritesView')==='grid'?'grid':'list');
@@ -52,7 +52,7 @@
   function release(event:PointerEvent){if(event.button!==2)return;const accelerated=boosted;resetBoost();if(!accelerated&&live&&playing)seekRelative(5);}
   const raw=<T,>(method:string,args:Record<string,unknown>={})=>invoke<T>('playback_call',{method,args,direct});
   async function changeConnection(value:boolean){
-    direct=value;localStorage.setItem('lazybuddy.hongguo.direct',String(value));
+    signedOut=false;direct=value;localStorage.setItem('lazybuddy.hongguo.direct',String(value));
     notice(value?'红果直连已开启':'红果已恢复跟随系统代理');
     await suspend(false);await activate();
   }
@@ -108,12 +108,14 @@
     if(actual)quality=actual;
   }
   async function activate(){
-    live=true;busy=true;const ticket=++epoch;
+    live=true;const ticket=++epoch;
+    if(signedOut&&account.state==='idle'){notice('红果账号未登录');return;}
+    busy=true;
     try{
       if(mode==='player'&&lease!==undefined&&!accountOnly){await attach(await raw<Playback>('playback.resume',{session:lease}),ticket);return;}
       lease=undefined;
       const data=await raw<Account>('account.restore');if(!valid(ticket))return;
-      account=data;
+      signedOut=data.state==='idle'&&!data.error;account=data;
       if(data.state!=='signed_in'){favorites=[];favoritesReady=false;coverCache.clear();coverEpoch++;}
       if(data.state==='signed_in')await signedIn(ticket);else if(data.error)notice(message(data.error));else notice('红果账号未登录');
     }catch(error){if(valid(ticket)){lease=undefined;if(mode==='player')playbackError=true;warn(error);}}finally{if(valid(ticket))busy=false;}
@@ -149,7 +151,7 @@
     },1000);
   }
   async function login(){
-    if(!active||!live||busy)return;busy=true;const ticket=epoch;favorites=[];favoritesReady=false;favoritesPending=false;items=[];history={};coverCache.clear();coverEpoch++;
+    if(!active||!live||busy)return;signedOut=false;busy=true;const ticket=epoch;favorites=[];favoritesReady=false;favoritesPending=false;items=[];history={};coverCache.clear();coverEpoch++;
     try{const data=await raw<Account>('account.login');if(!valid(ticket))return;account=data;notice('请使用红果短剧 App 扫码；登录信息安全保存在本机');poll(ticket);}
     catch(error){if(valid(ticket))warn(error);}finally{if(valid(ticket))busy=false;}
   }
@@ -160,7 +162,7 @@
   async function logout(){
     clearTimeout(timer);detach();lease=undefined;mode='list';favorites=[];favoritesReady=false;favoritesPending=false;items=[];history={};coverCache.clear();coverEpoch++;
     const ticket=epoch;
-    try{const data=await raw<Account>('account.logout');if(valid(ticket)){account=data;notice('已退出账号并删除其保存凭据');}}catch(error){if(valid(ticket))warn(error);}
+    try{const data=await raw<Account>('account.logout');if(valid(ticket)){signedOut=data.state==='idle'&&!data.error;account=data;notice('已退出账号并删除其保存凭据');}}catch(error){if(valid(ticket))warn(error);}
   }
   async function search(more=false){
     if(busy||!query.trim())return;busy=true;const ticket=epoch;const word=query.trim();const requested=more?page+1:1;
@@ -174,7 +176,7 @@
     try{const data=await raw<Account>('favorites.read');if(!valid(ticket))return;acceptAccount(data);if(data.operation==='pending')poll(ticket);}
     catch(error){if(valid(ticket)){favoritesPending=false;warn(error);}}
   }
-  async function chooseTab(value:'search'|'favorites'){tab=value;if(accountOnly){settingsChange(false);return;}if(value==='favorites'&&!favoritesReady)await readFavorites();}
+  async function chooseTab(value:'search'|'favorites'){tab=value;if(accountOnly){settingsChange(false);return;}if(value==='favorites'&&account.state==='signed_in'&&!favoritesReady)await readFavorites();}
   async function favorite(item:Item){
     if(account.operation==='pending'||favoriteChange)return;const ticket=epoch;favoritesPending=true;
     const target=!isFavorite(item.id);favoriteChange={id:item.id,value:target};

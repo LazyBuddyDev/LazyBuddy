@@ -44,7 +44,8 @@
     try{await reader?.suspend(nextVisible);}catch(error){if(ticket===sequence){notice=`阅读进度保存失败：${error}`;changing=false;}return;}
     await realHongguo?.suspend(nextRoot==='hongguo'&&nextSection==='content');if(ticket!==sequence)return;
     if(page&&visible&&!docked)scrollPositions.set(scrollKey(),page.scrollTop);
-    if(root!==nextRoot||section!==nextSection||displayedCategory!==category)notice='就绪';
+    const sameFeature=root===nextRoot&&(section==='content'||section==='settings'&&displayedCategory==='page')&&(nextSection==='content'||accountPage);
+    if(!sameFeature&&(root!==nextRoot||section!==nextSection||displayedCategory!==category))notice='就绪';
     root=nextRoot;section=nextSection;visible=nextVisible;lastAccountPage=accountPage;displayedCategory=category;
     try{const lease=await call<View>('transition',{root,section,visible,accountPage});if(ticket!==sequence)return;view=lease;
       serviceActive=root==='hongguo'&&visible&&(section==='content'||accountPage&&section==='settings');

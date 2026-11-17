@@ -87,6 +87,25 @@ try{
     await page.getByRole('button',{name:'登录',exact:true}).waitFor();
     await page.screenshot({animations:'disabled',path:output+`signed-out-${width}.png`});
   }
+  await page.waitForFunction(()=>document.querySelector('.notice').textContent==='红果账号未登录');
+  const accountCalls=()=>page.evaluate(()=>window.fixtureCalls.filter(c=>c.command==='playback_call'&&['account.restore','favorites.read','account.login'].includes(c.method)).map(c=>c.method));
+  const beforeTabs=await accountCalls();
+  await localSettings().click();await page.getByRole('heading',{name:'红果账号',exact:true}).waitFor();
+  await page.locator('main .tabs:visible').getByRole('button',{name:'收藏',exact:true}).click();
+  await page.waitForSelector('[data-section=content]');
+  assert.equal(await page.getByRole('button',{name:'登录',exact:true}).isEnabled(),true);
+  assert.equal(await page.locator('.notice').textContent(),'红果账号未登录');
+  await page.locator('main .tabs:visible').getByRole('button',{name:'搜索',exact:true}).click();
+  await page.locator('main .tabs:visible').getByRole('button',{name:'收藏',exact:true}).click();
+  await page.waitForTimeout(100);
+  assert.deepEqual(await accountCalls(),beforeTabs,'signed-out tabs do not restore accounts, fetch favorites or log in');
+  await localSettings().click();await page.getByRole('heading',{name:'红果账号',exact:true}).waitFor();
+  await page.getByRole('switch',{name:'直连',exact:true}).click();
+  await page.waitForFunction(count=>window.fixtureCalls.filter(c=>c.command==='playback_call'&&c.method==='account.restore').length===count,
+    beforeTabs.filter(method=>method==='account.restore').length+1);
+  await page.waitForFunction(()=>!document.querySelector('[role=switch][aria-label=直连]').disabled);
+  await page.getByRole('button',{name:'登录',exact:true}).click();
+  assert.equal((await accountCalls()).filter(method=>method==='account.login').length,1,'explicit login still sends one request');
   assert.deepEqual(errors,[]);
   console.log('Passed: feature tabs, global-only gear, card opacity scope/persistence, root switches and hidden settings silence, dark/narrow layout.');
 }finally{await browser?.close();await server.close();await rm(scratch,{recursive:true,force:true});}
