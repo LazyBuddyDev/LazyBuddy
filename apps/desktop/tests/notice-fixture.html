@@ -6,7 +6,7 @@ const preferences={root:readerOnlineCase?'reader':'hongguo',dark:false,topmost:f
 let onlineLastDetail;const onlineShelf=new Map();let onlineNext=0;const onlineJobs=new Map();let releaseOnline;let releaseOnlineButton;
 if(readerOnlineCase){releaseOnlineButton=document.createElement('button');releaseOnlineButton.textContent='完成迟到搜索';releaseOnlineButton.hidden=true;releaseOnlineButton.style='position:fixed;bottom:32px;right:12px;z-index:999;display:none';releaseOnlineButton.onclick=()=>{releaseOnlineButton.hidden=true;releaseOnlineButton.style.display='none';releaseOnline?.();};document.body.append(releaseOnlineButton);}
 const news={auto_refresh:false,refresh_minutes:5,followed:[],hidden:[],order:[],default_followed:false};
-const readerPreferences={font_size:20,line_height:1.9,width:680,page_mode:'scroll',...window.fixtureReadingPreferences,...(window.fixturePersist?JSON.parse(localStorage.getItem('fixture.reader.preferences')??'{}'):{})};
+const readerPreferences={history_limit:100,font_size:20,line_height:1.9,width:680,page_mode:'scroll',...window.fixtureReadingPreferences,...(window.fixturePersist?JSON.parse(localStorage.getItem('fixture.reader.preferences')??'{}'):{})};
 window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback),invoke:async(command,args)=>{
  (window.fixtureCalls??=[]).push({command,...args});
  if(command==='plugin:event|listen'){(window.fixtureEvents??={})[args.event]=callbacks[args.handler-1];return callbacks.length;}
@@ -26,7 +26,7 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
  if(command==='reader_pick')return ['C:\\fixture\\样例.txt'];
  if(command==='reader_checkpoint'){const entry=(window.fixtureReaderEntries??[]).find(e=>e.id===args.position.book_id);if(entry)entry.position=args.position;return;}
  if(command==='reader_call'){
-   if(args.method==='health')return {capabilities:['online_search','online_details','online_shelf','shelf_membership',...(new URLSearchParams(location.search).has('reader-body')?['online_body']:[])]};
+   if(args.method==='health')return {capabilities:['online_search','online_details','online_shelf','shelf_membership','browsing_history',...(new URLSearchParams(location.search).has('reader-body')?['online_body']:[])]};
    if(args.method==='online.chapter'){if(args.args.chapter_id==='901'){const job=++onlineNext;onlineJobs.set(job,{body:true,...args.args});return {job,status:'pending'};}if(args.args.chapter_id==='902')throw 'source_access_denied';return {status:'complete',result:{total:30,chapter_version:'fixture-body-v1'}};}
    if(args.method==='online.search'){const job=++onlineNext;onlineJobs.set(job,args.args);return {job,status:'pending'};}
    if(args.method==='online.detail'){const job=++onlineNext;onlineJobs.set(job,{detail:true,...args.args});return {job,status:'pending'};}
@@ -55,11 +55,13 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
    if(args.method==='library.import'){const job=++onlineNext;onlineJobs.set(job,{import:true,...args.args});return {job,status:'pending'};}
    if(args.method==='import.status'){const request=onlineJobs.get(args.args.job),id='book-000000000000000000000001';const entry={id,title:'样例',author:'',source:{kind:'local',id:'fixture',format:'txt',encoding:request.encoding},content_version:'local-fixture',chapters:20,position:null,revision:0,updated_ms:Date.now(),in_shelf:true};window.fixtureReaderEntries=[...(window.fixtureReaderEntries??[]).filter(e=>e.id!==id),entry];return {status:'complete',result:{book:entry,duplicate:false}};}
    if(args.method==='library.remove'){onlineShelf.delete(args.args.book_id);window.fixtureReaderEntries=(window.fixtureReaderEntries??[]).filter(e=>e.id!==args.args.book_id);return {};}
+   if(args.method==='book.open'){const e=(window.fixtureReaderEntries??[]).find(e=>e.id===args.args.book_id);if(e)e.visited_ms=Date.now();}
    if(args.method==='book.open'&&onlineShelf.has(args.args.book_id))return {book:onlineShelf.get(args.args.book_id),position:(window.fixtureReaderEntries??[]).find(e=>e.id===args.args.book_id)?.position??null,revision:0};
    if(args.method==='book.open')return {book:{...(window.fixtureReaderEntries.find(e=>e.id===args.args.book_id)??window.fixtureReaderEntries[0]),warnings:[],chapters:Array.from({length:window.fixtureChapterCount??20},(_,i)=>({id:`c${i}`,title:`第${i+1}章 布局检查`,blocks:window.fixtureChapterBlocks??30}))},position:window.fixtureReaderPosition??null};
    if(args.method==='chapter.read'){const start=args.args.start??0,total=window.fixtureChapterBlocks??30;const result={start,total,chapter_version:onlineShelf.has(args.args.book_id)?'fixture-body-v1':null,blocks:Array.from({length:Math.max(0,Math.min(96,total-start))},(_,i)=>({id:`b${start+i}`,kind:'paragraph',text:`${start+i} ${window.fixtureParagraph??'用于布局验证的正文内容，保持自然换行和滚动。'}`,runs:[],resource:null}))};if(window.fixtureHoldChapter)await new Promise(resolve=>(window.fixtureChapterPending??=[]).push(resolve));return result;}
    if(args.method==='preferences.get')return readerPreferences;
    if(args.method==='preferences.set'){Object.assign(readerPreferences,args.args);if(window.fixturePersist)localStorage.setItem('fixture.reader.preferences',JSON.stringify(readerPreferences));return readerPreferences;}
+   if(args.method==='history.list'){const entries=(window.fixtureReaderEntries??[]).filter(e=>e.visited_ms).sort((a,b)=>b.visited_ms-a.visited_ms).slice(0,readerPreferences.history_limit);return {entries:entries.slice(args.args.start,args.args.start+args.args.limit),total:entries.length};}
    if(args.method==='library.list'){const entries=(window.fixtureReaderEntries??[]).filter(e=>e.in_shelf!==false);return {entries,total:entries.length,last_book:null};}}
  if(command==='news_call'){
    if(args.method==='sources')return window.designSources??[{id:'fixture',name:'样例来源'}];

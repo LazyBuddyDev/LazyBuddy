@@ -1,6 +1,6 @@
 export type Position = {book_id:string;content_version:string;chapter_id:string;block_id:string;offset:number;chapter_version?:string};
 export type Source = {kind:string;id:string;format:string;encoding:string};
-export type Entry = {id:string;title:string;author:string;source:Source;content_version:string;chapters:number;position:Position|null;revision:number;updated_ms:number;in_shelf?:boolean};
+export type Entry = {id:string;title:string;author:string;source:Source;content_version:string;chapters:number;position:Position|null;revision:number;updated_ms:number;in_shelf?:boolean;visited_ms?:number};
 export type Chapter = {id:string;title:string;blocks:number};
 export type Book = {id:string;title:string;author:string;source:Source;description?:string;content_version:string;chapters:Chapter[];warnings:string[]};
 export type OnlineEntry = {id:string;title:string;author:string;description:string};
@@ -8,7 +8,7 @@ export type OnlinePage = {source:'fanqie';entries:OnlineEntry[];cursor:number;ne
 export type OnlineBook = OnlineEntry & {source:'fanqie';chapters:{id:string;title:string}[]};
 export type Block = {id:string;kind:string;text:string;runs:{text:string;strong:boolean;emphasis:boolean;link?:string}[];resource:string|null};
 export type PageMode = 'horizontal'|'vertical'|'scroll';
-export type ReadingPreferences = {font_size:number;line_height:number;width:number;page_mode:PageMode};
+export type ReadingPreferences = {font_size:number;line_height:number;width:number;page_mode:PageMode;history_limit?:number};
 export function viewportStep(height:number,line:number):number { return Math.max(line,Math.floor((height-32)/line)*line); }
 export function pageOffset(offset:number,step:number,extent:number,direction:number):number { return Math.max(0,Math.min(extent,offset+direction*step)); }
 export const pageSize=96;

@@ -20,13 +20,14 @@
 - `[x]` 补充本应用在线书架的目录增量核对、未读章节与追更状态；处理章节新增/改名/修订及位置失效，优先进入书库或手动检查。后台检查/通知须另行确定生命周期边界。
 - `[x]` 在实际来源验证基础上推进多来源搜索、同书识别及换源/章节映射；不能仅凭同名自动合并，来源支持与阅读能力分别验收。其他完整阅读器能力及跨系统支持先明确需求，不预建全部功能。
 - `[x]` 随功能阶段完成配套宿主/模块的安装更新和数据保留验证；后续功能阶段继续配套交付。当前宿主v1.0.4与reader0.1.3已发布、源码均已推送；宿主与服务CI、匿名包哈希、14个旧端点保留、真实HTTPS小说/新闻安装卸载和书库数据保留、1.0.3→1.0.4线上替换重启通过。证据tmp/verification-release-1.0.4（本机），不外推为真实账号或播放验收。
-- 必要上下文：服务源码在target/service-exports/reader-service，独立Git分支main、当前源码以独立仓库HEAD为准（仅本地，远端基线eb4df97），远端https://github.com/LazyBuddyDev/reader-service，源码不可按缓存删除；现有发布版仍为0.1.3；新完整开发包在target/packages/development/reader/0.1.10；已验收的0.1.5暂存包保留为本轮基线，0.1.10实机验收后核对清理；失效0.1.4实验暂存包已清理。start.bat -BuildOnly构建通过；占用目标EXE的项目实例已由CLI正常退出，未自动启动新宿主或替换实际安装模块，下次start.bat启动会按既有流程应用开发包。API及支持边界以服务docs/module-api.md为准。首版自动化证据在tmp/verification-reader/report.json及浅深主题截图，仅本机有效；不外推为在线来源或跨系统验收。
+- 必要上下文：服务源码在target/service-exports/reader-service，独立Git分支main、当前源码以独立仓库HEAD为准（仅本地，远端基线eb4df97），远端https://github.com/LazyBuddyDev/reader-service，源码不可按缓存删除；现有发布版仍为0.1.3；新完整开发包在target/packages/development/reader/0.1.11；已验收的0.1.5暂存包保留为本轮基线，0.1.11实机验收后核对清理；失效0.1.4实验暂存包已清理。start.bat -BuildOnly构建通过；占用目标EXE的项目实例已由CLI正常退出，未自动启动新宿主或替换实际安装模块，下次start.bat启动会按既有流程应用开发包。API及支持边界以服务docs/module-api.md为准。首版自动化证据在tmp/verification-reader/report.json及浅深主题截图，仅本机有效；不外推为在线来源或跨系统验收。
 - `[√]` 查找入口折叠、上一处/下一处双向循环及x/y计数、当前匹配独立高亮、左侧目录已实现（滚动条现统一随区域悬停显示）；同段多次匹配与跨行内样式匹配有单元测试，真实模块隔离验证通过。页面切换完成后才初始化阅读请求，避免无效页面提示；证据tmp/verification-reader/search-directory.png及report.json（本机）。
 - `[√]` 独立服务打包按Windows目标收集实际依赖许可，完整0.1.9包及ZIP生成成功；未覆盖不可变版本。用户将构建入口改名为start.bat，已同步Git跟踪、规范、文档、开发版提示和关联验证；BAT逻辑未改。原生隔离检查确认更新入口提示新名称且保留偏好；一次沙箱启动失败的自有QA进程及临时配置已清理，同检查在可访问Windows IPC的环境通过。
 - 当前边界：用户确认App搜索可用，暂不接内嵌浏览器。正文产品已接入，实际安装模块尚未替换；生产身份将在用户首次明确读章时保存，本轮只使用独立QA凭据并收尾清理。无会员激活、账号会话、身份轮换、降级恢复或第三方正文代理。协议与支持边界归服务docs/module-api.md。未推送或发布。
 - 必要证据：搜索为tmp/verification-reader-online/app-live.json及report.json；详情为tmp/verification-reader-detail/service-live.json、report.json和app-reader-probe.json；书架为tmp/verification-reader-shelf/service-live.json和report.json；更新入口为tmp/verification-development-updates/native.json（均仅本机）。保留脱敏摘要与小型复验脚本，原始网页、响应和验证头已清理，临时Vite已停止。
 - `[√]` 书架状态独立于阅读记录：支持未入架直接阅读、详情和阅读工具栏星标增删，移出后保留副本及进度；导入改为文件/编码弹窗，返回只显示箭头、目录改图标，公共滚动容器对称预留空间。reader0.1.10完整开发包已暂存；12项在线服务测试、5项本地集成、6项前端及宿主代数测试通过，完整包隔离验证移出后继续读取、重启保留状态/位置及重复导入恢复。样例UI验证两处星标和未入架阅读、导入确认、440×540窄窗无溢出/左右留白一致；证据宿主tmp/verification-reader-controls，未做实际安装模块联合验收。
-- 下一步：用户通过start.bat应用0.1.10并实机验收正文/位置；随后推进书架目录增量和追更。真实完整包与样例界面已分别通过，仍不外推全书或长期稳定性。
+- `[√]` 浏览记录页已在书架右侧，在线搜书移至最左；记录复用已有书籍/位置，按最近打开排序并去重，首次从旧位置初始化。设置提供10/20/50/100/200/500条上限（默认100），缩小上限原子裁剪，不删除书架、副本和进度；独立保留两页筛选/滚动。reader0.1.11完整开发包已暂存；7项本地集成、12项在线、6项前端与宿主代数测试通过，旧数据初始化/不复活、裁剪、保存失败隔离和重启有覆盖。完整包隔离读回及样例UI浏览记录→阅读→返回、未收藏记录和设置选择通过，start.bat -BuildOnly成功；证据宿主tmp/verification-reader-history，实际安装模块联合验收仍待完成。
+- 下一步：用户通过start.bat应用0.1.11并实机验收正文/位置；随后推进书架目录增量和追更。真实完整包与样例界面已分别通过，仍不外推全书或长期稳定性。
 
 
 

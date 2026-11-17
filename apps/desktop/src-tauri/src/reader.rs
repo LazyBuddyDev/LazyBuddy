@@ -222,6 +222,7 @@ pub async fn reader_call(
             | "online.open"
             | "online.status"
             | "online.cancel"
+            | "history.list"
             | "library.list"
             | "library.import"
             | "library.remove"
@@ -291,6 +292,7 @@ mod tests {
         assert!(allowed(&m, generation, "online.search"));
         assert!(allowed(&m, generation, "online.detail"));
         assert!(allowed(&m, generation, "online.chapter"));
+        assert!(allowed(&m, generation, "history.list"));
         assert!(allowed(&m, generation, "online.open"));
         assert!(allowed(&m, generation, "library.favorite"));
         assert!(allowed(&m, generation, "library.add"));
@@ -299,6 +301,7 @@ mod tests {
         assert!(!allowed(&m, generation, "chapter.read"));
         assert!(!allowed(&m, generation, "online.status"));
         assert!(!allowed(&m, generation, "online.chapter"));
+        assert!(!allowed(&m, generation, "history.list"));
         assert!(!allowed(&m, generation, "online.open"));
         assert!(!allowed(&m, generation, "library.favorite"));
         assert!(!allowed(&m, generation, "library.add"));
@@ -309,6 +312,7 @@ mod tests {
         assert!(!allowed(&m, m.view.generation, "online.search"));
         assert!(!allowed(&m, m.view.generation, "online.detail"));
         assert!(!allowed(&m, m.view.generation, "online.chapter"));
+        assert!(!allowed(&m, m.view.generation, "history.list"));
         assert!(!allowed(&m, m.view.generation, "online.open"));
         assert!(!allowed(&m, m.view.generation, "library.favorite"));
         assert!(!allowed(&m, m.view.generation, "library.add"));
