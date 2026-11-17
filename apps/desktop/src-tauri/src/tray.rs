@@ -6,8 +6,23 @@ use tauri::{
 
 fn menu_action(id: &str) -> Option<&'static str> {
     match id {
-        "shell-show" => Some("show"),
+        "shell-show" => Some("activate"),
         "shell-quit" => Some("quit"),
+        _ => None,
+    }
+}
+
+fn icon_action(event: &TrayIconEvent) -> Option<&'static str> {
+    match event {
+        TrayIconEvent::DoubleClick {
+            button: MouseButton::Left,
+            ..
+        } => Some("activate"),
+        TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+        } => Some("show"),
         _ => None,
     }
 }
@@ -39,15 +54,8 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
             }
         })
         .on_tray_icon_event(|tray, event| {
-            if matches!(
-                event,
-                TrayIconEvent::Click {
-                    button: MouseButton::Left,
-                    button_state: MouseButtonState::Up,
-                    ..
-                }
-            ) {
-                dispatch(tray.app_handle(), "show");
+            if let Some(action) = icon_action(&event) {
+                dispatch(tray.app_handle(), action);
             }
         })
         .build(app)?;
@@ -58,8 +66,35 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
 mod tests {
     use super::*;
     #[test]
+    fn only_left_double_click_activates_the_window() {
+        let event = |button| TrayIconEvent::DoubleClick {
+            id: "shell".into(),
+            position: tauri::PhysicalPosition::new(0.0, 0.0),
+            rect: tauri::Rect {
+                position: tauri::PhysicalPosition::new(0, 0).into(),
+                size: tauri::PhysicalSize::new(16, 16).into(),
+            },
+            button,
+        };
+        assert_eq!(icon_action(&event(MouseButton::Left)), Some("activate"));
+        assert_eq!(icon_action(&event(MouseButton::Right)), None);
+        assert_eq!(
+            icon_action(&TrayIconEvent::Click {
+                id: "shell".into(),
+                position: tauri::PhysicalPosition::new(0.0, 0.0),
+                rect: tauri::Rect {
+                    position: tauri::PhysicalPosition::new(0, 0).into(),
+                    size: tauri::PhysicalSize::new(16, 16).into(),
+                },
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+            }),
+            Some("show")
+        );
+    }
+    #[test]
     fn only_our_explicit_exit_item_quits_the_app() {
-        assert_eq!(menu_action("shell-show"), Some("show"));
+        assert_eq!(menu_action("shell-show"), Some("activate"));
         assert_eq!(menu_action("shell-quit"), Some("quit"));
         assert_eq!(menu_action("close"), None);
         assert_eq!(menu_action("quit"), None);

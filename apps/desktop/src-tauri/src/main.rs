@@ -187,7 +187,7 @@ fn show_without_focus(window: &tauri::WebviewWindow) -> Result<(), String> {
 fn window_action(action: &str, window: tauri::WebviewWindow) -> Result<(), String> {
     if !matches!(
         action,
-        "hide" | "close" | "minimize" | "show" | "expand" | "quit"
+        "hide" | "close" | "minimize" | "show" | "activate" | "expand" | "quit"
     ) {
         return Err("unknown window action".into());
     }
@@ -216,6 +216,16 @@ fn window_action(action: &str, window: tauri::WebviewWindow) -> Result<(), Strin
             }
         }
         "show" => show_without_focus(&window)?,
+        "activate" => {
+            show_without_focus(&window)?;
+            let hwnd = window.hwnd().map_err(|_| "window unavailable")?;
+            if unsafe {
+                windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow(hwnd.0 as _)
+            } == 0
+            {
+                return Err("activate failed".into());
+            }
+        }
         "expand" => dock::expand(&window).map_err(|_| "expand failed")?,
         "quit" => {
             if !window.state::<reader::State>().begin_exit() {
