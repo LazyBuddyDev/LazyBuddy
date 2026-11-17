@@ -9,6 +9,9 @@ test('reading positions map to bounded pages and count chapters from zero',()=>{
   assert.equal(progressLabel({source:{kind:'fanqie'},position:null,chapters:4423} as Entry),'共 4423 章');
   assert.match(readerError('source_body_unavailable'),/正文暂不可用/);
   assert.match(readerError('source_detail_required'),/重新载入目录/);
+  assert.match(readerError('source_helper_missing'),/正文组件缺失/);
+  assert.match(readerError('credential_read_failed'),/原有凭据已保留/);
+  assert.equal(progressLabel({source:{kind:'fanqie'},position:{chapter_id:'123'},chapters:10} as Entry),'继续阅读 · 共 10 章');
 });
 test('search highlighting retains the original text and treats markup as text',()=>{
   const text='😀<script>你好你好';const result=markedRuns({text,runs:[]} as unknown as Block,'你好');

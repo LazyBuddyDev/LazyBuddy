@@ -51,6 +51,12 @@ impl State {
                     .to_string_lossy()
                     .into_owned(),
             ));
+            if lazybuddy_host_control::isolated() {
+                launch.environment.push((
+                    "LAZYBUDDY_CREDENTIAL_SCOPE".into(),
+                    lazybuddy_host_control::instance().map_err(|_| "invalid_credential_scope")?,
+                ));
+            }
             *slot = Some(Session::with_environment(
                 launch.executable,
                 launch.arguments,
@@ -212,6 +218,7 @@ pub async fn reader_call(
         "health"
             | "online.search"
             | "online.detail"
+            | "online.chapter"
             | "online.status"
             | "online.cancel"
             | "library.list"
@@ -281,11 +288,13 @@ mod tests {
         assert!(allowed(&m, generation, "chapter.read"));
         assert!(allowed(&m, generation, "online.search"));
         assert!(allowed(&m, generation, "online.detail"));
+        assert!(allowed(&m, generation, "online.chapter"));
         assert!(allowed(&m, generation, "library.add"));
         m.transition(crate::Root::News, crate::Section::Content, true);
         m.transition(crate::Root::Reader, crate::Section::Content, true);
         assert!(!allowed(&m, generation, "chapter.read"));
         assert!(!allowed(&m, generation, "online.status"));
+        assert!(!allowed(&m, generation, "online.chapter"));
         assert!(!allowed(&m, generation, "library.add"));
         m.transition(crate::Root::Reader, crate::Section::Settings, true);
         m.account_page = true;
@@ -293,6 +302,7 @@ mod tests {
         assert!(!allowed(&m, m.view.generation, "chapter.read"));
         assert!(!allowed(&m, m.view.generation, "online.search"));
         assert!(!allowed(&m, m.view.generation, "online.detail"));
+        assert!(!allowed(&m, m.view.generation, "online.chapter"));
         assert!(!allowed(&m, m.view.generation, "library.add"));
         m.transition(crate::Root::Reader, crate::Section::Content, false);
         assert!(!allowed(&m, m.view.generation, "chapter.read"));

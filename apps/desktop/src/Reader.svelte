@@ -14,7 +14,8 @@
   let onlineScrollTop=0;
   let detailsAvailable=$state(false),onlineSelection=$state<OnlineEntry>(),onlineDetail=$state<OnlineBook>(),onlineOpening=$state(false),directoryPage=$state(0);
   let detailScroll=$state<HTMLElement>();let detailScrollTop=0;
-  let shelfAvailable=$state(false),adding=$state(false),detailFromShelf=$state(false);
+  let shelfAvailable=$state(false),bodyAvailable=$state(false),adding=$state(false),detailFromShelf=$state(false);
+  let chapterVersion:string|undefined;
   const shelved=$derived(!!onlineSelection&&entries.some(e=>e.source.kind==='fanqie'&&e.source.id===onlineSelection?.id));
   let onlineTicket:ReturnType<typeof lease>|undefined;
   let scroll=$state<HTMLElement>();let epoch=0;let initialized=false;let capabilitiesLoaded=false;let needsList=true;let lastBook=$state<string|null>(null);
@@ -41,7 +42,7 @@
     const result=await invoke<T>('reader_call',{method,args,generation:ticket.generation});
     if(!valid(ticket))throw Error('stale_reader_reply');return result;
   }
-  function report(error:unknown,ticket=lease()){if(valid(ticket)){failure=readerError(error);notice(failure);}}
+  function report(error:unknown,ticket=lease(),context=''){if(valid(ticket)){failure=(context?`${context}：`:'')+readerError(error);notice(failure);}}
   async function list(ticket=lease()){
     const all:Entry[]=[];let offset=0;
     while(valid(ticket)){
@@ -56,7 +57,7 @@
     const ticket=lease();failure='';
     try{
       preferences=await call<ReadingPreferences>('preferences.get',{},ticket);
-      if(!settings&&!capabilitiesLoaded){const health=await call<{capabilities:string[]}>('health',{},ticket);onlineAvailable=health.capabilities.includes('online_search');detailsAvailable=health.capabilities.includes('online_details');shelfAvailable=health.capabilities.includes('online_shelf');capabilitiesLoaded=true;}
+      if(!settings&&!capabilitiesLoaded){const health=await call<{capabilities:string[]}>('health',{},ticket);onlineAvailable=health.capabilities.includes('online_search');detailsAvailable=health.capabilities.includes('online_details');shelfAvailable=health.capabilities.includes('online_shelf');bodyAvailable=health.capabilities.includes('online_body');capabilitiesLoaded=true;}
       if(!settings&&online&&(needsList||!initialized))await list(ticket);
       if(!settings&&!online){if(needsList||!initialized)await list(ticket);if(book){await tick();if(currentPosition)if(scroll)restoreAnchor(scroll,currentPosition);metrics();if(needsMore())await extend(1,ticket);watchImages();}}
       if(!settings&&online){await tick();if(valid(ticket)&&onlineScroll)onlineScroll.scrollTop=onlineScrollTop;}
@@ -80,7 +81,7 @@
   async function checkpoint(){
     if(!active||settings||online||!book||!scroll||restoring||swapping||!blocks.length)return;
     const anchor=visibleAnchor(scroll);if(!anchor)return;
-    const position:Position={book_id:book.id,content_version:book.content_version,chapter_id:book.chapters[chapter].id,...anchor};
+    const position:Position={book_id:book.id,content_version:book.content_version,chapter_id:book.chapters[chapter].id,...(chapterVersion?{chapter_version:chapterVersion}:{}),...anchor};
     currentPosition=position;
     if(JSON.stringify(position)===JSON.stringify(stagedPosition)){await checkpointWrites;return;}
     stagedPosition=position;const ownerGeneration=generation;
@@ -94,27 +95,35 @@
     const ticket=lease();void checkpoint().catch(error=>report(error,ticket));
     clearTimeout(timer);timer=setTimeout(()=>{timer=undefined;void call('progress.flush',{},ticket).catch(error=>report(error,ticket));},600);
   }
-  async function open(entry:Entry){
-    if(loading||!active)return;const ticket=lease();loading=true;failure='';
+  async function open(entry:Entry,selectedChapter?:string){
+    if(loading||!active)return;const ticket=lease();loading=true;failure='';notice('');
     try{
       await checkpoint();await call('progress.flush',{},ticket);
       const result=await call<{book:Book;position:Position|null}>('book.open',{book_id:entry.id},ticket);
-      if(entry.source.kind==='fanqie'){
+      if(entry.source.kind==='fanqie'&&!bodyAvailable){
         onlineSelection={id:entry.source.id,title:result.book.title,author:result.book.author,description:result.book.description??''};
         onlineDetail={...onlineSelection,source:'fanqie',chapters:result.book.chapters};
         detailFromShelf=true;online=true;directoryPage=0;detailScrollTop=0;onlineError='';return;
       }
-      book=result.book;currentPosition=result.position??undefined;query='';clearSearch();
-      chapter=Math.max(0,book.chapters.findIndex(c=>c.id===result.position?.chapter_id));
-      await load(chapter,result.position?pageStart(result.position.block_id):0,result.position??undefined,ticket);
-      if(book.warnings.length)notice(book.warnings.join('；'));
-    }catch(error){report(error,ticket);}finally{if(valid(ticket))loading=false;}
+      const target=result.book;const position=selectedChapter?undefined:result.position??undefined;
+      const next=Math.max(0,target.chapters.findIndex(c=>c.id===(selectedChapter??position?.chapter_id)));
+      await load(next,position?pageStart(position.block_id):0,position,ticket,target);
+      if(!valid(ticket))return;query='';clearSearch();
+      if(target.warnings.length)notice(target.warnings.join('；'));
+    }catch(error){report(error,ticket,entry.title);if(valid(ticket)&&online)onlineError=readerError(error);}finally{if(valid(ticket))loading=false;}
   }
-  async function load(nextChapter:number,nextStart=0,position?:Position,ticket=lease()){
-    if(!book)return;
+  async function load(nextChapter:number,nextStart=0,position?:Position,ticket=lease(),target=book){
+    if(!target)return;
+    if(target.source.kind==='fanqie'){
+      const metadata=await onlineRequest<{total:number;chapter_version:string}>('online.chapter',{book_id:target.id,chapter_id:target.chapters[nextChapter].id},ticket);
+      if(!metadata)return;
+      if(position&&position.chapter_version!==metadata.chapter_version){position=undefined;nextStart=0;notice('章节内容已变化，已回到本章开头');}
+      if(nextStart<0)nextStart=Math.max(0,Math.floor((metadata.total-1)/pageSize)*pageSize);
+    }
+    const result=await call<{blocks:Block[];start:number;total:number;chapter_version?:string|null}>('chapter.read',{book_id:target.id,chapter_id:target.chapters[nextChapter].id,start:nextStart},ticket);
     observer?.disconnect();resourceQueue=[];images={};
-    const result=await call<{blocks:Block[];start:number;total:number}>('chapter.read',{book_id:book.id,chapter_id:book.chapters[nextChapter].id,start:nextStart},ticket);
-    restoring=true;blocks=result.blocks;chapter=nextChapter;start=result.start;total=result.total;
+    restoring=true;book=target;online=false;blocks=result.blocks;chapter=nextChapter;start=result.start;total=result.total;chapterVersion=result.chapter_version??undefined;currentPosition=position;
+    book.chapters[nextChapter].blocks=total;
     await tick();if(!valid(ticket))return;
     if(!scroll){restoring=false;return;}scroll.scrollTop=0;scroll.scrollLeft=0;if(position)restoreAnchor(scroll,position);restoring=false;
     metrics();if(needsMore())await extend(1,ticket);if(!valid(ticket))return;await checkpoint();watchImages();
@@ -122,8 +131,8 @@
   async function move(nextChapter:number,nextStart=0,ticket=lease()){
     if(!book||loading||nextChapter<0||nextChapter>=book.chapters.length)return;
     if(nextChapter!==chapter)clearSearch();
-    loading=true;failure='';
-    try{await checkpoint();await call('progress.flush',{},ticket);await load(nextChapter,nextStart,undefined,ticket);}catch(error){report(error,ticket);}finally{if(valid(ticket))loading=false;}
+    loading=true;failure='';notice('');
+    try{await checkpoint();await call('progress.flush',{},ticket);await load(nextChapter,nextStart,undefined,ticket);}catch(error){report(error,ticket,`${book.title} · ${book.chapters[nextChapter].title}`);}finally{if(valid(ticket))loading=false;}
   }
   async function back(){
     if(loading||turning||extending)return;
@@ -152,7 +161,7 @@
   async function exchangePage(direction:number,ticket:ReturnType<typeof lease>,change:()=>Promise<boolean|void>){
     if(!scroll)return false;
     const element=scroll,frame=element.parentElement!;
-    const old={chapter,start,total,blocks,images,currentPosition,x:element.scrollLeft,y:element.scrollTop};
+    const old={chapter,start,total,blocks,images,currentPosition,chapterVersion,x:element.scrollLeft,y:element.scrollTop};
     const ghost=element.cloneNode(true) as HTMLElement;
     ghost.classList.remove('reader-scroll');ghost.setAttribute('aria-hidden','true');ghost.inert=true;
     ghost.querySelectorAll('[data-block],[data-resource]').forEach(node=>{node.removeAttribute('data-block');node.removeAttribute('data-resource');});
@@ -162,7 +171,7 @@
     const finish=(rollback:boolean)=>{
       if(done)return;done=true;cancelled=rollback;animations.forEach(animation=>animation.cancel());ghost.remove();element.style.opacity='';
       if(finishTurn===cancel)finishTurn=undefined;
-      if(rollback){ticket.cancelled=true;turning=false;loading=false;extending=false;restoring=false;resourceQueue=[];observer?.disconnect();chapter=old.chapter;start=old.start;total=old.total;blocks=old.blocks;images=old.images;currentPosition=old.currentPosition;
+      if(rollback){ticket.cancelled=true;turning=false;loading=false;extending=false;restoring=false;resourceQueue=[];observer?.disconnect();chapter=old.chapter;start=old.start;total=old.total;blocks=old.blocks;images=old.images;currentPosition=old.currentPosition;chapterVersion=old.chapterVersion;
         const restored=lease();void tick().then(()=>{if(valid(restored)&&scroll===element&&!turning&&!loading){if(old.currentPosition)restoreAnchor(element,old.currentPosition);else{element.scrollLeft=old.x;element.scrollTop=old.y;}metrics();watchImages();}});
       }
       swapping=false;
@@ -193,7 +202,7 @@
       if(!valid(ticket))return;metrics();step=horizontal?scroll.getBoundingClientRect().width:viewportStep(scroll.clientHeight,preferences.font_size*preferences.line_height);
       if(direction>0&&offset>=extent-1||direction<0&&offset<=1){
         const next=chapter+direction;if(next<0||next>=book.chapters.length)return;
-        const blockStart=direction>0?0:Math.floor((book.chapters[next].blocks-1)/pageSize)*pageSize;
+        const blockStart=direction>0?0:book.source.kind==='fanqie'?-1:Math.floor((book.chapters[next].blocks-1)/pageSize)*pageSize;
         const changed=await exchangePage(direction,ticket,async()=>{
           await move(next,blockStart,ticket);if(!valid(ticket)||chapter!==next||!scroll)return false;
           if(direction<0){metrics();scroll.scrollTo({left:horizontal?extent:0,top:horizontal?0:extent,behavior:'instant'});}
@@ -246,7 +255,7 @@
   }
   async function find(direction=0){
     if(!book||!query.trim()||loading||turning||extending)return;
-    const ticket=lease();const run=++searchRun;loading=true;failure='';
+    const ticket=lease();const run=++searchRun;loading=true;failure='';notice('');
     const needle=query.trim();
     try{
       if(searchQuery!==needle){
@@ -266,7 +275,7 @@
       const text=page.blocks.find(b=>b.id===block.id)!.text;
       const offset=matchOffsets(text,needle)[ordinal];
       matchCurrent=next;selectedMatch={id:block.id,offset};
-      const target:Position={book_id:book.id,content_version:book.content_version,chapter_id:book.chapters[chapter].id,block_id:block.id,offset:Array.from(text.slice(0,offset)).length};
+      const target:Position={book_id:book.id,content_version:book.content_version,chapter_id:book.chapters[chapter].id,...(chapterVersion?{chapter_version:chapterVersion}:{}),block_id:block.id,offset:Array.from(text.slice(0,offset)).length};
       await load(chapter,pageStart(block.id),target,ticket);
     }catch(error){report(error,ticket);}finally{if(valid(ticket))loading=false;}
   }
@@ -296,9 +305,10 @@
       onlineTerm=term;onlinePage=result;onlineScrollTop=0;await tick();if(valid(ticket)&&onlineScroll)onlineScroll.scrollTop=0;
     }catch(error){if(valid(ticket)){onlineError=readerError(error);notice(onlineError);}}finally{if(valid(ticket))onlineSearching=false;}
   }
-  async function onlineRequest<T>(method:'online.search'|'online.detail',args:Record<string,unknown>,ticket:ReturnType<typeof lease>):Promise<T|undefined>{
+  async function onlineRequest<T>(method:'online.search'|'online.detail'|'online.chapter',args:Record<string,unknown>,ticket:ReturnType<typeof lease>):Promise<T|undefined>{
     onlineTicket=ticket;
-    const job=await call<{job:number}>(method,args,ticket);
+    const job=await call<{job:number;status:string;result?:T}>(method,args,ticket);
+    if(job.status==='complete')return job.result;
     let status:{status:string;error?:string;result?:T};
     do{await delay();if(!valid(ticket))return;status=await call('online.status',{job:job.job},ticket);}while(status.status==='pending');
     if(status.status==='failed')throw status.error;
@@ -317,6 +327,11 @@
     if(pending)await invoke('reader_suspend');
     if(detailFromShelf){detailFromShelf=false;online=false;return;}
     await tick();if(onlineScroll)onlineScroll.scrollTop=onlineScrollTop;
+  }
+  async function readOnline(chapter?:string){
+    if(!onlineDetail||loading||adding||!shelved)return;
+    const entry=entries.find(e=>e.source.kind==='fanqie'&&e.source.id===onlineDetail?.id);
+    if(entry)await open(entry,chapter);
   }
   async function addOnline(){
     if(adding||!onlineDetail||shelved)return;
@@ -363,13 +378,13 @@
   </div></section>
 {:else if online}
   {#if onlineSelection}
-    <div class="collection-toolbar"><button title={detailFromShelf?'返回书架':'返回搜索结果'} onclick={backOnline}><Icon name="arrow" size={16}/>{detailFromShelf?'书架':'搜索结果'}</button><strong class="reader-title" title={onlineDetail?.title??onlineSelection.title}>{onlineDetail?.title??onlineSelection.title}</strong>{#if shelfAvailable}<button title={shelved?'已加入书架':'加入书架'} disabled={!onlineDetail||adding||shelved} onclick={addOnline}>{shelved?'已在书架':adding?'加入中…':'加入书架'}</button>{/if}</div>
+    <div class="collection-toolbar"><button title={detailFromShelf?'返回书架':'返回搜索结果'} onclick={backOnline}><Icon name="arrow" size={16}/>{detailFromShelf?'书架':'搜索结果'}</button><strong class="reader-title" title={onlineDetail?.title??onlineSelection.title}>{onlineDetail?.title??onlineSelection.title}</strong>{#if shelfAvailable}<button title={shelved?'已加入书架':'加入书架'} disabled={!onlineDetail||adding||shelved} onclick={addOnline}>{shelved?'已在书架':adding?'加入中…':'加入书架'}</button>{/if}{#if bodyAvailable}<button title={shelved?'继续阅读此书':'请先加入书架'} disabled={!shelved||loading} onclick={()=>readOnline()}>{loading?'载入中…':'继续阅读'}</button>{/if}</div>
     <div class="reader-library" bind:this={detailScroll} aria-label="书籍详情与目录" aria-busy={onlineOpening} onscroll={e=>{if(active&&!settings&&online&&e.currentTarget===detailScroll)detailScrollTop=e.currentTarget.scrollTop;}}>
       <span class="item-description">{onlineDetail?.author??onlineSelection.author} · 番茄小说</span>
       <p class="item-description">{onlineDetail?.description??onlineSelection.description}</p>
       {#if onlineError}<p role="alert" class="reader-online-error">{onlineError}</p>{/if}
-      {#if onlineDetail}<p class="item-description">目录 · 共 {onlineDetail.chapters.length} 章 · 暂不能读取正文</p>
-        {#each onlineDetail.chapters.slice(directoryPage*100,(directoryPage+1)*100) as item (item.id)}<div class="collection-row"><span class="item-title" title={item.title}>{item.title}</span></div>{/each}
+      {#if onlineDetail}<p class="item-description">目录 · 共 {onlineDetail.chapters.length} 章{bodyAvailable?'':' · 暂不能读取正文'}</p>
+        {#each onlineDetail.chapters.slice(directoryPage*100,(directoryPage+1)*100) as item (item.id)}<div class="collection-row"><span class="item-title" title={item.title}>{item.title}</span>{#if bodyAvailable}<button aria-label={`阅读《${item.title}》`} title={shelved?`阅读《${item.title}》`:'请先加入书架'} disabled={!shelved||loading} onclick={()=>readOnline(item.id)}>阅读</button>{/if}</div>{/each}
         {#if !onlineDetail.chapters.length}<div class="list-empty">暂无章节</div>{/if}
       {:else if onlineOpening}<div class="list-empty" role="status">正在载入目录…</div>
       {:else}<button title="重新载入书籍详情与目录" onclick={()=>openOnline(onlineSelection!)}>载入目录</button>{/if}
@@ -408,7 +423,7 @@
   <div class="collection-toolbar"><label class="search-box"><Icon name="search" size={16}/><input aria-label="筛选书名" placeholder="筛选书名" bind:value={filter}/></label><button title="导入TXT或EPUB文件" onclick={importBooks} disabled={importing}>导入小说</button></div>
   <label class="collection-options">TXT编码<select aria-label="TXT编码" bind:value={encoding} disabled={importing}>{#each [['auto','自动识别'],['utf-8','UTF-8'],['gb18030','GB18030 / GBK'],['big5','Big5'],['utf-16le','UTF-16 LE'],['utf-16be','UTF-16 BE']] as [value,label]}<option {value}>{label}</option>{/each}</select></label>
   {#if !entries.length}<div class="list-empty">{failure?'书库暂未载入':'导入TXT或EPUB，开始阅读'}{#if failure}<button title="重新读取书库" onclick={()=>{needsList=true;void activate();}}>重试</button>{/if}</div>
-  {:else}<div class="reader-library">{#each filtered as entry (entry.id)}<div class="reader-book collection-row"><button class="reader-book-open" aria-label={`${entry.source.kind==='fanqie'?'查看目录':'继续阅读'}《${entry.title}》`} title={`${entry.source.kind==='fanqie'?'查看目录':'继续阅读'}《${entry.title}》`} disabled={loading} onclick={()=>open(entry)}><strong class="item-title">{entry.title}</strong><span class="item-description">{entry.author?`${entry.author} · `:''}{entry.source.kind==='fanqie'?'番茄小说':entry.source.format.toUpperCase()} · {progressLabel(entry)}{lastBook===entry.id?' · 最近阅读':''}</span></button>
+  {:else}<div class="reader-library">{#each filtered as entry (entry.id)}<div class="reader-book collection-row"><button class="reader-book-open" aria-label={`${entry.source.kind==='fanqie'&&!bodyAvailable?'查看目录':'继续阅读'}《${entry.title}》`} title={`${entry.source.kind==='fanqie'&&!bodyAvailable?'查看目录':'继续阅读'}《${entry.title}》`} disabled={loading} onclick={()=>open(entry)}><strong class="item-title">{entry.title}</strong><span class="item-description">{entry.author?`${entry.author} · `:''}{entry.source.kind==='fanqie'?'番茄小说':entry.source.format.toUpperCase()} · {progressLabel(entry)}{lastBook===entry.id?' · 最近阅读':''}</span></button>
     {#if removing===entry.id}<div class="reader-remove row-actions"><span>{entry.source.kind==='fanqie'?'从本应用书架移除此书及阅读记录？':'移除书库副本和阅读记录？原文件保留。'}</span><button title="确认移除书籍" onclick={()=>remove(entry)}>确认移除</button><button title="取消移除书籍" onclick={()=>removing=undefined}>取消</button></div>{:else}<div class="row-actions"><button aria-label={`移除《${entry.title}》`} title={`移除《${entry.title}》`} onclick={()=>removing=entry.id}>移除</button></div>{/if}</div>{/each}{#if !filtered.length}<div class="list-empty">没有匹配的书籍</div>{/if}</div>{/if}
 {/if}
 </section>
