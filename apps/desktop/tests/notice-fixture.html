@@ -13,7 +13,7 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
  if(command==='snapshot')return {media_route:'browser_service',view:{root:'hongguo',section:'content',visible:true,generation}};
  if(command==='transition')return {...args,generation:++generation};
  if(command==='playback_call'){
-   if(args.method==='account.restore')return {state:'signed_in',name:'用户样例'};
+   if(args.method==='account.restore')return window.fixtureSignedOut?{state:'idle',name:''}:{state:'signed_in',name:'用户样例'};
    if(args.method==='progress.read')return {history:{}};
    if(args.method==='favorites.read')return {state:'signed_in',name:'用户样例',favorites:[]};
    return {};

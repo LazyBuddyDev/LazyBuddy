@@ -240,7 +240,7 @@
   {#if accountOnly}
     <section class="content-width feature-settings">{@render tabs()}<div class="settings-content account-content"><h1>红果账号</h1><div class="setting-row"><strong>直连</strong><Switch label="直连" checked={direct} disabled={busy||loginPending(account.state)||account.operation==='pending'} onchange={changeConnection}/></div><div class="setting-row"><strong>默认显示收藏</strong><Switch label="默认显示收藏" checked={defaultFavorites} onchange={value=>defaultFavorites=value}/></div>{#if account.state==='signed_in'}<p>{account.name}</p><button class="logout" onclick={logout}>退出登录</button>{:else}<button onclick={login} disabled={!active||!live||busy||loginPending(account.state)}>登录</button>{/if}</div></section>
   {:else if account.state!=='signed_in'}
-    <section class="account-login">{@render tabs()}<button onclick={login} disabled={!active||!live||busy||loginPending(account.state)}>登录</button></section>
+    <section class="content-width feature-settings">{@render tabs()}<div class="account-content"><button onclick={login} disabled={!active||!live||busy||loginPending(account.state)}>登录</button></div></section>
   {:else if mode==='player'}
     <section class="player-page"><div class="video-stage" class:paused={!playing}>
       <video role="button" tabindex="0" onclick={toggle} onkeydown={event=>{if(event.code==='Enter'&&!event.repeat){event.preventDefault();void toggle();}}} onpointerdown={hold} onpointerup={release} onpointercancel={resetBoost} onlostpointercapture={resetBoost} oncontextmenu={event=>event.preventDefault()} bind:this={video} src={source} preload="metadata" crossorigin="anonymous" playsinline bind:muted bind:volume ontimeupdate={()=>{if(video.readyState>0&&seeking===null&&frameTarget===null)position=video.currentTime;}} onplay={()=>{if(!live){video.pause();return;}playing=true;frames();}} onpause={()=>{seeking=null;resetBoost();playing=false;stopFrames();}} onended={ended} onerror={videoError} aria-label="红果短剧视频"><track kind="captions"/></video>
@@ -275,7 +275,7 @@
 {/if}
 
 <style>
-  .account-login{height:100%;display:grid;place-items:center}.account-content{display:flex;flex-direction:column}.logout{align-self:flex-start;margin-top:auto}
+  .account-content{display:flex;flex-direction:column}.logout{align-self:flex-start;margin-top:auto}
   .qr-backdrop{position:fixed;inset:62px 0 30px;display:grid;place-items:center;background:#0005;z-index:10}.qr-dialog{display:flex;flex-direction:column;align-items:center;gap:12px;padding:20px;background:var(--surface);border:1px solid var(--line)}.qr-dialog h2{font-size:15px;margin:0}.qr-dialog img{width:220px;height:220px;object-fit:contain;background:white}.qr-dialog button{align-self:stretch}
   .video-controls select{width:auto;max-width:85px;min-width:44px;color:white;background:#222c;padding:3px;border:0;font-size:11px}.video-controls{flex-wrap:wrap}.video-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>

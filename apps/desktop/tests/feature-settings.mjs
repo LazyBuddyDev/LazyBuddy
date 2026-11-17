@@ -66,6 +66,27 @@ try{
   assert.equal(await page.locator('main .tabs:visible button.active').textContent(),'设置');
   assert.equal(await page.locator('main').evaluate(e=>e.scrollWidth>e.clientWidth),false);
   await page.screenshot({animations:'disabled',path:output+'reader-settings-dark-narrow.png'});
+  await page.addInitScript(()=>window.fixtureSignedOut=true);
+  await page.reload();await page.waitForSelector('[data-events-ready=true]');
+  await page.getByLabel('选择功能').selectOption('hongguo');
+  for(const width of [780,440]){
+    await page.setViewportSize({width,height:640});
+    for(const tab of ['搜索','收藏']){
+      await page.locator('main .tabs:visible').getByRole('button',{name:tab,exact:true}).click();
+      const login=page.getByRole('button',{name:'登录',exact:true});await login.waitFor();
+      const bounds=await login.evaluate(e=>({button:e.getBoundingClientRect().width,row:e.parentElement.getBoundingClientRect().width}));
+      assert.ok(Math.abs(bounds.button-bounds.row)<1,'signed-out login fills its row');
+      const top=await page.locator('main .tabs:visible').evaluate(e=>e.getBoundingClientRect().top);
+      await localSettings().click();await page.getByRole('heading',{name:'红果账号',exact:true}).waitFor();
+      const settingsTop=await page.locator('main .tabs:visible').evaluate(e=>e.getBoundingClientRect().top);
+      assert.ok(Math.abs(top-settingsTop)<1,'signed-out tabs align with settings');
+      const settingsWidth=await page.getByRole('button',{name:'登录',exact:true}).evaluate(e=>e.getBoundingClientRect().width);
+      assert.ok(Math.abs(bounds.button-settingsWidth)<1,'signed-out login matches settings width');
+    }
+    await page.locator('main .tabs:visible').getByRole('button',{name:'搜索',exact:true}).click();
+    await page.getByRole('button',{name:'登录',exact:true}).waitFor();
+    await page.screenshot({animations:'disabled',path:output+`signed-out-${width}.png`});
+  }
   assert.deepEqual(errors,[]);
   console.log('Passed: feature tabs, global-only gear, card opacity scope/persistence, root switches and hidden settings silence, dark/narrow layout.');
 }finally{await browser?.close();await server.close();await rm(scratch,{recursive:true,force:true});}
