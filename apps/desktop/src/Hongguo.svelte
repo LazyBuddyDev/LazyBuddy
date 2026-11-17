@@ -1,11 +1,11 @@
 <script lang="ts">
-  import {onDestroy, tick, untrack, type Snippet} from 'svelte';
+  import {onDestroy, tick, untrack} from 'svelte';
   import {invoke} from '@tauri-apps/api/core';
   import Icon from './Icon.svelte';import Cover from './Cover.svelte';
   import Switch from './Switch.svelte';
   import {formatTime} from './lifecycle';
   import {coverPixels,watchedLabel,filterFavorites,loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails,playerPreferences,type CoverData,type Account,type Item,type Playback} from './hongguo';
-  let {active,showing,accountOnly,notice,navigation}: {active:boolean;showing:boolean;accountOnly:boolean;notice:(text:string)=>void;navigation:Snippet}=$props();
+  let {active,showing,accountOnly,notice,settingsChange}: {active:boolean;showing:boolean;accountOnly:boolean;notice:(text:string)=>void;settingsChange:(settings:boolean)=>void}=$props();
   function savedPlayer(){try{return playerPreferences(JSON.parse(localStorage.getItem('lazybuddy.hongguo.player')??'null'));}catch{return playerPreferences(null);}}
   const saved=savedPlayer();let defaultFavorites=$state(saved.favorites);
   let account=$state<Account>({state:'idle',name:''});
@@ -174,7 +174,7 @@
     try{const data=await raw<Account>('favorites.read');if(!valid(ticket))return;acceptAccount(data);if(data.operation==='pending')poll(ticket);}
     catch(error){if(valid(ticket)){favoritesPending=false;warn(error);}}
   }
-  async function chooseTab(value:'search'|'favorites'){tab=value;if(value==='favorites'&&!favoritesReady)await readFavorites();}
+  async function chooseTab(value:'search'|'favorites'){tab=value;if(accountOnly){settingsChange(false);return;}if(value==='favorites'&&!favoritesReady)await readFavorites();}
   async function favorite(item:Item){
     if(account.operation==='pending'||favoriteChange)return;const ticket=epoch;favoritesPending=true;
     const target=!isFavorite(item.id);favoriteChange={id:item.id,value:target};
@@ -232,13 +232,15 @@
   function ended(){if(!live||!active||playerLoading||!video.ended)return;playing=false;stopFrames();void checkpoint(true).catch(warn);const next=adjacent(episodes,episode,1);if(next!==undefined)void changeEpisode(next);}
 </script>
 
+{#snippet tabs()}<div class="list-toolbar"><div class="tabs" aria-label="短剧页签"><button class:active={!accountOnly&&tab==='search'} onclick={()=>chooseTab('search')}>搜索</button><button class:active={!accountOnly&&tab==='favorites'} onclick={()=>chooseTab('favorites')}>收藏</button><button class:active={accountOnly} title="短剧设置" onclick={()=>settingsChange(true)}>设置</button></div></div>{/snippet}
+
 <svelte:window onkeydown={volumeKey} onblur={resetBoost}/>
 
 {#if showing}
   {#if accountOnly}
-    <section class="settings-layout content-width">{@render navigation()}<div class="settings-content account-content"><h1>红果账号</h1><div class="setting-row"><strong>直连</strong><Switch label="直连" checked={direct} disabled={busy||loginPending(account.state)||account.operation==='pending'} onchange={changeConnection}/></div><div class="setting-row"><strong>默认显示收藏</strong><Switch label="默认显示收藏" checked={defaultFavorites} onchange={value=>defaultFavorites=value}/></div>{#if account.state==='signed_in'}<p>{account.name}</p><button class="logout" onclick={logout}>退出登录</button>{:else}<button onclick={login} disabled={!active||!live||busy||loginPending(account.state)}>登录</button>{/if}</div></section>
+    <section class="content-width feature-settings">{@render tabs()}<div class="settings-content account-content"><h1>红果账号</h1><div class="setting-row"><strong>直连</strong><Switch label="直连" checked={direct} disabled={busy||loginPending(account.state)||account.operation==='pending'} onchange={changeConnection}/></div><div class="setting-row"><strong>默认显示收藏</strong><Switch label="默认显示收藏" checked={defaultFavorites} onchange={value=>defaultFavorites=value}/></div>{#if account.state==='signed_in'}<p>{account.name}</p><button class="logout" onclick={logout}>退出登录</button>{:else}<button onclick={login} disabled={!active||!live||busy||loginPending(account.state)}>登录</button>{/if}</div></section>
   {:else if account.state!=='signed_in'}
-    <section class="account-login"><button onclick={login} disabled={!active||!live||busy||loginPending(account.state)}>登录</button></section>
+    <section class="account-login">{@render tabs()}<button onclick={login} disabled={!active||!live||busy||loginPending(account.state)}>登录</button></section>
   {:else if mode==='player'}
     <section class="player-page"><div class="video-stage" class:paused={!playing}>
       <video role="button" tabindex="0" onclick={toggle} onkeydown={event=>{if(event.code==='Enter'&&!event.repeat){event.preventDefault();void toggle();}}} onpointerdown={hold} onpointerup={release} onpointercancel={resetBoost} onlostpointercapture={resetBoost} oncontextmenu={event=>event.preventDefault()} bind:this={video} src={source} preload="metadata" crossorigin="anonymous" playsinline bind:muted bind:volume ontimeupdate={()=>{if(video.readyState>0&&seeking===null&&frameTarget===null)position=video.currentTime;}} onplay={()=>{if(!live){video.pause();return;}playing=true;frames();}} onpause={()=>{seeking=null;resetBoost();playing=false;stopFrames();}} onended={ended} onerror={videoError} aria-label="红果短剧视频"><track kind="captions"/></video>
@@ -256,7 +258,7 @@
       </div></div>
     </div></section>
   {:else}
-    <section class="media-library"><div class="list-toolbar"><div class="tabs"><button class:active={tab==='search'} onclick={()=>chooseTab('search')}>搜索</button><button class:active={tab==='favorites'} onclick={()=>chooseTab('favorites')}>收藏</button></div></div>
+    <section class="media-library">{@render tabs()}
       <form onsubmit={event=>{event.preventDefault();if(tab==='search')void search();else void readFavorites();}}><div class="media-search" role="toolbar" aria-label={tab==='search'?'搜索工具栏':'收藏工具栏'}><label class="search-box"><Icon name="search" size={16}/>{#if tab==='search'}<input aria-label="搜索短剧" placeholder="搜索短剧" bind:value={query}/>{:else}<input aria-label="筛选收藏" placeholder="筛选收藏" bind:value={favoritesQuery}/>{/if}</label><button type="button" aria-label={listView==='list'?'切换图标视图':'切换列表视图'} title={listView==='list'?'图标视图':'列表视图'} onclick={toggleView}><Icon name={listView==='list'?'grid':'list'} size={15}/></button><button type="submit" aria-label={tab==='search'?'搜索':'刷新收藏'} title={tab==='search'?'搜索':'刷新收藏'} disabled={tab==='search'?busy||!query.trim():account.operation==='pending'}><Icon name={tab==='search'?'search':'refresh'} size={15}/></button></div></form>
       {#key tab==='favorites'?`favorites:${favoritesRevision}`:tab}
       {#if listView==='grid'}

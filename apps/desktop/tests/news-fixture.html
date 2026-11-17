@@ -1,5 +1,5 @@
 <!doctype html><html lang="zh-CN"><meta charset="utf-8"><div class="app-shell" id="app"></div><script type="module">
-    import {mount,unmount,createRawSnippet} from 'svelte';
+    import {mount,unmount} from 'svelte';
     import News from '/src/News.svelte';import ShortcutButton from '/src/ShortcutButton.svelte';import Hongguo from '/src/Hongguo.svelte';import '/src/style.css';
     const preferences={auto_refresh:false,refresh_minutes:5,followed:[],hidden:[],order:[],default_followed:false};
     const sources=[{id:'a',name:'来源甲'},{id:'b',name:'来源乙'}];
@@ -12,7 +12,7 @@
       if(args.method==='configure'){if(window.holdConfigure)await new Promise(resolve=>(window.pendingConfigures??=[]).push(resolve));Object.assign(preferences,args.args.preferences);return {preferences};}
       if(args.method==='fetch'){if(window.holdFetch)await new Promise(resolve=>(window.pendingFetches??=[]).push(resolve));return args.args.sources.map(id=>({id,ok:true,stories,updated_ms:Date.now()}));}
     }};
-    let component;window.show=async(settings=false)=>{if(component)await unmount(component);component=mount(News,{target:document.querySelector('#app'),props:{active:true,settings,generation:1,notice:()=>{},navigation:createRawSnippet(()=>({render:()=>'<span></span>'}))}});};
+    let component;window.show=async(settings=false)=>{if(component)await unmount(component);component=mount(News,{target:document.querySelector('#app'),props:{active:true,settings,generation:1,notice:()=>{},settingsChange:()=>{},cardOpacity:1,setCardOpacity:()=>{}}});};
     window.showShortcut=async()=>{if(component)await unmount(component);component=mount(ShortcutButton,{target:document.querySelector('#app'),props:{label:'Ctrl+Alt+L',save:async value=>{window.savedShortcut=value;return window.saveShortcutResult!==false;},notice:text=>window.shortcutNotice=text}});};
     window.showHongguo=async()=>{
       if(component)await unmount(component);
@@ -28,7 +28,7 @@
         if(args.method==='favorites.read')return {state:'signed_in',name:'样例账号',operation:null,favorites:[{id:'1',title:'春日',episodes:10},{id:'2',title:'Summer',episodes:20}]};
         return {};
       };
-      component=mount(Hongguo,{target:document.querySelector('#app'),props:{active:true,showing:true,accountOnly:false,notice:()=>{},navigation:createRawSnippet(()=>({render:()=>'<span></span>'}))}});
+      component=mount(Hongguo,{target:document.querySelector('#app'),props:{active:true,showing:true,accountOnly:false,notice:()=>{},settingsChange:()=>{}}});
     };
     await window.show();
   </script></html>

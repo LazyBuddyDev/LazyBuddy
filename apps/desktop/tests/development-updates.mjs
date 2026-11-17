@@ -9,7 +9,7 @@ try{
  for(const enabled of [false,true]){
    const page=await browser.newPage();await page.addInitScript(value=>window.fixtureAppUpdates=value,enabled);
    await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/tests/notice-fixture.html`);await page.waitForSelector('[data-events-ready=true]');
-   await page.getByRole('button',{name:'设置',exact:true}).click();await page.getByRole('button',{name:'系统设置',exact:true}).click();
+   await page.locator('.toolbar').getByRole('button',{name:'设置',exact:true}).click();await page.getByRole('button',{name:'系统设置',exact:true}).click();
    assert.equal(await page.getByRole('switch',{name:'应用自动更新'}).count(),enabled?1:0);
    assert.equal(await page.getByRole('button',{name:'检查更新',exact:true}).count(),enabled?1:0);
    await page.evaluate(()=>window.fixtureEvents['shell-update']({payload:true}));

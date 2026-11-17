@@ -23,6 +23,7 @@ cargo test --locked -p lazybuddy host::tests
 | 平台视觉、公共工具栏、主题与窄窗口 | `apps/desktop/tests/news-design.mjs` |
 | 统一页签、集合工具栏、列表/网格与封面状态 | `apps/desktop/tests/hongguo-views.mjs` |
 | 画面点击、音量浮层与媒体快捷键 | `apps/desktop/tests/video-click.mjs` |
+| 功能设置页签、全局设置隔离、局部透明度保存与静默 | `apps/desktop/tests/feature-settings.mjs` |
 | 根页面切换后的提示归属 | `apps/desktop/tests/feature-notices.mjs` |
 | 开发/正式构建的应用更新入口 | `apps/desktop/tests/development-updates.mjs` |
 | API诊断文本与运行日志归档 | `apps/desktop/tests/host-logs.mjs <宿主EXE绝对路径> <CLI绝对路径>` |

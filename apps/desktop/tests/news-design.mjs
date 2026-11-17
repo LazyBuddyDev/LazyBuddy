@@ -30,7 +30,7 @@ try{
   await page.screenshot({path:output+'news-light.png'});
   await page.getByRole('button',{name:'功能',exact:true}).click();await page.getByRole('heading',{name:'可用功能'}).waitFor();
   await page.getByRole('button',{name:'功能',exact:true}).click();
-  await page.getByRole('button',{name:'设置',exact:true}).click();
+  await page.locator('.toolbar').getByRole('button',{name:'设置',exact:true}).click();
   await page.getByRole('button',{name:'显示设置',exact:true}).click();
   await page.getByRole('switch',{name:'深色模式',exact:true}).click();
   await page.getByRole('button',{name:'返回页面',exact:true}).click();

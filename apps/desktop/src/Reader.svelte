@@ -1,9 +1,9 @@
 <script lang="ts">
   import {invoke} from '@tauri-apps/api/core';
-  import {tick,untrack,onDestroy,type Snippet} from 'svelte';
+  import {tick,untrack,onDestroy} from 'svelte';
   import Icon from './Icon.svelte';
   import {pageSize,pageStart,progressLabel,readerError,matchOffsets,wrapMatch,markedRuns,visibleAnchor,restoreAnchor,type Position,type Entry,type Book,type Block,type ReadingPreferences} from './reader';
-  let {active,showing,settings,generation,notice,navigation}:{active:boolean;showing:boolean;settings:boolean;generation:number;notice:(text:string)=>void;navigation:Snippet}=$props();
+  let {active,showing,settings,generation,notice,settingsChange}:{active:boolean;showing:boolean;settings:boolean;generation:number;notice:(text:string)=>void;settingsChange:(settings:boolean)=>void}=$props();
   let entries=$state<Entry[]>([]),book=$state<Book>(),blocks=$state<Block[]>([]);
   let preferences=$state<ReadingPreferences>({font_size:20,line_height:1.9,width:680});
   let chapter=$state(0),start=$state(0),total=$state(0),filter=$state(''),query=$state(''),encoding=$state('auto');
@@ -178,8 +178,9 @@
 </script>
 
 <section hidden={!showing} class="reader-page" class:reader-content={!settings} data-testid="reader" data-active={active}>
+<div class="tabs" aria-label="小说页签"><button class:active={!settings} onclick={()=>settingsChange(false)}>书架</button><button class:active={settings} title="阅读设置" onclick={()=>settingsChange(true)}>设置</button></div>
 {#if settings}
-  <section class="settings-layout content-width">{@render navigation()}<div class="settings-content"><h1>阅读设置</h1>
+  <section class="content-width feature-settings"><div class="settings-content"><h1>阅读设置</h1>
     <div class="setting-row"><label for="reader-font">正文字号</label><select id="reader-font" disabled={saving} value={preferences.font_size} onchange={e=>setPreference('font_size',Number(e.currentTarget.value))}>{#each [14,16,18,20,22,24,28,32,36] as size}<option value={size}>{size}</option>{/each}</select></div>
     <div class="setting-row"><label for="reader-height">行距</label><select id="reader-height" disabled={saving} value={Math.round(preferences.line_height*10)/10} onchange={e=>setPreference('line_height',Number(e.currentTarget.value))}>{#each [1.3,1.5,1.7,1.9,2.1,2.3,2.5] as height}<option value={height}>{height}</option>{/each}</select></div>
     <div class="setting-row"><label for="reader-width">正文宽度</label><select id="reader-width" disabled={saving} value={preferences.width} onchange={e=>setPreference('width',Number(e.currentTarget.value))}>{#each [320,440,560,680,800,1000] as width}<option value={width}>{width}</option>{/each}</select></div>

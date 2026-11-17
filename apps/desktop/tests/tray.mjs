@@ -27,7 +27,7 @@ try{
   await page.waitForSelector('[data-events-ready=true]');await invoke('window_action',{action:'show'});
   assert.equal((await invoke('snapshot')).tray,true);
   assert.equal(await page.getByRole('button',{name:'最小化',exact:true}).count(),0);
-  await page.getByRole('button',{name:'设置',exact:true}).click();
+  await page.locator('.toolbar').getByRole('button',{name:'设置',exact:true}).click();
   await page.getByRole('button',{name:'关闭到托盘',exact:true}).click();
   await until(async()=>!(await invoke('snapshot')).view.visible);
   await until(()=>!JSON.parse(native('snapshot')).visible);
