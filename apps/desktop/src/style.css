@@ -93,6 +93,7 @@ h2 {
   --muted: #7c8780;
   --line: #dce2db;
   --accent: #24745a;
+  --danger: #a23d32;
   --hover: #e9eee7;
   --selected: #dde9df;
   display: flex;
@@ -110,6 +111,7 @@ h2 {
   --muted: #96a298;
   --line: #354038;
   --accent: #8cbea0;
+  --danger: #e7a096;
   --hover: #2d3830;
   --selected: #344b3c;
   color-scheme: dark;
@@ -472,7 +474,6 @@ li button:hover {
   font-weight: 500;
 }
 .module-name { min-width: 0; overflow-wrap: anywhere; }
-.module-row .row-actions { flex-shrink: 0; }
 .module-progress-slot { flex: 1; min-width: 70px; max-width: 240px; }
 .module-progress { display: flex; flex-direction: column; gap: 5px; }
 .module-progress progress { appearance: none; width: 100%; height: 6px; border: 0; background: var(--line); }
@@ -493,8 +494,10 @@ li button:hover {
   color: var(--muted);
   margin-left: 12px;
 }
+.collection-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); min-width: 0; }
 .row-actions {
   display: flex;
+  flex-shrink: 0;
   gap: 7px;
 }
 .row-actions button {
@@ -503,7 +506,7 @@ li button:hover {
   padding: 5px 12px;
 }
 .subtle-danger {
-  color: #a26a60;
+  color: var(--danger);
 }
 .settings-layout {
   display: grid;
@@ -544,18 +547,22 @@ li button:hover {
   min-width: 0;
 }
 .settings-content h1 {
-  font-size: 25px;
-  margin-bottom: 24px;
+  font-size: 20px;
+  line-height: 28px;
+  margin: 0 0 12px;
 }
 .setting-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   border-bottom: 1px solid var(--line);
-  padding: 19px 0;
+  min-height: 56px;
+  padding: 12px 0;
+  font-size: 12px;
+  line-height: 20px;
 }
-.setting-row strong {
+.setting-row > :is(strong, label, span) {
   font-size: 12px;
   font-weight: 500;
 }
@@ -577,17 +584,9 @@ li button:hover {
   padding: 5px 7px;
 }
 .section-title {
-  margin: 28px 0 10px;
+  margin: 24px 0 8px;
 }
-.source-setting {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--line);
-  padding: 15px 0;
-  font-size: 12px;
-}
+.source-setting { font-size: 12px; }
 .source-setting small {
   color: var(--muted);
   font-size: 10px;
@@ -893,22 +892,10 @@ li button:hover {
   .settings-nav .eyebrow {
     padding-left: 8px;
   }
-  .settings-content h1 {
-    font-size: 23px;
-  }
-  .setting-row {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 10px;
-  }
   .source-setting {
     align-items: flex-start;
     flex-direction: column;
-    gap: 9px;
-  }
-  .row-actions button {
-    font-size: 10px;
-    padding: 5px 9px;
+    gap: 8px;
   }
   .search-box input {
     width: 135px;
@@ -988,13 +975,17 @@ li button:hover {
   .news-date { font-size: 9px; }
   .news-page .source-grid { gap: 8px; }
 }
-.media-search, .collection-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-:is(.media-search, .collection-toolbar) .search-box { max-width: none; flex: 1; margin: 0; border: 1px solid var(--line); padding: 0 10px; }
-:is(.media-search, .collection-toolbar) input { width: 100%; font-size: 12px; padding: 8px 0; }
-:is(.media-search, .collection-toolbar) button { min-height: 33px; }
-.media-result { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
-.media-result h2 { font-size: 13px; }
-.media-result > div > span { display: block; color: var(--muted); font-size: 10px; margin-top: 5px; }
+.collection-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.collection-toolbar .search-box { max-width: none; min-width: 0; height: 33px; flex: 1; margin: 0; border: 1px solid var(--line); padding: 0 10px; }
+.collection-toolbar .search-box:focus-within { border-color: var(--accent); }
+.collection-toolbar input { width: 100%; font-size: 12px; line-height: 20px; padding: 0; }
+.collection-toolbar button { height: 33px; min-height: 33px; padding: 6px 10px; border: 1px solid var(--line); font-size: 12px; color: var(--text); }
+.collection-toolbar svg { width: 16px; height: 16px; }
+.collection-toolbar .icon-button { width: 33px; padding: 0; flex-shrink: 0; }
+.collection-options { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
+.collection-row > div:first-child { min-width: 0; }
+.item-title { max-width: 100%; font-size: 13px; font-weight: 600; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-description { display: block; color: var(--muted); font-size: 11px; line-height: 16px; margin-top: 4px; }
 .list-empty { text-align: center; color: var(--muted); font-size: 12px; padding: 24px 12px; }
 .player-page { height: 100%; min-height: 180px; padding: 0; display: flex; }
 .player-page .video-stage { flex: 1; aspect-ratio: auto; min-height: 180px; }
@@ -1060,7 +1051,7 @@ li button:hover {
 .toolbar button:hover { background: #ffffff18; }
 .toolbar button.chosen { color: #fff; background: #ffffff29; border-color: #ffffff50; }
 .toolbar .close-button:hover { background: #b73636; color: #fff; }
-.news-page .refresh-button { padding: 4px 9px; border: 1px solid var(--line); margin-left: auto; }
+.news-page .refresh-button { margin-left: auto; }
 .news-page .source-heading {
   padding: 7px 9px; min-height: 43px; gap: 8px;
   border-left: 3px solid var(--source-color);
@@ -1095,3 +1086,10 @@ li button:hover {
 .feature-page { width: 100%; max-width: 1160px; margin-inline: auto; padding: 12px 14px; }
 .tab-bar { display: flex; flex-shrink: 0; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
 @media (max-width: 600px) { .feature-page { padding: 10px; } }
+
+.setting-row select, .collection-options select { width: 128px; height: 30px; flex-shrink: 0; margin: 0; padding: 4px 8px; border: 1px solid var(--line); border-radius: 0; font: inherit; background: var(--surface); color: var(--text); }
+.setting-row input[type="range"] { width: 128px; height: 20px; flex-shrink: 0; margin: 0; accent-color: var(--accent); }
+.settings-actions { display: flex; flex-direction: column; gap: 12px; }
+.settings-content > .settings-actions { margin-top: 12px; }
+.settings-actions p { font-size: 12px; color: var(--muted); }
+.settings-actions button { width: 100%; min-height: 32px; font-size: 12px; }

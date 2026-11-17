@@ -14,11 +14,15 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
  if(command==='transition')return {...args,generation:++generation};
  if(command==='playback_call'){
    if(args.method==='account.restore')return window.fixtureSignedOut?{state:'idle',name:''}:{state:'signed_in',name:'用户样例'};
+   if(args.method==='search')return {items:window.fixtureItems??[],has_more:false};
    if(args.method==='progress.read')return {history:{}};
-   if(args.method==='favorites.read')return {state:'signed_in',name:'用户样例',favorites:[]};
+   if(args.method==='favorites.read')return {state:'signed_in',name:'用户样例',favorites:window.fixtureItems??[]};
    return {};
  }
- if(command==='reader_call'){if(args.method==='preferences.get')return {font_size:20,line_height:1.9,width:680};if(args.method==='library.list')return {entries:[],total:0,last_book:null};}
+ if(command==='reader_call'){
+   if(args.method==='book.open')return {book:{...window.fixtureReaderEntries[0],warnings:[],chapters:Array.from({length:20},(_,i)=>({id:`c${i}`,title:`第${i+1}章 布局检查`,blocks:30}))},position:null};
+   if(args.method==='chapter.read')return {start:0,total:30,blocks:Array.from({length:30},(_,i)=>({id:`b${i}`,kind:'paragraph',text:'用于布局验证的正文内容，保持自然换行和滚动。',runs:[],resource:null}))};
+   if(args.method==='preferences.get')return {font_size:20,line_height:1.9,width:680};if(args.method==='library.list')return {entries:window.fixtureReaderEntries??[],total:window.fixtureReaderEntries?.length??0,last_book:null};}
  if(command==='news_call'){
    if(args.method==='sources')return window.designSources??[{id:'fixture',name:'样例来源'}];
    if(args.method==='state')return {preferences:news,cache:window.designSources?Object.fromEntries(window.designSources.map(s=>[s.id,{updated_ms:Date.now(),stories:Array.from({length:16},(_,i)=>({title:['周末城市漫步路线推荐','中国空间站最新科普直播','秋日限定风景正在上线','这些生活小技巧值得收藏','年轻人开始记录普通的一天','博物馆里的奇妙发现'][i%6],url:'https://example.invalid/',badge:['Hot',null,'New',null,'Explosive',null][i%6]}))}])):{}};
