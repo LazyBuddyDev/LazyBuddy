@@ -28,7 +28,7 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
    if(args.method==='library.list')return {entries:window.fixtureReaderEntries??[],total:window.fixtureReaderEntries?.length??0,last_book:null};}
  if(command==='news_call'){
    if(args.method==='sources')return window.designSources??[{id:'fixture',name:'样例来源'}];
-   if(args.method==='state')return {preferences:news,cache:window.designSources?Object.fromEntries(window.designSources.map(s=>[s.id,{updated_ms:Date.now(),stories:Array.from({length:16},(_,i)=>({title:['周末城市漫步路线推荐','中国空间站最新科普直播','秋日限定风景正在上线','这些生活小技巧值得收藏','年轻人开始记录普通的一天','博物馆里的奇妙发现'][i%6],url:'https://example.invalid/',badge:['Hot',null,'New',null,'Explosive',null][i%6]}))}])):{}};
+   if(args.method==='state')return {preferences:news,cache:window.designSources?Object.fromEntries(window.designSources.map(s=>[s.id,{updated_ms:Date.now(),stories:Array.from({length:16},(_,i)=>({title:window.fixtureNewsTitle??['周末城市漫步路线推荐','中国空间站最新科普直播','秋日限定风景正在上线','这些生活小技巧值得收藏','年轻人开始记录普通的一天','博物馆里的奇妙发现'][i%6],url:'https://example.invalid/',badge:['Hot',null,'New',null,'Explosive',null][i%6]}))}])):{}};
    if(args.method==='configure'){Object.assign(news,args.args.preferences);return {preferences:news};}
    if(args.method==='fetch')throw new Error('fixture_news_failure');
  }

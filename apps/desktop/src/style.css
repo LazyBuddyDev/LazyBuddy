@@ -50,12 +50,13 @@ button:disabled {
   opacity: 0.35;
   cursor: default;
 }
-button:focus-visible,
-select:focus-visible,
-input:focus-visible {
+.app-shell[data-keyboard-navigation="false"] :focus { outline: none; }
+.app-shell[data-keyboard-navigation="true"] :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
+.app-shell[data-keyboard-navigation="true"] .focus-inset:focus-visible { outline-offset: -2px; }
+.app-shell[data-keyboard-navigation="true"] .search-box input:focus-visible { outline: none; }
 button:active:not(:disabled) {
   background: var(--selected);
 }
@@ -1001,7 +1002,6 @@ li button:hover {
 .app-shell.docked > :not(.dock-button) { display: none; }
 .dock-button { flex-shrink: 0; width: 38px; height: 38px; min-height: 0; padding: 6px; border: 1px solid var(--line); border-radius: 50%; background: var(--toolbar); transition: background-color .12s; touch-action: none; user-select: none; }
 .dock-button img { width: 100%; height: 100%; display: block; }
-.dock-button:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--muted); }
 
 /* Keep each source independently scrollable while its actions stay visible. */
 .news-page .source-card { height: 260px; min-width: 0; display: flex; flex-direction: column; }
@@ -1013,11 +1013,11 @@ li button:hover {
 .news-page .story-title { display: flex; justify-content: flex-start; text-align: left; gap: 5px; }
 .news-page .story-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .news-page .story-text-content { display: inline-block; vertical-align: top; width: max-content; min-width: 100%; }
-.news-active .title-overflow:is(:hover,:focus-visible) .story-text { text-overflow: clip; }
-.news-active .title-overflow:is(:hover,:focus-visible) .story-text-content { animation: news-title-scroll var(--title-duration) linear .4s infinite; }
+.news-active .title-overflow:hover .story-text, .app-shell[data-keyboard-navigation="true"] .news-active .title-overflow:focus-visible .story-text { text-overflow: clip; }
+.news-active .title-overflow:hover .story-text-content, .app-shell[data-keyboard-navigation="true"] .news-active .title-overflow:focus-visible .story-text-content { animation: news-title-scroll var(--title-duration) linear .4s infinite; }
 @keyframes news-title-scroll { 0%, 10% { transform: translateX(0); } 90%, 100% { transform: translateX(var(--title-shift)); } }
 @media (prefers-reduced-motion: reduce) {
-  .news-active .title-overflow:is(:hover,:focus-visible) .story-text-content { animation: none; }
+  .news-active .title-overflow:hover .story-text-content, .app-shell[data-keyboard-navigation="true"] .news-active .title-overflow:focus-visible .story-text-content { animation: none; }
 }
 
 .news-page .story-badge { flex-shrink: 0; padding: 0 3px; font-size: 10px; line-height: 15px; color: #b34120; background: #ffecd9; }

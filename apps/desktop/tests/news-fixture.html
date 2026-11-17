@@ -1,5 +1,6 @@
 <!doctype html><html lang="zh-CN"><meta charset="utf-8"><div class="app-shell" id="app"></div><script type="module">
     import {mount,unmount} from 'svelte';
+    import {focusNavigation} from '/src/focus-navigation.ts';focusNavigation(document.getElementById('app'));
     import News from '/src/News.svelte';import ShortcutButton from '/src/ShortcutButton.svelte';import Hongguo from '/src/Hongguo.svelte';import '/src/style.css';
     const preferences={auto_refresh:false,refresh_minutes:5,followed:[],hidden:[],order:[],default_followed:false};
     const sources=[{id:'a',name:'来源甲'},{id:'b',name:'来源乙'}];

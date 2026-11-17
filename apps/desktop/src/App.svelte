@@ -3,7 +3,7 @@
   import {getCurrentWindow} from '@tauri-apps/api/window';
   import ShortcutButton from './ShortcutButton.svelte';import Icon from './Icon.svelte';import Switch from './Switch.svelte';import Hongguo from './Hongguo.svelte';import News from './News.svelte';
   import {moduleTarget,type Root,type Section,type View} from './lifecycle';import logoUrl from '../../../assets/lazybuddy.svg';
-  import Reader from './Reader.svelte';
+  import Reader from './Reader.svelte';import {focusNavigation} from './focus-navigation';
   type Module={id:string;name:string;version:string;installed:boolean;update:boolean};
   type ModuleProgress={stage:string;downloaded:number;total:number};
   type Preferences={dark:boolean;topmost:boolean;root:string|null;auto_update:boolean;background_opacity:number;card_opacity:number;shortcut:{modifiers:number;key:number};[key:string]:unknown};
@@ -87,8 +87,8 @@
 </script>
 <svelte:window onkeydown={mediaKey}/>
 {#snippet settingsNavigation()}<aside class="settings-nav" aria-label="设置分类">{#each [['appearance','显示设置'],['system','系统设置'],['about','关于我们']] as [id,label]}<button class:chosen={category===id} onclick={()=>{globalCategory=category=id;void change();}}>{label}</button>{/each}<button class="back-button" onclick={()=>change(root,'content')}><Icon name="arrow" size={16}/>返回页面</button></aside>{/snippet}
-<div class:dark class:docked class="app-shell" style:--background-opacity={preferences?.background_opacity??.94} data-testid="shell" data-root={root} data-section={section} data-visible={visible} data-docked={docked} data-events-ready={eventsReady}>
-{#if docked}<button class="dock-button" aria-label="展开 LazyBuddy" title="点击展开，拖动调整停靠位置" onpointerdown={pressDock} onpointermove={dragDock} onpointerup={releaseDock} onpointercancel={releaseDock} onlostpointercapture={releaseDock} onclick={clickDock}><img src={logoUrl} alt="" draggable="false"/></button>{/if}
+<div class:dark class:docked class="app-shell" use:focusNavigation style:--background-opacity={preferences?.background_opacity??.94} data-testid="shell" data-root={root} data-section={section} data-visible={visible} data-docked={docked} data-events-ready={eventsReady}>
+{#if docked}<button class="dock-button focus-inset" aria-label="展开 LazyBuddy" title="点击展开，拖动调整停靠位置" onpointerdown={pressDock} onpointermove={dragDock} onpointerup={releaseDock} onpointercancel={releaseDock} onlostpointercapture={releaseDock} onclick={clickDock}><img src={logoUrl} alt="" draggable="false"/></button>{/if}
 <header class="toolbar" data-tauri-drag-region><div class="identity" data-tauri-drag-region><img class="brand-logo" src={logoUrl} alt="" draggable="false" data-tauri-drag-region/><strong data-tauri-drag-region>LazyBuddy</strong><span class="divider" data-tauri-drag-region></span>
 <label class="root-selector"><select aria-label="选择功能" value={root} disabled={!roots.length} onchange={e=>change(e.currentTarget.value as Root)}>{#each roots as module}<option value={module.id}>{module.name}</option>{/each}</select><Icon name="chevron" size={14}/></label></div><div class="toolbar-spacer" data-tauri-drag-region></div>
 <nav aria-label="全局操作" data-tauri-drag-region><button class="icon-button" class:chosen={pinned} aria-label="置顶" title="置顶" aria-pressed={pinned} onclick={togglePin}><Icon name="pin" size={21}/></button><button class="icon-button" class:chosen={section==='modules'} aria-label="功能" title="功能" onclick={toggleModules}><Icon name="box" size={21}/></button><button class="icon-button" class:chosen={section==='settings'&&category!=='page'} aria-label="设置" title="全局设置" onclick={globalSettings}><Icon name="settings" size={21}/></button><span class="divider" data-tauri-drag-region></span><button class="icon-button close-button" aria-label="关闭到托盘" title="关闭到托盘" onclick={()=>action('close')}><Icon name="close"/></button></nav></header>

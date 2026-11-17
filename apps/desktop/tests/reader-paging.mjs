@@ -32,7 +32,7 @@ try{
   const key=async direction=>{await scroll.focus();await page.keyboard.press(direction>0?'ArrowRight':'ArrowLeft');await page.waitForFunction(()=>document.querySelector('.reader-scroll')?.getAttribute('aria-busy')==='false');};
   await page.getByRole('button',{name:'目录',exact:true}).focus();await page.keyboard.press('Tab');
   assert.equal(await scroll.evaluate(e=>document.activeElement===e),true);
-  assert.equal(await scroll.evaluate(e=>getComputedStyle(e).outlineWidth),'1px','Tab retains a visible keyboard focus cue');
+  assert.equal(await scroll.evaluate(e=>getComputedStyle(e).outlineWidth),'2px','Tab retains a visible keyboard focus cue');
   await scroll.click({position:{x:5,y:5}});
   let initial=await state();assert.equal(initial.sh,initial.h);assert.equal(initial.ids.length,96);
   assert.equal(await page.getByRole('button',{name:'上一段',exact:true}).count(),0);

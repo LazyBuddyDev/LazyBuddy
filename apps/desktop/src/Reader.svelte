@@ -12,7 +12,6 @@
   let scroll=$state<HTMLElement>();let epoch=0;let initialized=false;let needsList=true;let lastBook=$state<string|null>(null);
   let currentPosition:Position|undefined;let restoring=false;let timer:ReturnType<typeof setTimeout>|undefined;
   let stagedPosition:Position|undefined;let checkpointWrites:Promise<unknown>=Promise.resolve();
-  let keyboardFocus=$state(false);
   let suspended=true;let turning=$state(false),extending=$state(false),offset=$state(0),extent=$state(0);
   let finishTurn:(()=>void)|undefined;let swapping=false;
   const horizontal=$derived(preferences.page_mode==='horizontal');
@@ -192,7 +191,6 @@
   }
   function readingKey(event:KeyboardEvent){
     if(!active||settings||!book||event.defaultPrevented)return;
-    if(event.key==='Tab'){keyboardFocus=true;return;}
     if(event.ctrlKey||event.altKey||event.metaKey||event.shiftKey)return;
     if(event.target instanceof Element){
       if(event.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]'))return;
@@ -200,7 +198,6 @@
     }
     if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();void turn(event.key==='ArrowRight'?1:-1);}
   }
-  function pointerFocus(){if(active&&!settings&&book)keyboardFocus=false;}
   function wheel(event:WheelEvent){
     if(preferences.page_mode==='scroll'||event.ctrlKey||!active||settings||suspended)return;
     event.preventDefault();if(Math.abs(event.deltaY||event.deltaX)>8)void turn((event.deltaY||event.deltaX)>0?1:-1);
@@ -286,7 +283,7 @@
     const ticket=lease();try{await call('library.remove',{book_id:entry.id},ticket);removing=undefined;await list(ticket);}catch(error){report(error,ticket);if(String(error)==='removal_cleanup_pending'){removing=undefined;await list(ticket);}}
   }
 </script>
-<svelte:window onkeydown={readingKey} onpointerdown={pointerFocus}/>
+<svelte:window onkeydown={readingKey}/>
 
 <section hidden={!showing} class="reader-page feature-page" class:reader-content={!settings} data-testid="reader" data-active={active}>
 <div class="tab-bar"><div class="tabs" aria-label="小说页签"><button class:active={!settings} aria-pressed={!settings} title="书架" onclick={()=>settingsChange(false)}>书架</button><button class:active={settings} aria-pressed={settings} title="阅读设置" onclick={()=>settingsChange(true)}>设置</button></div></div>
@@ -303,7 +300,7 @@
   <div class="reader-spread">
   {#if directory}<nav class="reader-directory" aria-label="章节目录">{#each book.chapters as item,index}<button class:chosen={chapter===index} aria-current={chapter===index?'page':undefined} title={item.title} aria-disabled={loading||turning||extending} onclick={()=>{if(!turning&&!extending)void move(index);}}>{item.title}</button>{/each}</nav>{/if}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex (The scroll region needs focus for keyboard reading.) -->
-  <div class="reader-viewport"><div class="reader-scroll" bind:this={scroll} data-page-mode={preferences.page_mode} class:horizontal class:keyboard-focus={keyboardFocus} onscroll={onScroll} use:wheelInput role="region" aria-label="小说正文" aria-busy={loading||turning||extending} tabindex="0" style:--reader-font={`${preferences.font_size}px`} style:--reader-height={preferences.line_height} style:--reader-width={`${preferences.width}px`}>
+  <div class="reader-viewport"><div class="reader-scroll focus-inset" bind:this={scroll} data-page-mode={preferences.page_mode} class:horizontal onscroll={onScroll} use:wheelInput role="region" aria-label="小说正文" aria-busy={loading||turning||extending} tabindex="0" style:--reader-font={`${preferences.font_size}px`} style:--reader-height={preferences.line_height} style:--reader-width={`${preferences.width}px`}>
     <article class="reader-body" class:horizontal><h2>{book.chapters[chapter]?.title}</h2>
     {#each blocks as block (block.id)}
       {#if block.kind==='image'}<figure data-block={block.id} data-kind="image" data-resource={block.resource??undefined}>{#if block.resource&&images[block.resource]}<img src={images[block.resource]} alt={block.text} onload={()=>{if(currentPosition&&!restoring&&!turning&&!swapping&&scroll)restoreAnchor(scroll,currentPosition);}}/>{:else}<figcaption>{block.text||'插图'}</figcaption>{/if}</figure>
@@ -326,7 +323,7 @@
 </section>
 
 <style>
-  .reader-content{display:flex;flex-direction:column;min-height:0;height:100%}.reader-page[hidden]{display:none}.reader-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-library{overflow:auto;scrollbar-gutter:stable;min-height:0}.reader-book-open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left;border:0;padding:0;min-height:0}.reader-remove{flex-wrap:wrap;justify-content:flex-end;font-size:11px}.reader-remove span{width:100%;text-align:right}.reader-scroll{min-width:0;overflow:auto;min-height:0;flex:1;scrollbar-gutter:stable;background:var(--surface);overflow-anchor:none}.reader-scroll:focus{outline:none}.reader-scroll.keyboard-focus:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}.reader-body{--reader-padding:24px;max-width:var(--reader-width);margin:auto;padding:20px 24px 28px;font-size:var(--reader-font);line-height:var(--reader-height);overflow-wrap:anywhere}.reader-body h2{font-size:1.15em;margin-bottom:1.5em}.reader-paragraph{margin:0 0 1em;white-space:pre-wrap}.reader-heading{font-weight:600;font-size:1.1em}.reader-pre{font-family:monospace}.reader-strong{font-weight:700}.reader-emphasis{font-style:italic}figure{margin:1em 0;min-height:80px}figure img{display:block;max-width:100%;height:auto;margin:auto}figcaption{color:var(--muted);font-size:13px}.reader-navigation{display:flex;align-items:center;justify-content:space-between;font-size:12px;flex-shrink:0;margin-top:12px}@media(max-width:520px){.reader-body{--reader-padding:16px;padding:16px}.reader-remove{max-width:160px}.reader-navigation{font-size:11px}}
+  .reader-content{display:flex;flex-direction:column;min-height:0;height:100%}.reader-page[hidden]{display:none}.reader-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-library{overflow:auto;scrollbar-gutter:stable;min-height:0}.reader-book-open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left;border:0;padding:0;min-height:0}.reader-remove{flex-wrap:wrap;justify-content:flex-end;font-size:11px}.reader-remove span{width:100%;text-align:right}.reader-scroll{min-width:0;overflow:auto;min-height:0;flex:1;scrollbar-gutter:stable;background:var(--surface);overflow-anchor:none}.reader-body{--reader-padding:24px;max-width:var(--reader-width);margin:auto;padding:20px 24px 28px;font-size:var(--reader-font);line-height:var(--reader-height);overflow-wrap:anywhere}.reader-body h2{font-size:1.15em;margin-bottom:1.5em}.reader-paragraph{margin:0 0 1em;white-space:pre-wrap}.reader-heading{font-weight:600;font-size:1.1em}.reader-pre{font-family:monospace}.reader-strong{font-weight:700}.reader-emphasis{font-style:italic}figure{margin:1em 0;min-height:80px}figure img{display:block;max-width:100%;height:auto;margin:auto}figcaption{color:var(--muted);font-size:13px}.reader-navigation{display:flex;align-items:center;justify-content:space-between;font-size:12px;flex-shrink:0;margin-top:12px}@media(max-width:520px){.reader-body{--reader-padding:16px;padding:16px}.reader-remove{max-width:160px}.reader-navigation{font-size:11px}}
   .reader-viewport{position:relative;display:flex;flex:1;min-width:0;min-height:0;overflow:hidden}
   .reader-spread{display:flex;flex:1;min-height:0;gap:12px}.reader-directory{position:relative;flex:0 0 clamp(110px,28%,210px);overflow-y:auto;scrollbar-gutter:stable;min-height:0}.reader-directory button{display:block;width:100%;text-align:left;border:0;padding:9px 10px;overflow-wrap:anywhere}.reader-directory .chosen{background:var(--selected);font-weight:600;box-shadow:inset 3px 0 var(--accent)}.reader-match-count{flex-shrink:0;min-width:3ch;text-align:center;font-variant-numeric:tabular-nums}.reader-body mark{background:#f8e599;color:#302400}.reader-body mark.current-match{background:#c84913;color:#fff;outline:2px solid #702400;outline-offset:1px}
 
