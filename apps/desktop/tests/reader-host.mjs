@@ -84,7 +84,14 @@ try{
   await page.getByRole('button',{name:'上一处',exact:true}).click();await until(async()=>await counter.textContent()==='440/440','previous wraps to last');
   await page.getByRole('button',{name:'下一处',exact:true}).click();await until(async()=>await counter.textContent()==='1/440','next wraps to first');
   await page.getByRole('button',{name:'目录',exact:true}).click();
-  assert.equal(await page.getByRole('navigation',{name:'章节目录'}).evaluate(e=>getComputedStyle(e).scrollbarWidth),'none');
+  const directory=page.getByRole('navigation',{name:'章节目录'});
+  await page.locator('.toolbar').hover();
+  assert.equal(await directory.evaluate(e=>getComputedStyle(e).scrollbarWidth),'thin');
+  assert.equal(await directory.evaluate(e=>getComputedStyle(e).scrollbarColor),'rgba(0, 0, 0, 0) rgba(0, 0, 0, 0)');
+  const directoryWidth=await directory.evaluate(e=>e.clientWidth);
+  await directory.hover();
+  assert.notEqual(await directory.evaluate(e=>getComputedStyle(e).scrollbarColor),'rgba(0, 0, 0, 0) rgba(0, 0, 0, 0)');
+  assert.equal(await directory.evaluate(e=>e.clientWidth),directoryWidth);
   assert.ok(await page.locator('.reader-spread').evaluate(e=>e.querySelector('.reader-directory').getBoundingClientRect().right<=e.querySelector('.reader-scroll').getBoundingClientRect().left));
   assert.doesNotMatch(await page.locator('.notice').textContent(),/inactive_reader_page/);
   await page.screenshot({path:path.join(evidence,'search-directory.png')});
@@ -129,7 +136,7 @@ with zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED) as z:
   await rm(blocker,{recursive:true});
   await invoke('reader_call',{method:'progress.flush',args:{},generation:(await invoke('snapshot')).view.generation});
   assert.deepEqual(JSON.parse(await readFile(indexPath,'utf8')).entries.find(e=>e.id===local.id).position,position);
-  const report={passed:true,real_packaged_service:true,bat_installs_new_module:true,source_file_independent:true,scroll_checkpoint:true,font_change_restores_anchor:true,chapter_search:true,search_toggle_count_bidirectional_wrap:true,current_match_style:true,left_directory_hidden_scrollbar:true,chapter_navigation:true,root_switch_silent:true,rapid_root_switch:true,tall_settings_top_aligned:true,line_height_selection_round_trip:true,stale_generation_rejected:true,unselected_file_rejected:true,hidden_silent:true,reload_restores_progress:true,remove:true,epub_rich_text_and_image:true,save_failure_blocks_exit_and_retries:true,visuals:['light.png','dark-narrow.png'],native_file_dialog_cli_verified:true};
+  const report={passed:true,real_packaged_service:true,bat_installs_new_module:true,source_file_independent:true,scroll_checkpoint:true,font_change_restores_anchor:true,chapter_search:true,search_toggle_count_bidirectional_wrap:true,current_match_style:true,left_directory_hover_scrollbar:true,chapter_navigation:true,root_switch_silent:true,rapid_root_switch:true,tall_settings_top_aligned:true,line_height_selection_round_trip:true,stale_generation_rejected:true,unselected_file_rejected:true,hidden_silent:true,reload_restores_progress:true,remove:true,epub_rich_text_and_image:true,save_failure_blocks_exit_and_retries:true,visuals:['light.png','dark-narrow.png'],native_file_dialog_cli_verified:true};
   await writeFile(path.join(evidence,'report.json'),JSON.stringify(report,null,2));console.log(report);
 }catch(error){
   if(page){console.error({notice:await page.locator('.notice').textContent().catch(()=>null)});await page.screenshot({path:path.join(evidence,'failure.png')}).catch(()=>{});}

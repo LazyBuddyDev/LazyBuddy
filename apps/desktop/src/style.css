@@ -9,6 +9,11 @@
 }
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover {
+  scrollbar-color: var(--muted) transparent;
 }
 body {
   margin: 0;
@@ -214,8 +219,6 @@ button {
   overflow-y: auto;
   scrollbar-gutter: stable;
   min-height: 0;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line) transparent;
 }
 .content-width {
   max-width: 1160px;
