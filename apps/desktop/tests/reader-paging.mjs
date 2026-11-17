@@ -29,10 +29,15 @@ try{
     const {visibleAnchor}=await import('/src/reader.ts');
     return {x:e.scrollLeft,y:e.scrollTop,w:e.getBoundingClientRect().width,h:e.clientHeight,sw:e.scrollWidth,sh:e.scrollHeight,anchor:visibleAnchor(e),ids:[...e.querySelectorAll('[data-block]')].map(n=>Number(n.dataset.block.slice(1)))};
   });
-  const key=async direction=>{await scroll.focus();await page.keyboard.press(direction>0?'ArrowRight':'ArrowLeft');await page.waitForFunction(()=>![...document.querySelectorAll('.reader-navigation button')].every(b=>b.disabled));};
+  const key=async direction=>{await scroll.focus();await page.keyboard.press(direction>0?'ArrowRight':'ArrowLeft');await page.waitForFunction(()=>document.querySelector('.reader-scroll')?.getAttribute('aria-busy')==='false');};
+  await page.getByRole('button',{name:'目录',exact:true}).focus();await page.keyboard.press('Tab');
+  assert.equal(await scroll.evaluate(e=>document.activeElement===e),true);
+  assert.equal(await scroll.evaluate(e=>getComputedStyle(e).outlineWidth),'1px','Tab retains a visible keyboard focus cue');
+  await scroll.click({position:{x:5,y:5}});
   let initial=await state();assert.equal(initial.sh,initial.h);assert.equal(initial.ids.length,96);
   assert.equal(await page.getByRole('button',{name:'上一段',exact:true}).count(),0);
   await key(1);assert.equal((await state()).x,initial.w);
+  assert.equal(await scroll.evaluate(e=>getComputedStyle(e).outlineStyle),'none','mouse reading plus arrow keys does not show a page border');
   assert.equal(await scroll.evaluate(e=>document.activeElement===e),true,'page transition retains the reader keyboard focus');
   await key(-1);assert.equal((await state()).x,0);
   await page.getByRole('button',{name:'下一页',exact:true}).focus();await page.keyboard.press('ArrowRight');
@@ -94,7 +99,7 @@ try{
   const prevented=await scroll.evaluate(e=>{const event=new WheelEvent('wheel',{deltaY:120,bubbles:true,cancelable:true});e.dispatchEvent(event);return event.defaultPrevented;});
   assert.equal(prevented,true,'paged wheel is non-passive and handled by one page turn');
   await page.waitForFunction(()=>{const e=document.querySelector('.reader-scroll');return Math.abs(e.scrollLeft-e.getBoundingClientRect().width)<1;});
-  await page.waitForFunction(()=>![...document.querySelectorAll('.reader-navigation button')].every(b=>b.disabled));
+  await page.waitForFunction(()=>document.querySelector('.reader-scroll')?.getAttribute('aria-busy')==='false');
   await scroll.focus();await page.keyboard.press('ArrowRight');
   await page.evaluate(()=>window.fixtureEvents['shell-visibility']({payload:false}));await page.waitForSelector('[data-visible=false]');
   await page.waitForTimeout(100);const stopped=await state();await page.waitForTimeout(700);
@@ -103,12 +108,17 @@ try{
   await mode('horizontal');
   const chapterTwo=page.getByRole('navigation',{name:'章节目录'}).getByRole('button',{name:'第2章 布局检查',exact:true});
   await chapterTwo.click();await page.getByRole('heading',{name:'第2章 布局检查',exact:true}).waitFor();
-  await page.waitForFunction(()=>![...document.querySelectorAll('.reader-navigation button')].every(b=>b.disabled));
+  await page.waitForFunction(()=>document.querySelector('.reader-scroll')?.getAttribute('aria-busy')==='false');
   await page.evaluate(()=>window.fixtureHoldChapter=true);
   await scroll.focus();await page.keyboard.press('ArrowLeft');
   await page.waitForFunction(()=>window.fixtureChapterPending?.length===1);
   assert.equal(await page.locator('[data-reader-snapshot]').count(),1,'one old page remains visible while the next chapter loads');
   assert.match(await page.locator('[data-reader-snapshot]').textContent(),/第2章 布局检查/);
+  const busyButtons=await page.locator('main .reader-content button').evaluateAll(buttons=>buttons.map(b=>({disabled:b.disabled,opacity:getComputedStyle(b).opacity})));
+  assert.ok(busyButtons.every(b=>!b.disabled&&b.opacity==='1'),'turning does not gray buttons or remove their focusability');
+  const pendingBefore=await page.evaluate(()=>window.fixtureCalls.filter(c=>c.command==='reader_call').length);
+  await page.evaluate(()=>{document.querySelector('.reader-navigation button:last-child').click();document.querySelector('.reader-directory button').click();document.querySelector('.reader-content .collection-toolbar button').click();});
+  assert.equal(await page.evaluate(()=>window.fixtureCalls.filter(c=>c.command==='reader_call').length),pendingBefore,'busy guards still prevent duplicate or conflicting actions');
   const checkpointChapter=()=>page.evaluate(()=>window.fixtureCalls.filter(c=>c.command==='reader_checkpoint').at(-1).position.chapter_id);
   assert.equal(await checkpointChapter(),'c1');
   await page.evaluate(()=>{window.fixtureHoldChapter=false;window.fixtureChapterPending.splice(0).forEach(resolve=>resolve());});
@@ -129,7 +139,7 @@ try{
   assert.match(await scroll.evaluate(e=>e.getAnimations()[0].effect.getKeyframes()[0].transform),/translateY\(-/);
   await page.waitForFunction(()=>!document.querySelector('[data-reader-snapshot]'));
   await chapterTwo.click();await page.getByRole('heading',{name:'第2章 布局检查',exact:true}).waitFor();
-  await page.waitForFunction(()=>![...document.querySelectorAll('.reader-navigation button')].every(b=>b.disabled));
+  await page.waitForFunction(()=>document.querySelector('.reader-scroll')?.getAttribute('aria-busy')==='false');
   await page.evaluate(()=>window.fixtureHoldChapter=true);
   await scroll.focus();await page.keyboard.press('ArrowLeft');await page.waitForFunction(()=>window.fixtureChapterPending?.length===1);
   await page.evaluate(()=>window.fixtureEvents['shell-visibility']({payload:false}));await page.waitForSelector('[data-visible=false]');
@@ -143,7 +153,7 @@ try{
   await page.setViewportSize({width:500,height:560});
   await page.waitForFunction(()=>!document.querySelector('[data-reader-snapshot]'));
   assert.match(await page.locator('.reader-scroll h2').textContent(),/第2章 布局检查/,'resize cancels a chapter transition without advancing');
-  await page.waitForFunction(()=>![...document.querySelectorAll('.reader-navigation button')].every(b=>b.disabled));
+  await page.waitForFunction(()=>document.querySelector('.reader-scroll')?.getAttribute('aria-busy')==='false');
   await page.evaluate(()=>window.fixtureHoldChapter=true);
   await scroll.evaluate(e=>{e.scrollTop=0;e.dispatchEvent(new Event('scroll'));});
   await scroll.focus();await page.keyboard.press('ArrowLeft');await page.waitForFunction(()=>window.fixtureChapterPending?.length===1);
@@ -158,6 +168,6 @@ try{
   await page.locator('[aria-label="小说页签"]').getByRole('button',{name:'设置',exact:true}).click();
   assert.equal(await page.getByLabel('翻页模式',{exact:true}).inputValue(),'vertical');
   assert.deepEqual(errors,[]);
-  await writeFile(output+'report.json',JSON.stringify({passed:true,keys:true,input_priority:true,resize_anchor:true,bounded_chunks:288,chapter_edges:true,shared_chapter_animation_ms:240,chapter_wait_keeps_old_page:true,interrupted_chapter_preserves_progress:true,late_chapter_after_resize_ignored:true,three_modes:true,late_isolation:true,hidden_silent:true,mode_persistence:true},null,2));
+  await writeFile(output+'report.json',JSON.stringify({passed:true,keys:true,mouse_arrows_no_border:true,tab_focus_visible:true,turn_buttons_keep_appearance:true,busy_actions_guarded:true,input_priority:true,resize_anchor:true,bounded_chunks:288,chapter_edges:true,shared_chapter_animation_ms:240,chapter_wait_keeps_old_page:true,interrupted_chapter_preserves_progress:true,late_chapter_after_resize_ignored:true,three_modes:true,late_isolation:true,hidden_silent:true,mode_persistence:true},null,2));
   console.log('Reader paging: keys, reflow anchor, bounded bidirectional chunks, chapter edges, three modes and lifecycle passed.');
 }finally{await browser?.close();await server.close();await rm(scratch,{recursive:true,force:true});}

@@ -12,6 +12,7 @@
   let scroll=$state<HTMLElement>();let epoch=0;let initialized=false;let needsList=true;let lastBook=$state<string|null>(null);
   let currentPosition:Position|undefined;let restoring=false;let timer:ReturnType<typeof setTimeout>|undefined;
   let stagedPosition:Position|undefined;let checkpointWrites:Promise<unknown>=Promise.resolve();
+  let keyboardFocus=$state(false);
   let suspended=true;let turning=$state(false),extending=$state(false),offset=$state(0),extent=$state(0);
   let finishTurn:(()=>void)|undefined;let swapping=false;
   const horizontal=$derived(preferences.page_mode==='horizontal');
@@ -21,7 +22,7 @@
   let searchBlocks:{id:string;index:number;count:number}[]=[];let searchRun=0;
   let selectedMatch=$state<{id:string;offset:number}>();
   function clearSearch(){searchRun++;searchQuery='';searchBlocks=[];matchCurrent=-1;matchTotal=0;selectedMatch=undefined;}
-  async function toggleDirectory(){await checkpoint();directory=!directory;await tick();if(scroll&&currentPosition)restoreAnchor(scroll,currentPosition);}
+  async function toggleDirectory(){if(loading||turning||extending)return;await checkpoint();directory=!directory;await tick();if(scroll&&currentPosition)restoreAnchor(scroll,currentPosition);}
 
   let importRun=0;let waitTimer:ReturnType<typeof setTimeout>|undefined;let wake:(()=>void)|undefined;
   let observer:IntersectionObserver|undefined;let resourceQueue:string[]=[];let readingImages=false;
@@ -109,6 +110,7 @@
     try{await checkpoint();await call('progress.flush',{},ticket);await load(nextChapter,nextStart,undefined,ticket);}catch(error){report(error,ticket);}finally{if(valid(ticket))loading=false;}
   }
   async function back(){
+    if(loading||turning||extending)return;
     const ticket=lease();try{await checkpoint();await call('progress.flush',{},ticket);book=undefined;blocks=[];observer?.disconnect();images={};needsList=true;await list(ticket);}catch(error){report(error,ticket);}
   }
   async function extend(direction:number,ticket=lease()){
@@ -189,13 +191,16 @@
     }catch(error){report(error,ticket);}finally{if(valid(ticket)){turning=false;restoring=false;}}
   }
   function readingKey(event:KeyboardEvent){
-    if(!active||settings||!book||event.defaultPrevented||event.ctrlKey||event.altKey||event.metaKey||event.shiftKey)return;
+    if(!active||settings||!book||event.defaultPrevented)return;
+    if(event.key==='Tab'){keyboardFocus=true;return;}
+    if(event.ctrlKey||event.altKey||event.metaKey||event.shiftKey)return;
     if(event.target instanceof Element){
       if(event.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]'))return;
       if(event.target.closest('button')&&!event.target.closest('.reader-navigation'))return;
     }
     if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();void turn(event.key==='ArrowRight'?1:-1);}
   }
+  function pointerFocus(){if(active&&!settings&&book)keyboardFocus=false;}
   function wheel(event:WheelEvent){
     if(preferences.page_mode==='scroll'||event.ctrlKey||!active||settings||suspended)return;
     event.preventDefault();if(Math.abs(event.deltaY||event.deltaX)>8)void turn((event.deltaY||event.deltaX)>0?1:-1);
@@ -226,7 +231,7 @@
     try{while(resourceQueue.length&&valid(ticket)&&owner===book?.id){const id=resourceQueue.shift()!;try{const result=await call<{url:string}>('resource.read',{book_id:owner,resource_id:id},ticket);if(owner===book?.id&&blocks.some(b=>b.resource===id))images[id]=result.url;}catch(error){report(error,ticket);}}}finally{if(valid(ticket))readingImages=false;}
   }
   async function find(direction=0){
-    if(!book||!query.trim()||loading||turning)return;
+    if(!book||!query.trim()||loading||turning||extending)return;
     const ticket=lease();const run=++searchRun;loading=true;failure='';
     const needle=query.trim();
     try{
@@ -281,7 +286,7 @@
     const ticket=lease();try{await call('library.remove',{book_id:entry.id},ticket);removing=undefined;await list(ticket);}catch(error){report(error,ticket);if(String(error)==='removal_cleanup_pending'){removing=undefined;await list(ticket);}}
   }
 </script>
-<svelte:window onkeydown={readingKey}/>
+<svelte:window onkeydown={readingKey} onpointerdown={pointerFocus}/>
 
 <section hidden={!showing} class="reader-page feature-page" class:reader-content={!settings} data-testid="reader" data-active={active}>
 <div class="tab-bar"><div class="tabs" aria-label="小说页签"><button class:active={!settings} aria-pressed={!settings} title="书架" onclick={()=>settingsChange(false)}>书架</button><button class:active={settings} aria-pressed={settings} title="阅读设置" onclick={()=>settingsChange(true)}>设置</button></div></div>
@@ -293,12 +298,12 @@
     <div class="setting-row"><label for="reader-width">正文宽度</label><select id="reader-width" disabled={saving} value={preferences.width} onchange={e=>setPreference('width',Number(e.currentTarget.value))}>{#each [320,440,560,680,800,1000] as width}<option value={width}>{width}</option>{/each}</select></div>
   </div></section>
 {:else if book}
-  <div class="collection-toolbar"><button title="返回书库" onclick={back} disabled={loading}><Icon name="arrow" size={16}/>书库</button><strong class="reader-title" title={book.title}>{book.title}</strong><button title="展开或收起查找栏" aria-label="章内查找" aria-expanded={searchOpen} disabled={loading||turning} onclick={()=>searchOpen=!searchOpen}><Icon name="search" size={16}/></button><button title="展开或收起章节目录" aria-expanded={directory} disabled={loading||turning} onclick={toggleDirectory}>目录</button></div>
-  {#if searchOpen}<form class="collection-toolbar" onsubmit={e=>{e.preventDefault();void find(1);}}><label class="search-box"><Icon name="search" size={16}/><input aria-label="查找本章内容" placeholder="查找本章内容" maxlength="200" bind:value={query} oninput={clearSearch}/></label><output class="reader-match-count" aria-label="查找匹配位置" aria-live="polite">{matchCurrent+1}/{matchTotal}</output><button type="button" title="查找上一处" disabled={loading||turning||!query.trim()} onclick={()=>find(-1)}>上一处</button><button title="查找下一处" disabled={loading||turning||!query.trim()}>下一处</button></form>{/if}
+  <div class="collection-toolbar"><button title="返回书库" onclick={back} aria-disabled={loading||turning||extending}><Icon name="arrow" size={16}/>书库</button><strong class="reader-title" title={book.title}>{book.title}</strong><button title="展开或收起查找栏" aria-label="章内查找" aria-expanded={searchOpen} aria-disabled={loading||turning||extending} onclick={()=>{if(!loading&&!turning&&!extending)searchOpen=!searchOpen;}}><Icon name="search" size={16}/></button><button title="展开或收起章节目录" aria-expanded={directory} aria-disabled={loading||turning||extending} onclick={toggleDirectory}>目录</button></div>
+  {#if searchOpen}<form class="collection-toolbar" onsubmit={e=>{e.preventDefault();void find(1);}}><label class="search-box"><Icon name="search" size={16}/><input aria-label="查找本章内容" placeholder="查找本章内容" maxlength="200" bind:value={query} oninput={clearSearch}/></label><output class="reader-match-count" aria-label="查找匹配位置" aria-live="polite">{matchCurrent+1}/{matchTotal}</output><button type="button" title="查找上一处" disabled={!query.trim()} aria-disabled={loading||turning||extending||!query.trim()} onclick={()=>find(-1)}>上一处</button><button title="查找下一处" disabled={!query.trim()} aria-disabled={loading||turning||extending||!query.trim()}>下一处</button></form>{/if}
   <div class="reader-spread">
-  {#if directory}<nav class="reader-directory" aria-label="章节目录">{#each book.chapters as item,index}<button class:chosen={chapter===index} aria-current={chapter===index?'page':undefined} title={item.title} disabled={loading||turning||extending} onclick={()=>move(index)}>{item.title}</button>{/each}</nav>{/if}
+  {#if directory}<nav class="reader-directory" aria-label="章节目录">{#each book.chapters as item,index}<button class:chosen={chapter===index} aria-current={chapter===index?'page':undefined} title={item.title} aria-disabled={loading||turning||extending} onclick={()=>{if(!turning&&!extending)void move(index);}}>{item.title}</button>{/each}</nav>{/if}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex (The scroll region needs focus for keyboard reading.) -->
-  <div class="reader-viewport"><div class="reader-scroll" bind:this={scroll} data-page-mode={preferences.page_mode} class:horizontal onscroll={onScroll} use:wheelInput role="region" aria-label="小说正文" aria-busy={loading||turning} tabindex="0" style:--reader-font={`${preferences.font_size}px`} style:--reader-height={preferences.line_height} style:--reader-width={`${preferences.width}px`}>
+  <div class="reader-viewport"><div class="reader-scroll" bind:this={scroll} data-page-mode={preferences.page_mode} class:horizontal class:keyboard-focus={keyboardFocus} onscroll={onScroll} use:wheelInput role="region" aria-label="小说正文" aria-busy={loading||turning||extending} tabindex="0" style:--reader-font={`${preferences.font_size}px`} style:--reader-height={preferences.line_height} style:--reader-width={`${preferences.width}px`}>
     <article class="reader-body" class:horizontal><h2>{book.chapters[chapter]?.title}</h2>
     {#each blocks as block (block.id)}
       {#if block.kind==='image'}<figure data-block={block.id} data-kind="image" data-resource={block.resource??undefined}>{#if block.resource&&images[block.resource]}<img src={images[block.resource]} alt={block.text} onload={()=>{if(currentPosition&&!restoring&&!turning&&!swapping&&scroll)restoreAnchor(scroll,currentPosition);}}/>{:else}<figcaption>{block.text||'插图'}</figcaption>{/if}</figure>
@@ -310,7 +315,7 @@
     </article>
   </div></div>
   </div>
-  <div class="reader-navigation row-actions"><button title="上一页（←）" disabled={loading||turning||extending||chapter===0&&start===0&&offset<=1} onclick={()=>turn(-1)}>上一页</button><span>{chapter+1} / {book.chapters.length} 章</span><button title="下一页（→）" disabled={loading||turning||extending||chapter===book.chapters.length-1&&start+blocks.length>=total&&offset>=extent-1} onclick={()=>turn(1)}>下一页</button></div>
+  <div class="reader-navigation row-actions"><button title="上一页（←）" disabled={chapter===0&&start===0&&offset<=1} aria-disabled={loading||turning||extending||chapter===0&&start===0&&offset<=1} onclick={()=>turn(-1)}>上一页</button><span>{chapter+1} / {book.chapters.length} 章</span><button title="下一页（→）" disabled={chapter===book.chapters.length-1&&start+blocks.length>=total&&offset>=extent-1} aria-disabled={loading||turning||extending||chapter===book.chapters.length-1&&start+blocks.length>=total&&offset>=extent-1} onclick={()=>turn(1)}>下一页</button></div>
 {:else}
   <div class="collection-toolbar"><label class="search-box"><Icon name="search" size={16}/><input aria-label="筛选书名" placeholder="筛选书名" bind:value={filter}/></label><button title="导入TXT或EPUB文件" onclick={importBooks} disabled={importing}>导入小说</button></div>
   <label class="collection-options">TXT编码<select aria-label="TXT编码" bind:value={encoding} disabled={importing}>{#each [['auto','自动识别'],['utf-8','UTF-8'],['gb18030','GB18030 / GBK'],['big5','Big5'],['utf-16le','UTF-16 LE'],['utf-16be','UTF-16 BE']] as [value,label]}<option {value}>{label}</option>{/each}</select></label>
@@ -321,7 +326,7 @@
 </section>
 
 <style>
-  .reader-content{display:flex;flex-direction:column;min-height:0;height:100%}.reader-page[hidden]{display:none}.reader-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-library{overflow:auto;scrollbar-gutter:stable;min-height:0}.reader-book-open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left;border:0;padding:0;min-height:0}.reader-remove{flex-wrap:wrap;justify-content:flex-end;font-size:11px}.reader-remove span{width:100%;text-align:right}.reader-scroll{min-width:0;overflow:auto;min-height:0;flex:1;scrollbar-gutter:stable;background:var(--surface);overflow-anchor:none}.reader-scroll:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}.reader-body{--reader-padding:24px;max-width:var(--reader-width);margin:auto;padding:20px 24px 28px;font-size:var(--reader-font);line-height:var(--reader-height);overflow-wrap:anywhere}.reader-body h2{font-size:1.15em;margin-bottom:1.5em}.reader-paragraph{margin:0 0 1em;white-space:pre-wrap}.reader-heading{font-weight:600;font-size:1.1em}.reader-pre{font-family:monospace}.reader-strong{font-weight:700}.reader-emphasis{font-style:italic}figure{margin:1em 0;min-height:80px}figure img{display:block;max-width:100%;height:auto;margin:auto}figcaption{color:var(--muted);font-size:13px}.reader-navigation{display:flex;align-items:center;justify-content:space-between;font-size:12px;flex-shrink:0;margin-top:12px}@media(max-width:520px){.reader-body{--reader-padding:16px;padding:16px}.reader-remove{max-width:160px}.reader-navigation{font-size:11px}}
+  .reader-content{display:flex;flex-direction:column;min-height:0;height:100%}.reader-page[hidden]{display:none}.reader-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-library{overflow:auto;scrollbar-gutter:stable;min-height:0}.reader-book-open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left;border:0;padding:0;min-height:0}.reader-remove{flex-wrap:wrap;justify-content:flex-end;font-size:11px}.reader-remove span{width:100%;text-align:right}.reader-scroll{min-width:0;overflow:auto;min-height:0;flex:1;scrollbar-gutter:stable;background:var(--surface);overflow-anchor:none}.reader-scroll:focus{outline:none}.reader-scroll.keyboard-focus:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}.reader-body{--reader-padding:24px;max-width:var(--reader-width);margin:auto;padding:20px 24px 28px;font-size:var(--reader-font);line-height:var(--reader-height);overflow-wrap:anywhere}.reader-body h2{font-size:1.15em;margin-bottom:1.5em}.reader-paragraph{margin:0 0 1em;white-space:pre-wrap}.reader-heading{font-weight:600;font-size:1.1em}.reader-pre{font-family:monospace}.reader-strong{font-weight:700}.reader-emphasis{font-style:italic}figure{margin:1em 0;min-height:80px}figure img{display:block;max-width:100%;height:auto;margin:auto}figcaption{color:var(--muted);font-size:13px}.reader-navigation{display:flex;align-items:center;justify-content:space-between;font-size:12px;flex-shrink:0;margin-top:12px}@media(max-width:520px){.reader-body{--reader-padding:16px;padding:16px}.reader-remove{max-width:160px}.reader-navigation{font-size:11px}}
   .reader-viewport{position:relative;display:flex;flex:1;min-width:0;min-height:0;overflow:hidden}
   .reader-spread{display:flex;flex:1;min-height:0;gap:12px}.reader-directory{position:relative;flex:0 0 clamp(110px,28%,210px);overflow-y:auto;scrollbar-gutter:stable;min-height:0}.reader-directory button{display:block;width:100%;text-align:left;border:0;padding:9px 10px;overflow-wrap:anywhere}.reader-directory .chosen{background:var(--selected);font-weight:600;box-shadow:inset 3px 0 var(--accent)}.reader-match-count{flex-shrink:0;min-width:3ch;text-align:center;font-variant-numeric:tabular-nums}.reader-body mark{background:#f8e599;color:#302400}.reader-body mark.current-match{background:#c84913;color:#fff;outline:2px solid #702400;outline-offset:1px}
 
