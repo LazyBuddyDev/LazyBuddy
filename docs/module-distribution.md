@@ -4,7 +4,7 @@
 
 ## 分发边界
 
-当前宿主发布目标为`v1.0.3`；模块仍复用`modules-v1.0.0`不可变资源：news0.1.2、hongguo0.2.13、python-runtime0.1.0，本轮未改模块内容。1.0.2及后续客户端使用`docs/modules/stable-v2-catalog.json`及其签名；用户因既有私钥被删除而明确授权重建身份。旧`stable-catalog.json`、`web-catalog.json`与`catalog.json`保持原文及原签名。1.0.0及更早客户端需手动安装1.0.2取得新公钥，不能自动信任新身份。
+当前宿主正式版本为`v1.0.4`，从该版起使用`docs/modules/stable-v3-catalog.json`及其签名，提供reader0.1.2；该包在`v1.0.4`不可变资源中发布。新闻news0.1.2、红果hongguo0.2.13、python-runtime0.1.0仍复用`modules-v1.0.0`原包和地址。1.0.2–1.0.3客户端保留`stable-v2-catalog.json`，避免向不识别新页面模板的宿主提供新功能；升级宿主后切换目录。所有现用通道沿用同一Ed25519身份。旧`stable-catalog.json`、`web-catalog.json`与`catalog.json`保持原文及原签名；1.0.0及更早客户端需先手动安装新宿主，不能自动信任新身份。
 
 新闻包由新闻仓库构建，红果及其运行时包由红果仓库构建，宿主不导入服务源码。浏览器路线默认需要news、hongguo与精确匹配的python-runtime；`media-runtime`是红果独立服务的可选原生能力，当前Web宿主不使用。以每个实际清单的依赖闭包为准，不能混用旧包。
 
