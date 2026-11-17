@@ -14,6 +14,8 @@
   let onlineScrollTop=0;
   let detailsAvailable=$state(false),onlineSelection=$state<OnlineEntry>(),onlineDetail=$state<OnlineBook>(),onlineOpening=$state(false),directoryPage=$state(0);
   let detailScroll=$state<HTMLElement>();let detailScrollTop=0;
+  let shelfAvailable=$state(false),adding=$state(false),detailFromShelf=$state(false);
+  const shelved=$derived(!!onlineSelection&&entries.some(e=>e.source.kind==='fanqie'&&e.source.id===onlineSelection?.id));
   let onlineTicket:ReturnType<typeof lease>|undefined;
   let scroll=$state<HTMLElement>();let epoch=0;let initialized=false;let capabilitiesLoaded=false;let needsList=true;let lastBook=$state<string|null>(null);
   let currentPosition:Position|undefined;let restoring=false;let timer:ReturnType<typeof setTimeout>|undefined;
@@ -54,7 +56,8 @@
     const ticket=lease();failure='';
     try{
       preferences=await call<ReadingPreferences>('preferences.get',{},ticket);
-      if(!settings&&!capabilitiesLoaded){const health=await call<{capabilities:string[]}>('health',{},ticket);onlineAvailable=health.capabilities.includes('online_search');detailsAvailable=health.capabilities.includes('online_details');capabilitiesLoaded=true;}
+      if(!settings&&!capabilitiesLoaded){const health=await call<{capabilities:string[]}>('health',{},ticket);onlineAvailable=health.capabilities.includes('online_search');detailsAvailable=health.capabilities.includes('online_details');shelfAvailable=health.capabilities.includes('online_shelf');capabilitiesLoaded=true;}
+      if(!settings&&online&&(needsList||!initialized))await list(ticket);
       if(!settings&&!online){if(needsList||!initialized)await list(ticket);if(book){await tick();if(currentPosition)if(scroll)restoreAnchor(scroll,currentPosition);metrics();if(needsMore())await extend(1,ticket);watchImages();}}
       if(!settings&&online){await tick();if(valid(ticket)&&onlineScroll)onlineScroll.scrollTop=onlineScrollTop;}
       if(!settings&&online&&onlineSelection){await tick();if(valid(ticket)&&detailScroll)detailScroll.scrollTop=detailScrollTop;}
@@ -64,7 +67,7 @@
   function stopLocal(){
     suspended=true;finishTurn?.();if(scroll)scroll.scrollTo({left:scroll.scrollLeft,top:scroll.scrollTop,behavior:'instant'});turning=false;extending=false;restoring=false;swapping=false;
     epoch++;searchRun++;importRun++;clearTimeout(timer);timer=undefined;clearTimeout(waitTimer);wake?.();wake=undefined;
-    observer?.disconnect();observer=undefined;resourceQueue=[];images={};readingImages=false;importing=false;loading=false;saving=false;onlineSearching=false;onlineOpening=false;
+    observer?.disconnect();observer=undefined;resourceQueue=[];images={};readingImages=false;importing=false;loading=false;saving=false;onlineSearching=false;onlineOpening=false;adding=false;
   }
   export async function suspend(capture=true){
     if(capture&&active&&!settings)await checkpoint();
@@ -96,6 +99,11 @@
     try{
       await checkpoint();await call('progress.flush',{},ticket);
       const result=await call<{book:Book;position:Position|null}>('book.open',{book_id:entry.id},ticket);
+      if(entry.source.kind==='fanqie'){
+        onlineSelection={id:entry.source.id,title:result.book.title,author:result.book.author,description:result.book.description??''};
+        onlineDetail={...onlineSelection,source:'fanqie',chapters:result.book.chapters};
+        detailFromShelf=true;online=true;directoryPage=0;detailScrollTop=0;onlineError='';return;
+      }
       book=result.book;currentPosition=result.position??undefined;query='';clearSearch();
       chapter=Math.max(0,book.chapters.findIndex(c=>c.id===result.position?.chapter_id));
       await load(chapter,result.position?pageStart(result.position.block_id):0,result.position??undefined,ticket);
@@ -269,6 +277,7 @@
   const delay=()=>new Promise<void>(resolve=>{wake=resolve;waitTimer=setTimeout(()=>{wake=undefined;resolve();},150);});
   async function selectTab(next:boolean){
     if(changingView||!active)return;
+    if(detailFromShelf){await backOnline();if(next)await selectTab(true);else if(settings)settingsChange(false);return;}
     if(settings){online=next;settingsChange(false);return;}
     if(online===next)return;
     const ticket=lease();changingView=true;
@@ -297,7 +306,7 @@
   }
   async function openOnline(entry:OnlineEntry){
     if(!online||!active||settings||onlineSearching||onlineOpening)return;
-    const ticket=lease();onlineSelection=entry;onlineDetail=undefined;directoryPage=0;detailScrollTop=0;onlineOpening=true;onlineError='';
+    const ticket=lease();detailFromShelf=false;onlineSelection=entry;onlineDetail=undefined;directoryPage=0;detailScrollTop=0;onlineOpening=true;onlineError='';
     try{const detail=await onlineRequest<OnlineBook>('online.detail',{source:'fanqie',book_id:entry.id},ticket);if(detail)onlineDetail=detail;}
     catch(error){if(valid(ticket)){onlineError=readerError(error);notice(onlineError);}}finally{if(valid(ticket))onlineOpening=false;}
   }
@@ -306,7 +315,14 @@
     const pending=onlineOpening;onlineOpening=false;onlineSelection=undefined;onlineDetail=undefined;onlineError='';notice('');
     clearTimeout(waitTimer);wake?.();wake=undefined;
     if(pending)await invoke('reader_suspend');
+    if(detailFromShelf){detailFromShelf=false;online=false;return;}
     await tick();if(onlineScroll)onlineScroll.scrollTop=onlineScrollTop;
+  }
+  async function addOnline(){
+    if(adding||!onlineDetail||shelved)return;
+    const ticket=lease();adding=true;needsList=true;onlineError='';
+    try{await call('library.add',{source:'fanqie',book_id:onlineDetail.id},ticket);needsList=true;await list(ticket);notice('已加入书架');}
+    catch(error){if(valid(ticket)){onlineError=readerError(error);notice(onlineError);}}finally{if(valid(ticket))adding=false;}
   }
   function directoryMove(direction:number){directoryPage+=direction;detailScrollTop=0;if(detailScroll)detailScroll.scrollTop=0;}
   async function importBooks(){
@@ -337,7 +353,7 @@
 <svelte:window onkeydown={readingKey}/>
 
 <section hidden={!showing} class="reader-page feature-page" class:reader-content={!settings} data-testid="reader" data-active={active}>
-<div class="tab-bar"><div class="tabs" aria-label="小说页签"><button class:active={!settings&&!online} aria-pressed={!settings&&!online} title="书架" disabled={changingView} onclick={()=>selectTab(false)}>书架</button><button class:active={!settings&&online} aria-pressed={!settings&&online} title={onlineAvailable?'搜索番茄小说':'更新小说功能后可使用在线搜书'} disabled={!onlineAvailable||changingView} onclick={()=>selectTab(true)}>在线搜书</button><button class:active={settings} aria-pressed={settings} title="阅读设置" onclick={()=>settingsChange(true)}>设置</button></div></div>
+<div class="tab-bar"><div class="tabs" aria-label="小说页签"><button class:active={!settings&&(!online||detailFromShelf)} aria-pressed={!settings&&(!online||detailFromShelf)} title="书架" disabled={changingView} onclick={()=>selectTab(false)}>书架</button><button class:active={!settings&&online&&!detailFromShelf} aria-pressed={!settings&&online&&!detailFromShelf} title={onlineAvailable?'搜索番茄小说':'更新小说功能后可使用在线搜书'} disabled={!onlineAvailable||changingView} onclick={()=>selectTab(true)}>在线搜书</button><button class:active={settings} aria-pressed={settings} title="阅读设置" onclick={()=>settingsChange(true)}>设置</button></div></div>
 {#if settings}
   <section><div class="settings-content"><h1>阅读设置</h1>
     <div class="setting-row"><label for="reader-page-mode">翻页模式</label><select id="reader-page-mode" disabled={saving} value={preferences.page_mode} onchange={e=>setPreference('page_mode',e.currentTarget.value as ReadingPreferences['page_mode'])}><option value="horizontal">左右翻页</option><option value="vertical">上下翻页</option><option value="scroll">连续滚动</option></select></div>
@@ -347,12 +363,12 @@
   </div></section>
 {:else if online}
   {#if onlineSelection}
-    <div class="collection-toolbar"><button title="返回搜索结果" onclick={backOnline}><Icon name="arrow" size={16}/>搜索结果</button><strong class="reader-title" title={onlineDetail?.title??onlineSelection.title}>{onlineDetail?.title??onlineSelection.title}</strong></div>
+    <div class="collection-toolbar"><button title={detailFromShelf?'返回书架':'返回搜索结果'} onclick={backOnline}><Icon name="arrow" size={16}/>{detailFromShelf?'书架':'搜索结果'}</button><strong class="reader-title" title={onlineDetail?.title??onlineSelection.title}>{onlineDetail?.title??onlineSelection.title}</strong>{#if shelfAvailable}<button title={shelved?'已加入书架':'加入书架'} disabled={!onlineDetail||adding||shelved} onclick={addOnline}>{shelved?'已在书架':adding?'加入中…':'加入书架'}</button>{/if}</div>
     <div class="reader-library" bind:this={detailScroll} aria-label="书籍详情与目录" aria-busy={onlineOpening} onscroll={e=>{if(active&&!settings&&online&&e.currentTarget===detailScroll)detailScrollTop=e.currentTarget.scrollTop;}}>
       <span class="item-description">{onlineDetail?.author??onlineSelection.author} · 番茄小说</span>
       <p class="item-description">{onlineDetail?.description??onlineSelection.description}</p>
       {#if onlineError}<p role="alert" class="reader-online-error">{onlineError}</p>{/if}
-      {#if onlineDetail}<p class="item-description">目录 · 共 {onlineDetail.chapters.length} 章</p>
+      {#if onlineDetail}<p class="item-description">目录 · 共 {onlineDetail.chapters.length} 章 · 暂不能读取正文</p>
         {#each onlineDetail.chapters.slice(directoryPage*100,(directoryPage+1)*100) as item (item.id)}<div class="collection-row"><span class="item-title" title={item.title}>{item.title}</span></div>{/each}
         {#if !onlineDetail.chapters.length}<div class="list-empty">暂无章节</div>{/if}
       {:else if onlineOpening}<div class="list-empty" role="status">正在载入目录…</div>
@@ -392,8 +408,8 @@
   <div class="collection-toolbar"><label class="search-box"><Icon name="search" size={16}/><input aria-label="筛选书名" placeholder="筛选书名" bind:value={filter}/></label><button title="导入TXT或EPUB文件" onclick={importBooks} disabled={importing}>导入小说</button></div>
   <label class="collection-options">TXT编码<select aria-label="TXT编码" bind:value={encoding} disabled={importing}>{#each [['auto','自动识别'],['utf-8','UTF-8'],['gb18030','GB18030 / GBK'],['big5','Big5'],['utf-16le','UTF-16 LE'],['utf-16be','UTF-16 BE']] as [value,label]}<option {value}>{label}</option>{/each}</select></label>
   {#if !entries.length}<div class="list-empty">{failure?'书库暂未载入':'导入TXT或EPUB，开始阅读'}{#if failure}<button title="重新读取书库" onclick={()=>{needsList=true;void activate();}}>重试</button>{/if}</div>
-  {:else}<div class="reader-library">{#each filtered as entry (entry.id)}<div class="reader-book collection-row"><button class="reader-book-open" aria-label={`继续阅读《${entry.title}》`} title={`继续阅读《${entry.title}》`} disabled={loading} onclick={()=>open(entry)}><strong class="item-title">{entry.title}</strong><span class="item-description">{entry.author?`${entry.author} · `:''}{entry.source.format.toUpperCase()} · {progressLabel(entry)}{lastBook===entry.id?' · 最近阅读':''}</span></button>
-    {#if removing===entry.id}<div class="reader-remove row-actions"><span>移除书库副本和阅读记录？原文件保留。</span><button title="确认移除书籍" onclick={()=>remove(entry)}>确认移除</button><button title="取消移除书籍" onclick={()=>removing=undefined}>取消</button></div>{:else}<div class="row-actions"><button aria-label={`移除《${entry.title}》`} title={`移除《${entry.title}》`} onclick={()=>removing=entry.id}>移除</button></div>{/if}</div>{/each}{#if !filtered.length}<div class="list-empty">没有匹配的书籍</div>{/if}</div>{/if}
+  {:else}<div class="reader-library">{#each filtered as entry (entry.id)}<div class="reader-book collection-row"><button class="reader-book-open" aria-label={`${entry.source.kind==='fanqie'?'查看目录':'继续阅读'}《${entry.title}》`} title={`${entry.source.kind==='fanqie'?'查看目录':'继续阅读'}《${entry.title}》`} disabled={loading} onclick={()=>open(entry)}><strong class="item-title">{entry.title}</strong><span class="item-description">{entry.author?`${entry.author} · `:''}{entry.source.kind==='fanqie'?'番茄小说':entry.source.format.toUpperCase()} · {progressLabel(entry)}{lastBook===entry.id?' · 最近阅读':''}</span></button>
+    {#if removing===entry.id}<div class="reader-remove row-actions"><span>{entry.source.kind==='fanqie'?'从本应用书架移除此书及阅读记录？':'移除书库副本和阅读记录？原文件保留。'}</span><button title="确认移除书籍" onclick={()=>remove(entry)}>确认移除</button><button title="取消移除书籍" onclick={()=>removing=undefined}>取消</button></div>{:else}<div class="row-actions"><button aria-label={`移除《${entry.title}》`} title={`移除《${entry.title}》`} onclick={()=>removing=entry.id}>移除</button></div>{/if}</div>{/each}{#if !filtered.length}<div class="list-empty">没有匹配的书籍</div>{/if}</div>{/if}
 {/if}
 </section>
 

@@ -4,8 +4,11 @@ import {pageStart,viewportStep,pageOffset,progressLabel,markedRuns,matchOffsets,
 import {active,accepts,type View} from '../src/lifecycle.ts';
 test('reading positions map to bounded pages and count chapters from zero',()=>{
   assert.equal(pageStart('b150'),96);assert.equal(pageStart('b192'),192);
-  assert.equal(progressLabel({position:null} as Entry),'未开始');
-  assert.equal(progressLabel({position:{chapter_id:'c1'},chapters:10} as Entry),'第 2 / 10 章');
+  assert.equal(progressLabel({source:{kind:'local'},position:null} as Entry),'未开始');
+  assert.equal(progressLabel({source:{kind:'local'},position:{chapter_id:'c1'},chapters:10} as Entry),'第 2 / 10 章');
+  assert.equal(progressLabel({source:{kind:'fanqie'},position:null,chapters:4423} as Entry),'共 4423 章');
+  assert.match(readerError('source_body_unavailable'),/正文暂不可用/);
+  assert.match(readerError('source_detail_required'),/重新载入目录/);
 });
 test('search highlighting retains the original text and treats markup as text',()=>{
   const text='😀<script>你好你好';const result=markedRuns({text,runs:[]} as unknown as Block,'你好');

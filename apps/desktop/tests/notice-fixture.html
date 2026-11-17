@@ -3,7 +3,7 @@ import {mount} from 'svelte';import App from '/src/App.svelte';import '/src/styl
 let generation=0;const callbacks=[];
 const readerOnlineCase=new URLSearchParams(location.search).has('reader-online');if(readerOnlineCase)window.fixtureReader=true;
 const preferences={root:readerOnlineCase?'reader':'hongguo',dark:false,topmost:false,auto_update:false,background_opacity:1,card_opacity:1,...(window.fixturePersist?JSON.parse(localStorage.getItem('fixture.preferences')??'{}'):{})};
-let onlineNext=0;const onlineJobs=new Map();let releaseOnline;let releaseOnlineButton;
+let onlineLastDetail;const onlineShelf=new Map();let onlineNext=0;const onlineJobs=new Map();let releaseOnline;let releaseOnlineButton;
 if(readerOnlineCase){releaseOnlineButton=document.createElement('button');releaseOnlineButton.textContent='完成迟到搜索';releaseOnlineButton.hidden=true;releaseOnlineButton.style='position:fixed;bottom:32px;right:12px;z-index:999;display:none';releaseOnlineButton.onclick=()=>{releaseOnlineButton.hidden=true;releaseOnlineButton.style.display='none';releaseOnline?.();};document.body.append(releaseOnlineButton);}
 const news={auto_refresh:false,refresh_minutes:5,followed:[],hidden:[],order:[],default_followed:false};
 const readerPreferences={font_size:20,line_height:1.9,width:680,page_mode:'scroll',...window.fixtureReadingPreferences,...(window.fixturePersist?JSON.parse(localStorage.getItem('fixture.reader.preferences')??'{}'):{})};
@@ -24,7 +24,7 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
    return {};
  }
  if(command==='reader_call'){
-   if(args.method==='health')return {capabilities:['online_search','online_details']};
+   if(args.method==='health')return {capabilities:['online_search','online_details','online_shelf']};
    if(args.method==='online.search'){const job=++onlineNext;onlineJobs.set(job,args.args);return {job,status:'pending'};}
    if(args.method==='online.detail'){const job=++onlineNext;onlineJobs.set(job,{detail:true,...args.args});return {job,status:'pending'};}
    if(args.method==='online.status'){
@@ -32,11 +32,21 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
      if(request.detail){
        if(request.book_id==='2'){if(releaseOnlineButton){releaseOnlineButton.hidden=false;releaseOnlineButton.style.display='inline-flex';}await new Promise(resolve=>releaseOnline=resolve);}
        if(request.book_id==='3')return {status:'failed',error:'incomplete_source_directory'};
-       return {status:'complete',result:{source:'fanqie',id:request.book_id,title:`详情样例 ${request.book_id}`,author:'目录作者',description:'书籍简介 \u003cscript>只是文字\u003c/script>',chapters:Array.from({length:203},(_,i)=>({id:String(900+i),title:`第${i+1}章 目录样例`}))}};
+       onlineLastDetail={source:'fanqie',id:request.book_id,title:`详情样例 ${request.book_id}`,author:'目录作者',description:'书籍简介 \u003cscript>只是文字\u003c/script>',chapters:Array.from({length:203},(_,i)=>({id:String(900+i),title:`第${i+1}章 目录样例`}))};return {status:'complete',result:onlineLastDetail};
      }
      if(request.query==='迟到'){if(releaseOnlineButton){releaseOnlineButton.hidden=false;releaseOnlineButton.style.display='inline-flex';}await new Promise(resolve=>releaseOnline=resolve);}
      return {status:'complete',result:{source:'fanqie',cursor:request.cursor,next_cursor:request.cursor===0?37:null,entries:Array.from({length:10},(_,i)=>({id:String(request.cursor+i+1),title:`${request.query} · ${request.cursor+i+1}`,author:'作者样例',description:'这是简介样例。'.repeat(20)}))}};
    }
+   if(args.method==='library.add'){
+     if(args.args.book_id==='4')throw 'save_failed';
+     const detail=onlineLastDetail,id=`book-online-${args.args.book_id}`;
+     if(!detail||detail.id!==args.args.book_id)throw 'source_detail_required';
+     const book={...detail,id,source:{kind:'fanqie',id:detail.id,format:'online',encoding:''},content_version:'catalog-fixture',warnings:[],chapters:detail.chapters.map(c=>({...c,blocks:0}))};
+     const entry={...book,chapters:book.chapters.length,position:null,revision:0,updated_ms:Date.now()};
+     onlineShelf.set(id,book);window.fixtureReaderEntries=[...(window.fixtureReaderEntries??[]).filter(e=>e.id!==id),entry];return {book:entry,duplicate:false};
+   }
+   if(args.method==='library.remove'){onlineShelf.delete(args.args.book_id);window.fixtureReaderEntries=(window.fixtureReaderEntries??[]).filter(e=>e.id!==args.args.book_id);return {};}
+   if(args.method==='book.open'&&onlineShelf.has(args.args.book_id))return {book:onlineShelf.get(args.args.book_id),position:null,revision:0};
    if(args.method==='book.open')return {book:{...window.fixtureReaderEntries[0],warnings:[],chapters:Array.from({length:window.fixtureChapterCount??20},(_,i)=>({id:`c${i}`,title:`第${i+1}章 布局检查`,blocks:window.fixtureChapterBlocks??30}))},position:window.fixtureReaderPosition??null};
    if(args.method==='chapter.read'){const start=args.args.start??0,total=window.fixtureChapterBlocks??30;const result={start,total,blocks:Array.from({length:Math.max(0,Math.min(96,total-start))},(_,i)=>({id:`b${start+i}`,kind:'paragraph',text:`${start+i} ${window.fixtureParagraph??'用于布局验证的正文内容，保持自然换行和滚动。'}`,runs:[],resource:null}))};if(window.fixtureHoldChapter)await new Promise(resolve=>(window.fixtureChapterPending??=[]).push(resolve));return result;}
    if(args.method==='preferences.get')return readerPreferences;
