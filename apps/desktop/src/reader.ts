@@ -4,8 +4,8 @@ export type Entry = {id:string;title:string;author:string;source:Source;content_
 export type Chapter = {id:string;title:string;blocks:number};
 export type Book = {id:string;title:string;author:string;source:Source;description?:string;content_version:string;chapters:Chapter[];warnings:string[]};
 export type OnlineEntry = {id:string;title:string;author:string;description:string};
-export type OnlineSource = 'fanqie'|'qimao';
-export const onlineSources:Record<OnlineSource,string>={fanqie:'番茄小说（App）',qimao:'七猫小说（App）'};
+export type OnlineSource = 'fanqie'|'qimao'|'midu'|'shuqi_app';
+export const onlineSources:Record<OnlineSource,string>={fanqie:'番茄小说（App）',qimao:'七猫小说（App）',midu:'米读小说（App）',shuqi_app:'书旗免费库（App）'};
 export function readerSourceName(source:string):string{return onlineSources[source as OnlineSource]??(source==='shuqi'?'书旗小说（网页试读）':'未接入来源');}
 export type OnlinePage = {source:OnlineSource;entries:OnlineEntry[];cursor:number;next_cursor:number|null};
 export type OnlineBook = OnlineEntry & {source:OnlineSource;chapters:{id:string;title:string}[]};
@@ -46,6 +46,7 @@ export function readerError(error:unknown):string {
   const code=String(error);
   const bodyErrors:Record<string,string>={source_chapter_locked:'该章节未向访客免费开放，请在官方平台阅读',source_helper_missing:'正文组件缺失，请通过 start.bat 更新小说功能',source_runtime_failed:'正文组件未能启动，请重新打开书籍',source_decode_failed:'本章正文解析失败，请稍后手动重试',source_retry_stopped:'本章请求已停止，请稍后手动重试',source_empty_chapter:'本章未返回可读正文',chapter_not_loaded:'章节尚未载入，请重新打开书籍',credential_save_failed:'设备身份保存失败，请检查 Windows 凭据管理器',credential_read_failed:'设备身份读取失败，原有凭据已保留',invalid_saved_identity:'已保存的设备身份无效，原有凭据已保留',invalid_credential_scope:'阅读器凭据作用域无效'};
   if(bodyErrors[code])return bodyErrors[code];
+  if(code==='unsupported_source_book')return '该作品的阅读类型或免费权限尚未验证，请选择其他作品';
   if(code==='source_body_unavailable')return '来源正文暂不可用，书架与目录已保留';
   if(code==='source_detail_required')return '请重新载入目录后加入书架';
   if(code==='incomplete_source_directory')return '来源目录不完整，请重新载入，已有数据已保留';

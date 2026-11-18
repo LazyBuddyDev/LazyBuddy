@@ -72,9 +72,9 @@ test('horizontal anchors ignore a previous paragraph box without visible text',(
 });
 
 test('all online sources use source chapter ids and explain guest reading limits',()=>{
-  for(const kind of ['fanqie','qimao'])assert.equal(progressLabel({source:{kind,format:'online'},position:{chapter_id:'123'},chapters:10} as Entry),'继续阅读 · 共 10 章');
+  for(const kind of ['fanqie','qimao','midu','shuqi_app'])assert.equal(progressLabel({source:{kind,format:'online'},position:{chapter_id:'123'},chapters:10} as Entry),'继续阅读 · 共 10 章');
   assert.match(readerError('source_chapter_locked'),/未向访客免费开放/);
   assert.doesNotMatch(readerError('source_access_denied'),/番茄/);
 });
 
-test('source names distinguish verified App reading from legacy web trials',()=>{assert.equal(readerSourceName('qimao'),'七猫小说（App）');assert.equal(readerSourceName('shuqi'),'书旗小说（网页试读）');});
+test('source names distinguish verified App reading from legacy web trials',()=>{assert.equal(readerSourceName('qimao'),'七猫小说（App）');assert.equal(readerSourceName('midu'),'米读小说（App）');assert.equal(readerSourceName('shuqi_app'),'书旗免费库（App）');assert.equal(readerSourceName('shuqi'),'书旗小说（网页试读）');});
