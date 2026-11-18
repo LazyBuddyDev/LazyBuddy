@@ -26,7 +26,7 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
  if(command==='reader_pick')return ['C:\\fixture\\样例.txt'];
  if(command==='reader_checkpoint'){const entry=(window.fixtureReaderEntries??[]).find(e=>e.id===args.position.book_id);if(entry)entry.position=args.position;return;}
  if(command==='reader_call'){
-   if(args.method==='health')return {sources:window.fixtureReaderSources??['fanqie'],capabilities:['online_search','online_details','online_shelf','shelf_membership','browsing_history',...(new URLSearchParams(location.search).has('reader-body')?['online_body']:[])]};
+   if(args.method==='health')return {sources:window.fixtureReaderSources??['fanqie'],source_channels:window.fixtureLegacySourceInfo?undefined:{fanqie:'app',qimao:'app',shuqi:'web'},capabilities:['online_search','online_details','online_shelf','shelf_membership','browsing_history',...(new URLSearchParams(location.search).has('reader-body')?['online_body']:[])]};
    if(args.method==='online.chapter'){if(args.args.chapter_id==='901'){const job=++onlineNext;onlineJobs.set(job,{body:true,...args.args});return {job,status:'pending'};}if(args.args.chapter_id==='902')throw 'source_access_denied';return {status:'complete',result:{total:30,chapter_version:'fixture-body-v1'}};}
    if(args.method==='online.search'){const job=++onlineNext;onlineJobs.set(job,args.args);return {job,status:'pending'};}
    if(args.method==='online.detail'){const job=++onlineNext;onlineJobs.set(job,{detail:true,...args.args});return {job,status:'pending'};}

@@ -12,13 +12,13 @@ try{
   await server.listen();browser=await chromium.launch({channel:'msedge',headless:true});
   const page=await browser.newPage({viewport:{width:780,height:640}}),errors=[];
   page.on('pageerror',e=>errors.push(String(e)));
-  await page.addInitScript(()=>{if(!localStorage.getItem('fixture.oldReader'))window.fixtureReaderSources=['fanqie','qimao','shuqi'];});
+  await page.addInitScript(()=>{window.fixtureReaderSources=['fanqie','qimao','shuqi'];window.fixtureLegacySourceInfo=!!localStorage.getItem('fixture.oldReader');});
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/tests/notice-fixture.html?reader-online&reader-body`);
   await page.waitForSelector('[data-events-ready=true]');
   await page.getByRole('button',{name:'在线搜书',exact:true}).click();
   const source=page.getByRole('combobox',{name:'搜索源'});
-  assert.deepEqual(await source.locator('option').allTextContents(),['番茄小说','七猫中文网','书旗小说']);
-  for(const kind of ['qimao','shuqi']){
+  assert.deepEqual(await source.locator('option').allTextContents(),['番茄小说（App）','七猫小说（App）']);
+  for(const kind of ['fanqie','qimao']){
     await source.selectOption(kind);
     assert.equal(await page.locator('[aria-label=搜索结果分页]').count(),0,'source changes clear the previous cursor');
     await page.getByRole('textbox',{name:'在线搜索书名或作者'}).fill('同名书');
@@ -34,14 +34,14 @@ try{
   }
   const entries=await page.evaluate(()=>window.fixtureReaderEntries);
   assert.equal(entries.length,2);assert.equal(new Set(entries.map(e=>e.id)).size,2);
-  assert.deepEqual(entries.map(e=>e.source.kind),['qimao','shuqi']);
+  assert.deepEqual(entries.map(e=>e.source.kind),['fanqie','qimao']);
   const calls=await page.evaluate(()=>window.fixtureCalls.filter(c=>c.command==='reader_call'));
-  assert.deepEqual(calls.filter(c=>c.method==='online.detail').map(c=>c.args.source),['qimao','shuqi']);
+  assert.deepEqual(calls.filter(c=>c.method==='online.detail').map(c=>c.args.source),['fanqie','qimao']);
   assert.equal(calls.filter(c=>c.method==='online.chapter').length,2);
   assert.deepEqual(errors,[]);
   // Old installed modules advertise only the original source.
   await page.evaluate(()=>localStorage.setItem('fixture.oldReader','1'));
   await page.reload();await page.getByRole('button',{name:'在线搜书',exact:true}).click();
-  assert.deepEqual(await source.locator('option').allTextContents(),['番茄小说']);
-  console.log('Passed: source choices, cursor reset, source-aware details/shelves, actual body dispatch and older module capability gating.');
+  assert.deepEqual(await source.locator('option').allTextContents(),['番茄小说（App）']);
+  console.log('Passed: source choices, cursor reset, source-aware details/shelves, actual body dispatch and App channel gating and rejection of legacy web-only source choices.');
 }finally{await browser?.close();await server.close();await rm(scratch,{recursive:true,force:true});}

@@ -4,8 +4,9 @@ export type Entry = {id:string;title:string;author:string;source:Source;content_
 export type Chapter = {id:string;title:string;blocks:number};
 export type Book = {id:string;title:string;author:string;source:Source;description?:string;content_version:string;chapters:Chapter[];warnings:string[]};
 export type OnlineEntry = {id:string;title:string;author:string;description:string};
-export type OnlineSource = 'fanqie'|'qimao'|'shuqi';
-export const onlineSources:Record<OnlineSource,string>={fanqie:'番茄小说',qimao:'七猫中文网',shuqi:'书旗小说'};
+export type OnlineSource = 'fanqie'|'qimao';
+export const onlineSources:Record<OnlineSource,string>={fanqie:'番茄小说（App）',qimao:'七猫小说（App）'};
+export function readerSourceName(source:string):string{return onlineSources[source as OnlineSource]??(source==='shuqi'?'书旗小说（网页试读）':'未接入来源');}
 export type OnlinePage = {source:OnlineSource;entries:OnlineEntry[];cursor:number;next_cursor:number|null};
 export type OnlineBook = OnlineEntry & {source:OnlineSource;chapters:{id:string;title:string}[]};
 export type Block = {id:string;kind:string;text:string;runs:{text:string;strong:boolean;emphasis:boolean;link?:string}[];resource:string|null};
