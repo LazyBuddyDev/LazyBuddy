@@ -26,7 +26,7 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
  if(command==='reader_pick')return ['C:\\fixture\\样例.txt'];
  if(command==='reader_checkpoint'){const entry=(window.fixtureReaderEntries??[]).find(e=>e.id===args.position.book_id);if(entry)entry.position=args.position;return;}
  if(command==='reader_call'){
-   if(args.method==='health')return {capabilities:['online_search','online_details','online_shelf','shelf_membership','browsing_history',...(new URLSearchParams(location.search).has('reader-body')?['online_body']:[])]};
+   if(args.method==='health')return {sources:window.fixtureReaderSources??['fanqie'],capabilities:['online_search','online_details','online_shelf','shelf_membership','browsing_history',...(new URLSearchParams(location.search).has('reader-body')?['online_body']:[])]};
    if(args.method==='online.chapter'){if(args.args.chapter_id==='901'){const job=++onlineNext;onlineJobs.set(job,{body:true,...args.args});return {job,status:'pending'};}if(args.args.chapter_id==='902')throw 'source_access_denied';return {status:'complete',result:{total:30,chapter_version:'fixture-body-v1'}};}
    if(args.method==='online.search'){const job=++onlineNext;onlineJobs.set(job,args.args);return {job,status:'pending'};}
    if(args.method==='online.detail'){const job=++onlineNext;onlineJobs.set(job,{detail:true,...args.args});return {job,status:'pending'};}
@@ -36,18 +36,18 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
      if(request.detail){
        if(request.book_id==='2'){if(releaseOnlineButton){releaseOnlineButton.hidden=false;releaseOnlineButton.style.display='inline-flex';}await new Promise(resolve=>releaseOnline=resolve);}
        if(request.book_id==='3')return {status:'failed',error:'incomplete_source_directory'};
-       onlineLastDetail={source:'fanqie',id:request.book_id,title:`详情样例 ${request.book_id}`,author:'目录作者',description:'书籍简介 \u003cscript>只是文字\u003c/script>',chapters:Array.from({length:203},(_,i)=>({id:String(900+i),title:`第${i+1}章 目录样例`}))};return {status:'complete',result:onlineLastDetail};
+       onlineLastDetail={source:request.source,id:request.book_id,title:`详情样例 ${request.book_id}`,author:'目录作者',description:'书籍简介 \u003cscript>只是文字\u003c/script>',chapters:Array.from({length:203},(_,i)=>({id:String(900+i),title:`第${i+1}章 目录样例`}))};return {status:'complete',result:onlineLastDetail};
      }
      if(request.query==='迟到'){if(releaseOnlineButton){releaseOnlineButton.hidden=false;releaseOnlineButton.style.display='inline-flex';}await new Promise(resolve=>releaseOnline=resolve);}
-     return {status:'complete',result:{source:'fanqie',cursor:request.cursor,next_cursor:request.cursor===0?37:null,entries:Array.from({length:10},(_,i)=>({id:String(request.cursor+i+1),title:`${request.query} · ${request.cursor+i+1}`,author:'作者样例',description:'这是简介样例。'.repeat(20)}))}};
+     return {status:'complete',result:{source:request.source,cursor:request.cursor,next_cursor:request.cursor===0?37:null,entries:Array.from({length:10},(_,i)=>({id:String(request.cursor+i+1),title:`${request.query} · ${request.cursor+i+1}`,author:'作者样例',description:'这是简介样例。'.repeat(20)}))}};
    }
    if(args.method==='library.add'||args.method==='online.open'){
      if(args.args.book_id==='4')throw 'save_failed';
-     const existing=(window.fixtureReaderEntries??[]).find(e=>e.source.kind==='fanqie'&&e.source.id===args.args.book_id);
+     const existing=(window.fixtureReaderEntries??[]).find(e=>e.source.kind===args.args.source&&e.source.id===args.args.book_id);
      if(existing){if(args.method==='library.add')existing.in_shelf=true;return {book:existing,duplicate:true};}
-     const detail=onlineLastDetail,id=`book-online-${args.args.book_id}`;
-     if(!detail||detail.id!==args.args.book_id)throw 'source_detail_required';
-     const book={...detail,id,source:{kind:'fanqie',id:detail.id,format:'online',encoding:''},content_version:'catalog-fixture',warnings:[],chapters:detail.chapters.map(c=>({...c,blocks:0}))};
+     const detail=onlineLastDetail,id=`book-online-${args.args.source}-${args.args.book_id}`;
+     if(!detail||detail.source!==args.args.source||detail.id!==args.args.book_id)throw 'source_detail_required';
+     const book={...detail,id,source:{kind:detail.source,id:detail.id,format:'online',encoding:''},content_version:'catalog-fixture',warnings:[],chapters:detail.chapters.map(c=>({...c,blocks:0}))};
      const entry={...book,chapters:book.chapters.length,position:null,revision:0,updated_ms:Date.now(),in_shelf:args.method==='library.add'};
      onlineShelf.set(id,book);window.fixtureReaderEntries=[...(window.fixtureReaderEntries??[]).filter(e=>e.id!==id),entry];return {book:entry,duplicate:false};
    }

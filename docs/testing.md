@@ -24,6 +24,7 @@ cargo test --locked -p lazybuddy host::tests
 | 统一页签、集合工具栏、列表/网格与封面状态 | `apps/desktop/tests/hongguo-views.mjs` |
 | 画面点击、音量浮层与媒体快捷键 | `apps/desktop/tests/video-click.mjs` |
 | 公共焦点输入方式、指针+按键、Tab/ShiftTab、编辑/录入与监听清理 | `apps/desktop/tests/focus-navigation.mjs`、`apps/desktop/tests/focus-navigation.test.ts` |
+| 来源选择、分页重置、同书号隔离、正文派发及旧模块来源声明 | `apps/desktop/tests/reader-sources.mjs` |
 | 书页方向键、三种模式、重排锚点、有界分块、章节边界与静默 | `apps/desktop/tests/reader-paging.mjs` |
 | 内容及设置的公共行、标签、下拉框、工具栏、宽窄窗口和浅深主题 | `apps/desktop/tests/ui-consistency.mjs` |
 | 功能设置页签、全局设置隔离、局部透明度保存与静默 | `apps/desktop/tests/feature-settings.mjs` |
