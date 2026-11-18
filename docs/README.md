@@ -16,6 +16,8 @@
 
 业务接口分别由[新闻服务](https://github.com/LazyBuddyDev/news-service/blob/main/docs/module-api.md)、[红果服务](https://github.com/LazyBuddyDev/hongguo-service/blob/main/docs/module-api.md)和[阅读服务](https://github.com/LazyBuddyDev/reader-service/blob/main/docs/module-api.md)维护，宿主不保留整份副本。
 
+新增小说来源前，遵循阅读服务的[来源接入与验收规范](https://github.com/LazyBuddyDev/reader-service/blob/main/docs/module-api.md#来源接入与验收规范)，分别验证网页、App等实际接入端的免费范围与章节权限。
+
 `index.html`和`icon.svg`用于公开站点；`modules/`和`updates/`用于已发布机器端点。签名文件按原字节维护，不作为普通文档排版或清理。
 
 ## 下载站点
