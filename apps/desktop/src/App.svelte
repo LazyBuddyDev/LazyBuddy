@@ -3,7 +3,7 @@
   import {getCurrentWindow} from '@tauri-apps/api/window';
   import ShortcutButton from './ShortcutButton.svelte';import Icon from './Icon.svelte';import Switch from './Switch.svelte';import Hongguo from './Hongguo.svelte';import News from './News.svelte';
   import {moduleTarget,type Root,type Section,type View} from './lifecycle';import logoUrl from '../../../assets/lazybuddy.svg';
-  import Reader from './Reader.svelte';import {focusNavigation} from './focus-navigation';
+  import Reader from './Reader.svelte';import Bilibili from './Bilibili.svelte';import {focusNavigation} from './focus-navigation';
   type Module={id:string;name:string;version:string;installed:boolean;update:boolean};
   type ModuleProgress={stage:string;downloaded:number;total:number};
   type Preferences={dark:boolean;topmost:boolean;root:string|null;auto_update:boolean;background_opacity:number;card_opacity:number;shortcut:{modifiers:number;key:number};[key:string]:unknown};
@@ -13,7 +13,7 @@
   let modules=$state<Module[]>([]);let roots=$state<{id:Root;name:string}[]>([]);let managerBusy=$state(false);let catalogReady=$state(false);
   let installing=$state<string>();let moduleProgress=$state<ModuleProgress>();
   let servicePlayback=$state(false);let realHongguo=$state<Hongguo>();let serviceActive=$state(false);
-  let reader=$state<Reader>();
+  let reader=$state<Reader>();let bilibili=$state<Bilibili>();
   let changing=$state(false);
   let notice=$state('正在启动');let updateReady=$state(false);let appUpdates=$state(false);let page:HTMLElement;let sequence=0;let lastAccountPage=false;
   let displayedCategory='appearance';
@@ -42,6 +42,7 @@
     if(section==='settings')void call('capture_shortcut',{enabled:false}).catch(error=>notice=String(error));
     const ticket=++sequence;changing=true;serviceActive=false;
     try{await reader?.suspend(nextVisible);}catch(error){if(ticket===sequence){notice=`阅读进度保存失败：${error}`;changing=false;}return;}
+    await bilibili?.suspend(nextRoot!=='bilibili'||nextSection!=='content');if(ticket!==sequence)return;
     await realHongguo?.suspend(nextRoot==='hongguo'&&nextSection==='content');if(ticket!==sequence)return;
     if(page&&visible&&!docked)scrollPositions.set(scrollKey(),page.scrollTop);
     const sameFeature=root===nextRoot&&(section==='content'||section==='settings'&&displayedCategory==='page')&&(nextSection==='content'||accountPage);
@@ -67,7 +68,7 @@
   function featureSettings(settings:boolean){category='page';return change(root,settings?'settings':'content');}
   function globalSettings(){if(section==='settings'&&category!=='page')return change(root,'content');category=globalCategory;return change(root,'settings');}
   async function toggleModules(){await change(root,moduleTarget(section));if(section==='modules'){await moduleAction('list');if(!catalogReady)void moduleAction('catalog');}}
-  async function action(action:string){try{if(action!=='show'){await reader?.suspend();await realHongguo?.suspend(action!=='quit');}await call('window_action',{action});}catch(error){notice=String(error);}}
+  async function action(action:string){try{if(action!=='show'){await reader?.suspend();await bilibili?.suspend();await realHongguo?.suspend(action!=='quit');}await call('window_action',{action});}catch(error){notice=String(error);}}
   async function togglePin(){try{pinned=await call<boolean>('toggle_pin');void save({topmost:pinned});}catch(error){notice=String(error);}}
   async function checkUpdate(){notice='正在检查应用更新';try{updateReady=await call<boolean>('check_update');notice=updateReady?'应用更新已就绪':'当前已是最新构建';}catch(error){notice=`更新检查失败：${error}`;}}
   function mediaKey(event:KeyboardEvent){if(event.target instanceof HTMLInputElement||event.target instanceof HTMLSelectElement||event.target instanceof HTMLButtonElement||!serviceActive||section!=='content')return;
@@ -94,6 +95,7 @@
 <nav aria-label="全局操作" data-tauri-drag-region><button class="icon-button" class:chosen={pinned} aria-label="置顶" title="置顶" aria-pressed={pinned} onclick={togglePin}><Icon name="pin" size={21}/></button><button class="icon-button" class:chosen={section==='modules'} aria-label="功能" title="功能" onclick={toggleModules}><Icon name="box" size={21}/></button><button class="icon-button" class:chosen={section==='settings'&&category!=='page'} aria-label="设置" title="全局设置" onclick={globalSettings}><Icon name="settings" size={21}/></button><span class="divider" data-tauri-drag-region></span><button class="icon-button close-button" aria-label="关闭到托盘" title="关闭到托盘" onclick={()=>action('close')}><Icon name="close"/></button></nav></header>
 <main class="page" bind:this={page}>
 {#if ready}
+{#if roots.some(m=>m.id==='bilibili')}<Bilibili bind:this={bilibili} active={!changing&&root==='bilibili'&&visible&&!docked&&(section==='content'||section==='settings'&&category==='page')} showing={root==='bilibili'&&(section==='content'||section==='settings'&&category==='page')} settings={section==='settings'} generation={view.generation} notice={text=>pageNotice('bilibili',text)} settingsChange={featureSettings}/>{/if}
 {#if roots.some(m=>m.id==='reader')}<Reader bind:this={reader} active={!changing&&root==='reader'&&visible&&!docked&&(section==='content'||section==='settings'&&category==='page')} showing={root==='reader'&&(section==='content'||section==='settings'&&category==='page')} settings={section==='settings'} generation={view.generation} notice={text=>pageNotice('reader',text)} settingsChange={featureSettings}/>{/if}
 {#if servicePlayback}<Hongguo bind:this={realHongguo} active={serviceActive&&!docked} showing={root==='hongguo'&&(section==='content'||section==='settings'&&category==='page')} accountOnly={section==='settings'} notice={text=>pageNotice('hongguo',text)} settingsChange={featureSettings}/>{/if}
 {#if roots.some(m=>m.id==='news')}<div hidden={root!=='news'||!(section==='content'||section==='settings'&&category==='page')}><News active={!changing&&root==='news'&&visible&&!docked&&(section==='content'||section==='settings'&&category==='page')} settings={section==='settings'} generation={view.generation} notice={text=>pageNotice('news',text)} settingsChange={featureSettings} cardOpacity={preferences?.card_opacity??.94} setCardOpacity={value=>save({card_opacity:value})}/></div>{/if}

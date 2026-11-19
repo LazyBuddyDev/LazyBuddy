@@ -161,6 +161,9 @@ async fn modules_with_progress(
         // Drain account/media transactions before immutable package directories can be reclaimed.
         app.state::<crate::playback::State>().disconnect().await;
         app.state::<crate::reader::State>().disconnect(&app).await?;
+        app.state::<crate::bilibili::State>()
+            .disconnect(&app)
+            .await?;
     }
     let root = state.data.join("modules");
     let catalog = state.catalog.lock().unwrap().clone();
@@ -500,7 +503,7 @@ pub fn start(app: tauri::AppHandle) -> Result<(), String> {
                 (1,"status")=>{
                     let view=app.state::<Mutex<crate::Model>>().lock().unwrap().view.clone();
                     let state=app.state::<State>();
-                    Ok(json!({"pid":std::process::id(),"exe":std::env::current_exe().ok(),"backend":"web","hidden":!view.visible,"view":view,
+                    Ok(json!({"pid":std::process::id(),"exe":std::env::current_exe().ok(),"backend":"web","bilibili":app.state::<crate::bilibili::State>().receipt(),"hidden":!view.visible,"view":view,
                         "window":app.get_webview_window("main").map(|w|crate::dock::snapshot(&w)["bounds"].clone()),
                         "app_updates":APP_UPDATES,"update_checking":state.checking.load(std::sync::atomic::Ordering::Acquire),"update_ready":state.prepared.lock().unwrap().is_some()}))
                 },

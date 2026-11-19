@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
+mod bilibili;
 mod dock;
 mod host;
 mod platform;
@@ -20,6 +21,7 @@ enum Root {
     News,
     Hongguo,
     Reader,
+    Bilibili,
 }
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -96,13 +98,21 @@ fn transition(
     window
         .state::<playback::State>()
         .context(page, account && view.root == Root::Hongguo, visible);
+    {
+        let app = window.app_handle().clone();
+        tauri::async_runtime::spawn(async move {
+            app.state::<bilibili::State>()
+                .suspend_if_inactive(&app)
+                .await;
+        });
+    }
     view
 }
 #[tauri::command]
 fn snapshot(state: tauri::State<Mutex<Model>>, window: tauri::WebviewWindow) -> serde_json::Value {
     let state = state.lock().unwrap();
     serde_json::json!({"view":state.view,"feed_requests":state.feed_requests,"favorite_reads":window.state::<playback::State>().favorite_reads(),
-        "reader_requests":window.state::<reader::State>().requests(),"media_route":if playback::enabled(){"browser_service"}else{"unavailable"},"real_service":playback::enabled()&&std::env::var_os("LAZYBUDDY_BROWSER_FIXTURE_FILE").is_none(), "native_texture_integrated":false,"tray":window.app_handle().tray_by_id("shell").is_some(),"desktop":dock::snapshot(&window)})
+        "bilibili":window.state::<bilibili::State>().receipt(),"reader_requests":window.state::<reader::State>().requests(),"media_route":if playback::enabled(){"browser_service"}else{"unavailable"},"real_service":playback::enabled()&&std::env::var_os("LAZYBUDDY_BROWSER_FIXTURE_FILE").is_none(), "native_texture_integrated":false,"tray":window.app_handle().tray_by_id("shell").is_some(),"desktop":dock::snapshot(&window)})
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -150,6 +160,14 @@ fn visibility(window: &tauri::WebviewWindow, visible: bool) {
         .state::<playback::State>()
         .context(page, account, visible);
     if !visible {
+        {
+            let app = window.app_handle().clone();
+            tauri::async_runtime::spawn(async move {
+                app.state::<bilibili::State>()
+                    .suspend_if_inactive(&app)
+                    .await;
+            });
+        }
         window.state::<host::State>().stop_news();
         let app = window.app_handle().clone();
         tauri::async_runtime::spawn(async move {
@@ -233,6 +251,11 @@ fn window_action(action: &str, window: tauri::WebviewWindow) -> Result<(), Strin
             }
             let app = window.app_handle().clone();
             tauri::async_runtime::spawn(async move {
+                if let Err(error) = app.state::<bilibili::State>().disconnect(&app).await {
+                    let _ = app.emit("shell-error", error);
+                    app.state::<reader::State>().cancel_exit();
+                    return;
+                }
                 if let Err(error) = app.state::<reader::State>().disconnect(&app).await {
                     let _ = app.emit("shell-error", format!("阅读进度保存失败，未退出：{error}"));
                     app.state::<reader::State>().cancel_exit();
@@ -318,6 +341,7 @@ fn main() {
         .manage(Mutex::new(dock::Dock::default()))
         .manage(playback::State::default())
         .manage(reader::State::default())
+        .manage(bilibili::State::default())
         .invoke_handler(tauri::generate_handler![
             transition,
             snapshot,
@@ -325,6 +349,8 @@ fn main() {
             host::module_call,
             host::news_call,
             reader::reader_call,
+            bilibili::bilibili_call,
+            bilibili::bilibili_suspend,
             reader::reader_pick,
             reader::reader_checkpoint,
             reader::reader_suspend,

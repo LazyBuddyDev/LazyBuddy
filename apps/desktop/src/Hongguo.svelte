@@ -2,7 +2,7 @@
   import {onDestroy, tick, untrack} from 'svelte';
   import {invoke} from '@tauri-apps/api/core';
   import Icon from './Icon.svelte';import Cover from './Cover.svelte';
-  import Switch from './Switch.svelte';
+  import Switch from './Switch.svelte';import MediaVolume from './MediaVolume.svelte';
   import {formatTime} from './lifecycle';
   import {coverPixels,watchedLabel,filterFavorites,loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails,playerPreferences,type CoverData,type Account,type Item,type Playback} from './hongguo';
   let {active,showing,accountOnly,notice,settingsChange}: {active:boolean;showing:boolean;accountOnly:boolean;notice:(text:string)=>void;settingsChange:(settings:boolean)=>void}=$props();
@@ -256,7 +256,7 @@
         {#if episodes.length}<select aria-label="选集" value={episode} onchange={event=>changeEpisode(Number(event.currentTarget.value))}>{#each episodes as value}<option value={value}>第{value}集</option>{/each}</select>{/if}
         <select aria-label="清晰度" value={quality} onchange={event=>changeQuality(event.currentTarget.value)}>{#each qualities.length?qualities:['360p','480p','720p','1080p'] as value}<option value={value}>{value}</option>{/each}</select>
         <select aria-label="倍速" value={speed} onchange={event=>{speed=Number(event.currentTarget.value);video.playbackRate=speed;}}>{#each [.5,1,1.5,2] as value}<option value={value}>{value}×</option>{/each}</select>
-        <div class="volume-control"><button aria-label={muted?'取消静音':'静音'} title="音量（↑/↓ 调节）" onclick={()=>{muteChosen=true;muted=!muted;}}><Icon name={muted?'mute':'volume'}/></button><div class="volume-popover"><output aria-hidden="true">{Math.round(volume*100)}%</output><input class="volume" aria-label="音量" aria-orientation="vertical" aria-valuetext={`${Math.round(volume*100)}%`} type="range" min="0" max="1" step=".05" value={volume} oninput={event=>setVolume(Number(event.currentTarget.value))}/></div></div>
+        <MediaVolume {volume} {muted} onmute={()=>{muteChosen=true;muted=!muted;}} onvolume={setVolume}/>
       </div></div>
     </div></section>
   {:else}
@@ -278,5 +278,4 @@
 
 <style>
   .qr-dialog{align-items:center}.qr-dialog img{width:220px;height:220px;object-fit:contain;background:white}.qr-dialog button{align-self:stretch}
-  .video-controls select{width:auto;max-width:85px;min-width:44px;color:white;background:#222c;padding:3px;border:0;font-size:11px}.video-controls{flex-wrap:wrap}.video-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>

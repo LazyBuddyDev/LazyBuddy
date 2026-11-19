@@ -53,7 +53,8 @@ pub enum Page {
     },
     MediaLibrary {
         search_method: String,
-        favorites_method: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        favorites_method: Option<String>,
     },
 }
 
@@ -156,6 +157,25 @@ mod tests {
 
     fn manifest() -> Manifest {
         serde_json::from_str(r#"{"schema":1,"id":"news","name":"新闻","version":"0.1.0","service_api":1,"target":"windows-x86_64","entrypoint":"bin/news.exe","page":{"template":"news_grid","catalog_method":"sources","fetch_method":"fetch"}}"#).unwrap()
+    }
+
+    #[test]
+    fn media_favorites_are_optional_and_preserve_existing_manifests() {
+        for favorites in [None, Some("favorites")] {
+            let page = Page::MediaLibrary {
+                search_method: "search".into(),
+                favorites_method: favorites.map(str::to_owned),
+            };
+            let encoded = serde_json::to_value(&page).unwrap();
+            assert_eq!(
+                encoded.get("favorites_method").and_then(|v| v.as_str()),
+                favorites
+            );
+            let decoded: Page = serde_json::from_value(encoded).unwrap();
+            assert!(
+                matches!(decoded,Page::MediaLibrary{favorites_method,..} if favorites_method.as_deref()==favorites)
+            );
+        }
     }
 
     #[test]

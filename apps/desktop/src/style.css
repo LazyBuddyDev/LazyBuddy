@@ -1104,3 +1104,8 @@ dialog.dialog-surface::backdrop{background:#0005}
 .dialog-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .dialog-header .icon-button{width:30px;height:30px;padding:0;flex-shrink:0}
 .dialog-files{list-style:none;max-height:160px;overflow:auto;scrollbar-gutter:stable;overflow-wrap:anywhere;font-size:12px;padding:0;margin:0}
+
+.video-controls select{width:auto;max-width:85px;min-width:44px;color:white;background:#222c;padding:3px;border:0;font-size:11px}
+.video-controls{flex-wrap:wrap}.video-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.feature-error{font-size:12px;margin:12px 14px;overflow-wrap:anywhere;color:var(--danger)}

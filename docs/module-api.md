@@ -6,7 +6,7 @@ API v1，目标平台Windows x64。本文只定义宿主的包、传输与生命
 
 ZIP根目录包含`module.json`，使用`schema: 1`、`service_api: 1`、三段式不可变包版本与`target: "windows-x86_64"`。ID以字母开头，仅含小写字母、数字及连字符。入口必须是包内相对路径。完整字段与校验由宿主`crates/module-contract`定义，通用样例见`contracts/fixtures`；各服务维护自己的实际清单。
 
-功能包声明页面模板；`news_grid`指定`catalog_method`与`fetch_method`，`media_library`指定`search_method`与`favorites_method`，`book_library`指定`library_method`与`read_method`。它们表达受支持的界面契约，不是任意HTML或脚本入口。当前宿主对已支持能力有明确页面实现和附加方法；新服务接入仍须完成对应前端与调度，不能仅靠清单自动获得完整页面。新增模板需要配套新宿主，旧客户端不能直接安装未知模板的包；在线目录本身不包含页面模板，本次不修改已发布目录或签名。
+功能包声明页面模板；`news_grid`指定`catalog_method`与`fetch_method`，`media_library`指定`search_method`，仅具备官方收藏能力时声明可选的`favorites_method`，`book_library`指定`library_method`与`read_method`。它们表达受支持的界面契约，不是任意HTML或脚本入口。当前宿主对已支持能力有明确页面实现和附加方法；新服务接入仍须完成对应前端与调度，不能仅靠清单自动获得完整页面。新增模板需要配套新宿主，旧客户端不能直接安装未知模板的包；在线目录本身不包含页面模板，本次不修改已发布目录或签名。
 
 运行时包使用`kind: "runtime"`，没有页面。依赖固定精确包版本，`runtime`选择解释器依赖；宿主按运行时入口/参数、功能入口/参数组合启动。依赖目录通过`LAZYBUDDY_DEPENDENCY_<大写ID且连字符转下划线>_DIR`传入。代码与运行时留在各自不可变包目录，持久数据使用`LAZYBUDDY_DATA_DIR`。
 

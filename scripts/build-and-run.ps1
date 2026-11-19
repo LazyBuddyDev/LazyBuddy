@@ -55,7 +55,7 @@ try{
             $choices=@(Get-ChildItem -LiteralPath $directory -Directory | ForEach-Object {
                 $manifestPath=Join-Path $_.FullName 'module.json'
                 if(Test-Path -LiteralPath $manifestPath){
-                    $manifest=Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+                    $manifest=Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
                     if($manifest.id -ne $directoryEntry.Name -or $manifest.version -ne $_.Name){throw 'Development package identity mismatch.'}
                     if($manifest.kind -eq 'runtime'){return}
                     if(!$module -or [version]$manifest.version -gt [version]$module.version){[pscustomobject]@{path=$_.FullName;version=[version]$manifest.version;id=$manifest.id}}
