@@ -358,6 +358,7 @@ fn main() {
             host::set_startup,
             host::open_link,
             host::check_update,
+            host::update_status,
             host::apply_update,
             window_action,
             resize,

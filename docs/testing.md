@@ -2,6 +2,8 @@
 
 新增功能带对应单元测试，只跑受影响范围，不默认执行全工作区或全量界面回归。主仓库测试宿主和 API 边界，独立服务维护业务与媒体处理测试。
 
+提醒核心用`node --experimental-strip-types --test apps/desktop/tests/attention.test.ts`；保存边界用`cargo test --locked -p lazybuddy preferences::tests`。无头入口`node apps/desktop/tests/attention-page.mjs`检查来源聚合、悬停/键盘确认、重载持久化、新版本/构建、保存失败回滚和隐藏隔离，使用本地样例，不访问账号；报告与浅深主题截图在`tmp/verification-attention`。应用更新就绪与目录变化样例不代替真实线上下载验收。
+
 ```powershell
 npm.cmd --prefix apps/desktop run check
 npm.cmd --prefix apps/desktop test

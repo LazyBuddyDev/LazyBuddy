@@ -9,10 +9,11 @@ const news={auto_refresh:false,refresh_minutes:5,followed:[],hidden:[],order:[],
 const readerPreferences={history_limit:100,font_size:20,line_height:1.9,width:680,page_mode:'scroll',...window.fixtureReadingPreferences,...(window.fixturePersist?JSON.parse(localStorage.getItem('fixture.reader.preferences')??'{}'):{})};
 window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback),invoke:async(command,args)=>{
  (window.fixtureCalls??=[]).push({command,...args});
- if(command==='plugin:event|listen'){(window.fixtureEvents??={})[args.event]=callbacks[args.handler-1];return callbacks.length;}
+ if(command==='plugin:event|listen'){(window.fixtureEvents??={})[args.event]=event=>{if(args.event==='shell-update')window.fixtureUpdateReady=event.payload;callbacks[args.handler-1](event);};return callbacks.length;}
  if(command==='plugin:event|unlisten'||command==='capture_shortcut')return;
- if(command==='settings'){if(args.value){Object.assign(preferences,args.value);if(window.fixturePersist)localStorage.setItem('fixture.preferences',JSON.stringify(preferences));}return {preferences,startup:false,isolated:true,app_updates:window.fixtureAppUpdates??true};}
- if(command==='module_call')return {entries:[],installed:[{id:'news',name:'新闻速览'},{id:'hongguo',name:'红果短剧'},...(window.fixtureReader?[{id:'reader',name:'小说'}]:[])],catalog_ready:true};
+ if(command==='settings'){if(args.value){if(window.fixtureFailSettings)throw 'fixture_save_failed';Object.assign(preferences,args.value);if(window.fixturePersist)localStorage.setItem('fixture.preferences',JSON.stringify(preferences));}return {preferences,startup:false,isolated:true,app_updates:window.fixtureAppUpdates??true};}
+ if(command==='module_call')return {entries:window.fixtureModules??[],installed:[{id:'news',name:'新闻速览'},{id:'hongguo',name:'红果短剧'},...(window.fixtureReader?[{id:'reader',name:'小说'}]:[])],catalog_ready:true};
+ if(command==='update_status')return {ready:!!window.fixtureUpdateReady,build:window.fixtureUpdateReady?(window.fixtureUpdateBuild??'1.0.7:fixture-build'):null};
  if(command==='toggle_pin')return window.fixturePinned=!window.fixturePinned;
  if(command==='snapshot')return {media_route:'browser_service',view:{root:'hongguo',section:'content',visible:true,generation}};
  if(command==='transition')return {...args,generation:++generation};

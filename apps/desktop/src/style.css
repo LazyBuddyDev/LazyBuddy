@@ -1,3 +1,7 @@
+.attention-anchor { position: relative; }
+.attention-dot { position:absolute;right:2px;top:2px;width:7px;height:7px;border-radius:50%;background:#e34b4b;visibility:hidden;pointer-events:none; }
+.attention-dot.attention-inline { position:relative;right:auto;top:auto;display:inline-block;flex-shrink:0;width:7px;height:7px;margin-left:6px;align-self:center; }
+.attention-dot.attention-unread { visibility:visible; }
 :root {
   font-family: "Segoe UI Variable Text", "Microsoft YaHei UI", sans-serif;
   color: #27352f;
@@ -845,7 +849,7 @@ li button:hover {
   .toolbar nav {
     margin-left: auto;
   }
-  .toolbar nav button span {
+  .toolbar nav button span:not(.attention-dot) {
     display: none;
   }
   .toolbar .divider {

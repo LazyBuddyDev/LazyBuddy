@@ -129,6 +129,7 @@ pub fn features(
                     .map(|v| v.parse::<u32>().unwrap())
                     .collect::<Vec<_>>()
             };
+            entry["available_version"] = json!(p.version);
             entry["update"] =
                 json!(version(&p.version) > version(entry["version"].as_str().unwrap()));
         } else {
@@ -143,6 +144,14 @@ pub async fn modules(
     id: Option<String>,
 ) -> Result<Value, String> {
     modules_with_progress(app, action, id, None).await
+}
+fn load_catalog() -> Result<Catalog, String> {
+    if std::env::var_os("LAZYBUDDY_PROTOTYPE_PROBE").is_some() {
+        return Err("隔离验证未启用在线目录".into());
+    }
+    let exe = std::env::current_exe().map_err(failure)?;
+    let source = Source::load(&exe.with_file_name("module-catalog.json")).map_err(failure)?;
+    download_catalog(&source.url, &source.public_key).map_err(failure)
 }
 async fn modules_with_progress(
     app: tauri::AppHandle,
@@ -173,13 +182,7 @@ async fn modules_with_progress(
         match action.as_str() {
             "list" => {}
             "catalog" => {
-                if std::env::var_os("LAZYBUDDY_PROTOTYPE_PROBE").is_some() {
-                    return Err("隔离验证未启用在线目录".into());
-                }
-                let exe = std::env::current_exe().map_err(failure)?;
-                let source =
-                    Source::load(&exe.with_file_name("module-catalog.json")).map_err(failure)?;
-                loaded = Some(download_catalog(&source.url, &source.public_key).map_err(failure)?);
+                loaded = Some(load_catalog()?);
             }
             "install" => {
                 if id.as_deref() == Some("hongguo")
@@ -404,6 +407,7 @@ pub async fn settings(
         let _guard = state.operation.lock().await;
         value.window = state.preferences().window;
         if !value.shortcut.supported()
+            || !value.valid_attention()
             || !(0.0..=1.0).contains(&value.background_opacity)
             || !(0.0..=1.0).contains(&value.card_opacity)
         {
@@ -494,6 +498,12 @@ pub async fn apply_update(app: tauri::AppHandle) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("窗口未就绪")?;
     crate::window_action("quit", window)
 }
+#[tauri::command]
+pub fn update_status(app: tauri::AppHandle) -> Value {
+    let state = app.state::<State>();
+    let prepared = state.prepared.lock().unwrap();
+    json!({"ready":prepared.is_some(),"build":prepared.as_ref().map(|p|format!("{}:{}",p.version,p.build))})
+}
 pub fn start(app: tauri::AppHandle) -> Result<(), String> {
     let dispatcher = app.clone();
     lazybuddy_host_control::serve(move|request,reply|{
@@ -522,10 +532,31 @@ pub fn start(app: tauri::AppHandle) -> Result<(), String> {
             let _=reply.send(match result{Ok(data)=>json!({"ok":true,"data":data}),Err(error)=>lazybuddy_host_control::error("host_request_failed",error)});
         });
     }).map_err(failure)?;
-    if APP_UPDATES {
+    {
         tauri::async_runtime::spawn(async move {
             loop {
                 if !lazybuddy_host_control::isolated()
+                    && std::env::var_os("LAZYBUDDY_PROTOTYPE_PROBE").is_none()
+                {
+                    // Network preparation must not hold the settings/package/exit operation lock.
+                    match tauri::async_runtime::spawn_blocking(load_catalog).await {
+                        Ok(Ok(catalog)) => {
+                            {
+                                let state = app.state::<State>();
+                                let _guard = state.operation.lock().await;
+                                *state.catalog.lock().unwrap() = Some(catalog);
+                            }
+                            let _ = app.emit("shell-catalog", true);
+                        }
+                        _ => lazybuddy_host_control::logs::record(
+                            "host",
+                            "catalog_check_failed",
+                            json!({}),
+                        ),
+                    }
+                }
+                if APP_UPDATES
+                    && !lazybuddy_host_control::isolated()
                     && app.state::<State>().preferences().auto_update
                 {
                     if let Err(error) = check_update(app.clone()).await {
