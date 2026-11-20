@@ -6,12 +6,13 @@
 
 ### LB-20261121-04：多PC统一发布签名
 
-- 状态：集中流程已实现，等待从持有当前身份的PC注册密钥；Windows Codex；2026-11-21；main，版本准备与集中签名流程已提交，发布待当前密钥迁入。
+- 状态：集中流程已实现，等待从持有当前身份的PC注册密钥；Windows Codex；2026-11-21；main/5ec00b3（已推送、源码CI成功），发布待当前密钥迁入。
 - 目标：各端都可调用同一发布身份，完成1.0.8签名发布；不能以本机旧钥替换当前客户端信任根。
 - `[√]` 1.0.8完整ZIP/安装EXE已生成，服务源码已推送且两服务CI成功；用户确认B站/红果登录实播正常。已实现main分支受保护环境签名工作流、同身份校验和DPAPI→加密Secret的stdin注册入口，6项临时测试钥单测通过。
+- `[√]` 云端实际试运行44782157004因Secret缺失按设计拒绝签名、未生成产物；宿主与两服务Release草稿及完整资产已就绪，线上仍1.0.7。
 - `[x]` 当前有效密钥迁入release-signing环境；工作流签署v7模块目录/1.0.8应用清单，核对公钥、签名和实际HTTPS下载/升级，完成标签、公开Release及网站激活。
 - 阻塞：本机真实LOCALAPPDATA现有DPAPI文件为旧身份，公开指纹b02c74cb4b1b7cde；当前客户端信任指纹53d3a3b9982109d6。仓库及Pages环境均无签名Secret；组织级Secrets查询被GitHub403拒绝，未扩大token权限。无法从公钥推导私钥。
-- 下一步：在曾成功发布当前身份的PC运行scripts/release-signing.py register；只上传到受保护GitHub环境，不传聊天或Git。候选包target/packages/release/1.0.8/host，证据tmp/verification-release-1.0.8；未覆盖线上更新源或旧目录签名。
+- 下一步：在曾成功发布当前身份的PC更新main并运行scripts/release-signing.py register；只上传到受保护GitHub环境，不传聊天或Git。根module-catalog.json的v7地址及未签名docs/modules/stable-v7-catalog.json仅在本地未提交；签名后一起提交/CI，再将宿主草稿target更新到匹配来源后公开。候选包target/packages/release/1.0.8/host，证据tmp/verification-release-1.0.8；未覆盖线上更新源或旧目录签名。
 
 ### LB-20261120-01：确认修复后的开机后台驻留
 
