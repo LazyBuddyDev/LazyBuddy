@@ -1,4 +1,4 @@
-//! The current user's explicit opt-in; development and isolated instances never write it.
+//! The current user's explicit opt-in; isolated instances never write it.
 use std::{io, os::windows::ffi::OsStrExt, ptr};
 use windows_sys::{
     Win32::{

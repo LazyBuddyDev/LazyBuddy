@@ -34,6 +34,8 @@ cargo test --locked -p lazybuddy host::tests
 
 这些样例不代替真实账号、系统窗口行为或音画验收。使用本地媒体样例的入口需先准备对应测试素材；宿主级诊断样例还需显式假服务产物，不能因此调用真实账号或加载相邻工作区业务实现。
 
+桌面后台启动用 `python scripts/verify/test-background-startup.py --host-dir target/debug` 定向验证GUI子系统、从隐藏父控制台启动、关闭该控制台后继续驻留、后台不显示及正常quit；仅操作自有隔离进程，并核对真实自启动注册项未变化。它不代替下一次Windows登录的自然自启动验收。
+
 开发构建的原生更新限制用 `python scripts/verify/test-development-updates.py --host-dir target/debug` 验证；使用隐藏隔离实例，检查CLI拒绝更新、缓存未生成与偏好保留，结束后正常退出并清理数据。
 
 缩略窗的系统贴靠隔离用 `python scripts/verify/test-dock-snap.py --host-dir target/debug` 验证；隔离实例完成三轮左右移动和展开，读取原生边框/缩放/最大化样式及恢复尺寸，不移动物理鼠标。该检查不代替实际拖动时的系统贴靠预览验收。

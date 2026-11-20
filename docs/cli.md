@@ -21,6 +21,8 @@ $env:LAZYBUDDY_DATA_DIR=(Join-Path (Get-Location) 'tmp/profiles/local-qa')
 .\target\debug\lazybuddy.exe --background
 ```
 
+Windows桌面宿主的开发及发布构建均使用GUI子系统，不附带控制台；构建脚本的终端退出不会结束宿主，调试输出从宿主日志或CLI读取。开机启动在当前用户登录后以`--background`驻留托盘，不自动打开主窗口；Windows可能延后执行启动项。
+
 隔离实例跳过全局热键、自启动修改和自动更新，托盘仍可退出。`--background` 不激活内容页面。CLI 继承相同实例环境。
 
 ## 开发包与统一启动
