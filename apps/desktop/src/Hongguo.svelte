@@ -2,8 +2,7 @@
   import {onDestroy, tick, untrack} from 'svelte';
   import {invoke} from '@tauri-apps/api/core';
   import Icon from './Icon.svelte';import Cover from './Cover.svelte';
-  import Switch from './Switch.svelte';import MediaVolume from './MediaVolume.svelte';
-  import {formatTime} from './lifecycle';
+  import Switch from './Switch.svelte';import MediaControls from './MediaControls.svelte';
   import {coverPixels,watchedLabel,filterFavorites,loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails,playerPreferences,type CoverData,type Account,type Item,type Playback} from './hongguo';
   let {active,showing,accountOnly,notice,settingsChange}: {active:boolean;showing:boolean;accountOnly:boolean;notice:(text:string)=>void;settingsChange:(settings:boolean)=>void}=$props();
   function savedPlayer(){try{return playerPreferences(JSON.parse(localStorage.getItem('lazybuddy.hongguo.player')??'null'));}catch{return playerPreferences(null);}}
@@ -246,18 +245,14 @@
   {:else if mode==='player'}
     <section class="player-page"><div class="video-stage" class:paused={!playing}>
       <video class="focus-inset" role="button" tabindex="0" onclick={toggle} onkeydown={event=>{if(event.code==='Enter'&&!event.repeat){event.preventDefault();void toggle();}}} onpointerdown={hold} onpointerup={release} onpointercancel={resetBoost} onlostpointercapture={resetBoost} oncontextmenu={event=>event.preventDefault()} bind:this={video} src={source} preload="metadata" crossorigin="anonymous" playsinline bind:muted bind:volume ontimeupdate={()=>{if(video.readyState>0&&seeking===null&&frameTarget===null)position=video.currentTime;}} onplay={()=>{if(!live){video.pause();return;}playing=true;frames();}} onpause={()=>{seeking=null;resetBoost();playing=false;stopFrames();}} onended={ended} onerror={videoError} aria-label="红果短剧视频"><track kind="captions"/></video>
-      <div class="video-top"><button class="video-back" aria-label="返回列表" onclick={leavePlayer}><Icon name="arrow" size={17}/></button><span class="video-title">{selected?.title} 第{episode}集</span><button class="video-favorite" aria-label={isFavorite(selected?.id)?'取消收藏':'收藏'} onclick={()=>selected&&favorite(selected)} disabled={account.operation==='pending'}><Icon name="star" filled={isFavorite(selected?.id)}/></button></div>
-      {#if !playing}<button class="center-play" aria-label={playerLoading?'加载中':playbackError?'重试播放':'播放视频'} disabled={playerLoading} onclick={toggle}><Icon name={playbackError?'refresh':'play'} size={28}/></button>{/if}
-      <div class="video-bottom"><input class="seek" aria-label="播放进度" type="range" min="0" max={duration||1} step=".05" value={seeking??position} disabled={!source} oninput={event=>seeking=Number(event.currentTarget.value)} onchange={commitSeek} onpointercancel={()=>seeking=null} onblur={()=>seeking=null}/><div class="video-controls">
-        <button aria-label="上一集" disabled={adjacent(episodes,episode,-1)===undefined} onclick={()=>{const value=adjacent(episodes,episode,-1);if(value!==undefined)void changeEpisode(value);}}><Icon name="previous"/></button>
-        <button aria-label={playing?'暂停':'播放'} disabled={playerLoading} onclick={toggle}><Icon name={playing?'pause':'play'}/></button>
-        <button aria-label="下一集" disabled={adjacent(episodes,episode,1)===undefined} onclick={()=>{const value=adjacent(episodes,episode,1);if(value!==undefined)void changeEpisode(value);}}><Icon name="next"/></button>
-        <span class="time">{formatTime(seeking??position)} / {formatTime(duration)}</span><span class="control-spacer"></span>
-        {#if episodes.length}<select aria-label="选集" value={episode} onchange={event=>changeEpisode(Number(event.currentTarget.value))}>{#each episodes as value}<option value={value}>第{value}集</option>{/each}</select>{/if}
-        <select aria-label="清晰度" value={quality} onchange={event=>changeQuality(event.currentTarget.value)}>{#each qualities.length?qualities:['360p','480p','720p','1080p'] as value}<option value={value}>{value}</option>{/each}</select>
-        <select aria-label="倍速" value={speed} onchange={event=>{speed=Number(event.currentTarget.value);video.playbackRate=speed;}}>{#each [.5,1,1.5,2] as value}<option value={value}>{value}×</option>{/each}</select>
-        <MediaVolume {volume} {muted} onmute={()=>{muteChosen=true;muted=!muted;}} onvolume={setVolume}/>
-      </div></div>
+      <MediaControls title={`${selected?.title??''} 第${episode}集`} {playing} loading={playerLoading} failed={playbackError} {position} {duration} bind:seeking seekable={!!source} previousDisabled={adjacent(episodes,episode,-1)===undefined} nextDisabled={adjacent(episodes,episode,1)===undefined} onback={leavePlayer} ontoggle={toggle} onprevious={()=>{const value=adjacent(episodes,episode,-1);if(value!==undefined)void changeEpisode(value);}} onnext={()=>{const value=adjacent(episodes,episode,1);if(value!==undefined)void changeEpisode(value);}} onseek={commitSeek} {volume} {muted} onmute={()=>{muteChosen=true;muted=!muted;}} onvolume={setVolume}>
+        {#snippet headerActions()}<button class="video-favorite" aria-label={isFavorite(selected?.id)?'取消收藏':'收藏'} title={isFavorite(selected?.id)?'取消收藏':'收藏'} onclick={()=>selected&&favorite(selected)} disabled={account.operation==='pending'}><Icon name="star" filled={isFavorite(selected?.id)}/></button>{/snippet}
+        {#snippet menus()}
+          {#if episodes.length}<select aria-label="选集" title="选集" value={episode} onchange={event=>changeEpisode(Number(event.currentTarget.value))}>{#each episodes as value}<option value={value}>第{value}集</option>{/each}</select>{/if}
+          <select aria-label="清晰度" title="清晰度" value={quality} onchange={event=>changeQuality(event.currentTarget.value)}>{#each qualities.length?qualities:['360p','480p','720p','1080p'] as value}<option value={value}>{value}</option>{/each}</select>
+          <select aria-label="倍速" title="倍速" value={speed} onchange={event=>{speed=Number(event.currentTarget.value);video.playbackRate=speed;}}>{#each [.5,1,1.5,2] as value}<option value={value}>{value}×</option>{/each}</select>
+        {/snippet}
+      </MediaControls>
     </div></section>
   {:else}
     <section class="media-library feature-page">{@render tabs()}

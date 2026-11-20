@@ -1113,3 +1113,5 @@ dialog.dialog-surface::backdrop{background:#0005}
 .video-controls{flex-wrap:wrap}.video-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .feature-error{font-size:12px;margin:12px 14px;overflow-wrap:anywhere;color:var(--danger)}
+
+.video-top .video-title { flex: 1; min-width: 0; }

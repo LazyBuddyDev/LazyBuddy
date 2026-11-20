@@ -109,6 +109,9 @@
 
 ## 媒体视图
 
+- 所有视频播放页统一复用 `MediaControls.svelte` 及公共媒体样式：顶部从左到右为返回、可截断标题、实际可用的集合操作；暂停或失败时画面中央为播放／重试。底部第一行为全宽进度条，第二行依次为上一项、播放／暂停、下一项、当前位置／总时长、伸缩间隔、选集、实际可用清晰度、倍速及音量。不可用的相邻项保留位置并禁用；没有实际能力的集合操作、选集或清晰度不生成占位控件。
+- 控制组件只维护展示与拖动预览，账号、媒体会话、业务请求、播放偏好及生命周期仍归所属功能。更换标题、控制显隐、切换菜单和调整窗口不能触发业务请求。窄窗口允许公共控制区换行，顺序保持一致，进度、播放及音量入口不能被标题挤出。
+
 - 控件覆盖媒体，悬停或 Tab 聚焦时显示，离开隐藏；菜单打开期间保持显示，选择、取消或离页清理菜单状态。控件、浮层和窗口尺寸变化不得改变媒体尺寸、重建播放管线或重新取源。
 - 左键点击画面切换播放／暂停，控制按钮只执行自身动作，不冒泡导致二次切换。空格同样切换，画面聚焦后 Enter 也可操作，左右键跳转 5 秒；输入框、下拉框、可编辑区域和快捷键录入优先处理按键。
 - 右键按住 400ms 临时 2 倍速，松开恢复用户所选倍速且不额外跳转；失焦、暂停、隐藏、离页和换条目均清理按住状态。
@@ -130,6 +133,7 @@
 | --- | --- |
 | 主题、布局、页签和公共状态样式 | [style.css](../apps/desktop/src/style.css) |
 | 窗口外壳、根页面与提示归属 | [App.svelte](../apps/desktop/src/App.svelte) |
+| 视频覆盖控制与音量 | [MediaControls.svelte](../apps/desktop/src/MediaControls.svelte)、[MediaVolume.svelte](../apps/desktop/src/MediaVolume.svelte) |
 | 固定图标、布尔开关、快捷键捕获 | [Icon.svelte](../apps/desktop/src/Icon.svelte)、[Switch.svelte](../apps/desktop/src/Switch.svelte)、[ShortcutButton.svelte](../apps/desktop/src/ShortcutButton.svelte) |
 | 平台视觉映射与封面展示 | [source-style.ts](../apps/desktop/src/source-style.ts)、[Cover.svelte](../apps/desktop/src/Cover.svelte) |
 | 图标资产及许可 | [平台标识说明](../assets/source-icons/NOTICE.md)、[公共按钮图标许可](../assets/button-icons/LICENSE) |

@@ -59,4 +59,4 @@ host 驱动安装外部新闻包，预置新鲜合成新闻缓存，验证 API�
 
 真实登录、上游播放、音画同步、在线签名发布及资源预算各自验收，不由单元或合成样例外推。禁止 cargo clean 或整体清空 target，独立服务 Git 与私有 SDK 不作构建缓存删除。
 
-轻量视频页面的定向入口：`node apps/desktop/tests/bilibili-page.mjs`使用显式样例媒体状态，检查页签缓存、选集CID派发、设置、隐藏和迟到隔离。`node apps/desktop/tests/bilibili-live.mjs <独立服务EXE绝对路径> <已明确授权的隔离凭据scope>`使用实际组件与官方服务，验证推荐/动态、真实画面与PCM、倍速、第二P和隐藏断流；此入口访问真实账号，不能默认运行或传入生产scope，音频输出在测试音频图中静默，报告不包含账号名或资源地址。它不代替原生宿主的实机视觉/扬声器验收。
+轻量视频页面的定向入口：`node apps/desktop/tests/bilibili-page.mjs`使用显式样例媒体状态，检查未登录零内容请求、登录恢复/过期清除、公共播放器按钮顺序、进度预览/提交、手动重试保留位置、浅深/窄窗/长标题截图、页签缓存、选集CID派发、设置、隐藏和迟到隔离。`node apps/desktop/tests/video-click.mjs --capture-layout`核对另一媒体页面使用相同控制组件后的本地播放、音量和布局，截图统一输出至`tmp/verification-media-controls/`。`node apps/desktop/tests/bilibili-live.mjs <独立服务EXE绝对路径> <已明确授权的隔离凭据scope>`使用实际组件与官方服务，验证推荐/动态、真实画面与PCM、倍速、第二P和隐藏断流；此入口访问真实账号，不能默认运行或传入生产scope，音频输出在测试音频图中静默，报告不包含账号名或资源地址。它不代替原生宿主的实机视觉/扬声器验收。

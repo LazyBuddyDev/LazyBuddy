@@ -56,6 +56,15 @@ try{
   await page.keyboard.press('ArrowDown');assert.equal(await video.evaluate(v=>v.volume),0);
   const stored=await page.evaluate(()=>JSON.parse(localStorage.getItem('lazybuddy.hongguo.player')));
   assert.equal(stored.volume,0);assert.equal(stored.mute,true);
+  if(process.argv.includes('--capture-layout')){
+    const captures=fileURLToPath(new URL('../../../tmp/verification-media-controls/',import.meta.url));await mkdir(captures,{recursive:true});
+    for(const width of [780,400]){
+      await page.setViewportSize({width,height:600});await page.evaluate(dark=>document.querySelector('.app-shell').classList.toggle('dark',dark),width===780);
+      await page.getByRole('button',{name:'返回列表',exact:true}).focus();
+      assert.equal(await page.locator('.video-controls').evaluate(el=>{const stage=el.closest('.video-stage').getBoundingClientRect();return [...el.children].some(child=>{const r=child.getBoundingClientRect();return r.left<stage.left||r.right>stage.right;});}),false);
+      await page.screenshot({path:`${captures}/hongguo-${width}.png`});
+    }
+  }
   console.log('Video clicks and volume popup, slider, arrow keys, limits and mute persistence passed.');
 }finally{
   await browser?.close();await server.close();await rm(scratch,{recursive:true,force:true});
