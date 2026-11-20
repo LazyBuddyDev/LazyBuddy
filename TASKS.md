@@ -4,6 +4,16 @@
 
 当前执行端/负责人：Windows Codex；更新：2026-11-20；主仓main。正式发布版本为1.0.7，B站模块0.1.2已公开，阅读模块保持0.1.16；线上签名下载安装与1.0.6→1.0.7真实进程升级已通过；自然登录自启动确认仍待完成。跨端接手以各任务文件及Git版本为准，本机tmp证据不随Git同步。
 
+### LB-20261120-03：修复B站播放无法连接来源
+
+- 状态：错误分类与诊断修复已应用，等待官方验证条件及原视频真实播放确认；Windows Codex；2026-11-21；宿主main，服务main/0.1.3，均本地提交，未推送或发布。
+- 目标：恢复推荐、搜索及原视频BV1Jjsw6qEpx的正常播放；明确来源拒绝和网络故障的区别。
+- `[√]` 原视频匿名隔离请求在video_details阶段收到HTTP412，尚未取源/CDN读取。旧版将HTTP412映射为source_network_failed，已改为source_verification_required；TLS/代理/DNS/连接/HTTP错误分别分类，宿主补齐异步失败的有界脱敏日志。
+- `[√]` 服务14项单测、宿主2项B站定向测试、Svelte检查及统一start.bat通过；完整0.1.3开发包已暂存target/packages/development/bilibili/0.1.3并实际安装，窗口恢复隐藏。实际安装位置的匿名推荐12项成功；匿名搜索曾成功20项，也出现code0但无data的响应，仍需复核上游条件，不能记为持续可用。
+- `[x]` 用户在官方端核对原视频访问/验证情况后，按现有身份验证推荐、搜索及BV1Jjsw6qEpx实际音画推进；当前不能宣称播放已修复。HTTP412后已停止请求，不自动重试或换身份。
+- 证据：tmp/verification-bilibili-network/installed.json、classified.json、installed-new.json、video.json（仅本机）；原视频video.json记录HTTP412及失败阶段，不含媒体地址。独立服务源码target/service-exports/bilibili-service不得清理；开发包未公开分发，后续推送/发布按授权。
+- 下一步：等待官方访问/验证结果；不更改系统代理，不读取/替换真实凭据，不以其他视频可播代替原视频验收。
+
 ### LB-20261120-01：确认修复后的开机后台驻留
 
 - 目标：当前启用的自启动在Windows登录后后台驻留，开发版不附带可误关闭的控制台。

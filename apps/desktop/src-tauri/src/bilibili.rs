@@ -181,6 +181,19 @@ pub async fn bilibili_call(
     ) {
         return Err("inactive_bilibili_page".into());
     }
+    if method == "task.status" && reply["status"] == "failed" {
+        if let Some(id) = reply["job"].as_u64() {
+            if let Some((_, operation)) = s.jobs.lock().unwrap().remove(&id) {
+                lazybuddy_host_control::logs::api_error(
+                    "bilibili",
+                    &operation,
+                    error_code(&reply["error"]),
+                    &reply["diagnostic"],
+                    json!({"generation":generation}),
+                );
+            }
+        }
+    }
     let account = if reply["result"]["state"].is_string() {
         &reply["result"]
     } else {
@@ -198,6 +211,12 @@ pub async fn bilibili_call(
         *s.receipt.lock().unwrap() = json!({"state":state,"operation":operation});
     }
     Ok(reply)
+}
+fn error_code(value: &Value) -> &str {
+    value
+        .as_str()
+        .filter(|s| s.len() < 80 && s.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'))
+        .unwrap_or("bilibili_failed")
 }
 #[tauri::command]
 pub async fn bilibili_suspend(
@@ -231,6 +250,14 @@ pub async fn bilibili_suspend(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn task_error_codes_do_not_expose_arbitrary_service_text() {
+        assert_eq!(error_code(&json!("source_tls_failed")), "source_tls_failed");
+        assert_eq!(
+            error_code(&json!("https://private?token=secret")),
+            "bilibili_failed"
+        );
+    }
     #[test]
     fn lifecycle_and_account_scope() {
         let mut m = crate::Model::default();
