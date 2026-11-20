@@ -4,7 +4,7 @@
 
 ## 分发边界
 
-当前宿主正式版本为`v1.0.6`，使用`docs/modules/stable-v5-catalog.json`及其签名，提供reader0.1.16不可变资源。1.0.5客户端保留`stable-v4-catalog.json`和reader0.1.11；1.0.4客户端保留`stable-v3-catalog.json`和reader0.1.3，升级到1.0.6后切换v5目录。在线正文、浏览记录及独立书架状态需要配套宿主能力。新闻news0.1.2、红果hongguo0.2.13、python-runtime0.1.0继续复用`modules-v1.0.0`原包和地址。1.0.2–1.0.3客户端保留`stable-v2-catalog.json`；全部旧目录、签名和不可变资源保持原字节，现用通道沿用同一Ed25519身份。1.0.0及更早客户端需先手动安装新宿主，不能自动信任新身份。
+当前宿主版本为`v1.0.7`，使用`docs/modules/stable-v6-catalog.json`及其签名，新增B站bilibili0.1.2不可变资源（独立服务仓库`v0.1.2`）；reader0.1.16、news0.1.2、hongguo0.2.13和python-runtime0.1.0继续复用既有地址与精确依赖。1.0.6保留`stable-v5-catalog.json`、1.0.5保留v4和reader0.1.11、1.0.4保留v3和reader0.1.3；1.0.2–1.0.3保留v2，全部旧目录、签名和不可变资源保持原字节。现用通道沿用同一Ed25519身份；1.0.0及更早客户端需先手动安装新宿主，不能自动信任新身份。
 
 新闻包由新闻仓库构建，红果及其运行时包由红果仓库构建，宿主不导入服务源码。浏览器路线默认需要news、hongguo与精确匹配的python-runtime；`media-runtime`是红果独立服务的可选原生能力，当前Web宿主不使用。以每个实际清单的依赖闭包为准，不能混用旧包。
 

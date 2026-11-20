@@ -110,8 +110,8 @@ def main():
     (directory / 'README.txt').write_text(
         'LazyBuddy · Windows x64\n\n'
         '通过 LazyBuddy-Setup-windows-x86_64.exe 安装后运行 lazybuddy.exe。功能需要单独安装。\n'
-        '附有正式可信目录配置时，可在「功能」中下载安装或卸载新闻、短剧。\n'
-        '在顶部「功能」中安装新闻或红果，安装完成后从「选择功能」进入，无需重启。\n'
+        '附有正式可信目录配置时，可在「功能」中下载安装或卸载所需功能。\n'
+        '在顶部「功能」中安装所需功能，安装完成后从「选择功能」进入，无需重启。\n'
         '开发者也可在退出宿主后使用：\n'
         'lazybuddy-cli modules install-local <功能包目录>\n\n'
         '应用启动后自动检查并下载更新，准备好后点击「重启更新」，无需手动下载。\n'
