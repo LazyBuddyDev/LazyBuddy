@@ -14,6 +14,24 @@
 
 维护工具环境统一为`target/tools/release/`，使用已验证的`cryptography==46.0.3`。已有私钥必须复用，普通构建不生成新身份；只有首次建立身份另获授权时才使用`--initialize-key`。详见[文件放置规范](file-layout.md)。
 
+## 多端统一签名
+
+所有执行端使用同一发布身份；不能按PC生成私钥。Windows DPAPI文件通常不能直接复制到另一台机器解密。本地文件的存在或同名不代表身份正确，必须先与仓库内应用和模块信任根同时核对公钥。
+
+集中入口为本仓库的 `Sign release metadata` 工作流，使用 `release-signing` 受保护环境中的 `LAZYBUDDY_RELEASE_SIGNING_KEY` Secret。环境限制为main分支；只有明确workflow_dispatch可调用，默认只读仓库权限。私钥只在签名进程内存中使用，不输出到Git、Release、日志或工作流产物；产物仅包含公开JSON原文和签名。调用端下载后必须用当前客户端公钥再次验签，不能信任工作流返回的新公钥。
+
+首次配置需要在持有当前有效私钥的那台PC更新到main后执行一次，使用已安装cryptography46.0.3的私有工具环境：
+
+```powershell
+.\target\tools\release\Scripts\python.exe -B scripts/release-signing.py register --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi"
+```
+
+该命令先读取远端main的两份公开信任根，拒绝过期执行端，再核对本机身份，失败时不上传；成功时通过本地stdin将现有密钥交给GitHub CLI，由CLI加密存入环境Secret，不产生明文临时文件或命令行密钥值。保留原DPAPI文件作为原机器恢复来源，不能把它当成跨机器备份。使用环境Secret意味着GitHub成为受信任签名执行端；具有修改main与签名环境权限的维护者必须受控，启用环境审核或进一步分离仓库时按团队权限配置。
+
+后续PC只提交两份公开清单的精确字节base64到workflow_dispatch的 `catalog_base64` / `update_base64`；至少一项。签名器核对既有公钥、应用版本、平台、官方仓库资产地址、大小/哈希字段和模块精确依赖，拒绝未知格式；输出名称固定为 `catalog.json(.sig)` 和 `app-update.json(.sig)`，复制回正式端点时保留原字节。环境Secret未配置或不匹配即失败，不回退本机旧钥或临时身份。
+
+当前有效私钥若在所有机器和既有安全存储中均已丢失，公钥或旧签名不能还原它；必须另行明确授权身份轮换和客户端引导安装，不能承诺旧客户端无感更新。
+
 ## 组装与签名
 
 以下为发布操作参考，执行前核对当前授权、实际ZIP与来源提交。占位参数须替换；目录JSON、签名和可信配置的输出文件必须尚不存在，使用新暂存位置，不覆盖未经核对的旧产物。

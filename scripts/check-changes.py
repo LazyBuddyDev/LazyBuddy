@@ -24,6 +24,8 @@ def plan(paths, root=ROOT):
                 python_tests.add(name)
         if name in ('scripts/check-changes.py', '.github/workflows/checks.yml'):
             python_tests.add('scripts/verify/test-select-tests.py')
+        if name in ('scripts/release-signing.py', '.github/workflows/release-signing.yml', 'scripts/verify/test-release-signing.py'):
+            python_tests.add('scripts/verify/test-release-signing.py')
         if name in ('scripts/package_base.py', 'scripts/create-app-update.py', 'scripts/sign-update.py'):
             python_tests.add('scripts/verify/test-app-release.py')
         if name.startswith('docs/updates/') or name == 'app-update-source.json':
