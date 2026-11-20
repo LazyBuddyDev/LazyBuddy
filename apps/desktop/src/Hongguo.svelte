@@ -28,6 +28,13 @@
   let watched=0;let lastCheckpoint=0;let epoch=0;let playRequest=0;let live=$state(false);let timer:ReturnType<typeof setTimeout>|undefined;let frame:number|undefined;
   let cancelMetadata:(()=>void)|undefined;let history=$state<Record<string,{episode:number;time:number}>>({});
   let opening:Promise<Playback>|undefined;
+  let prefetchedLease:number|undefined;
+  function prefetchNext(){
+    if(!live||!active||!playing||playerLoading||lease===undefined||adjacent(episodes,episode,1)===undefined||prefetchedLease===lease)return;
+    prefetchedLease=lease;void raw('playback.prefetch',{session:lease}).catch(()=>{});
+  }
+  function cancelPrefetch(){if(lease!==undefined)void raw('playback.prefetch_cancel',{session:lease}).catch(()=>{});}
+
   const coverCache=new Map<string,CoverData>();let coverEpoch=0;
   $effect(()=>{if(!(active&&live&&mode==='list'&&tab==='favorites'&&favoritesView==='grid'))coverEpoch++;});
   async function readCover(id:string){
@@ -65,7 +72,7 @@
       frame=undefined;if(!valid(ticket)||!video)return;
       if(frameTarget!==null&&Math.abs(metadata.mediaTime-frameTarget)>.2){frame=video.requestVideoFrameCallback(next);return;}
       frameTarget=null;
-      watched=metadata.mediaTime;
+      watched=metadata.mediaTime;prefetchNext();
       if(seeking===null&&video.currentTime>=0)position=video.currentTime;
       if(playing&&performance.now()-lastCheckpoint>15000){lastCheckpoint=performance.now();void checkpoint(false);}
       if(!video.paused)frame=video.requestVideoFrameCallback(next);
@@ -204,14 +211,14 @@
     if(!live||mode!=='player'||playerLoading)return;
     if(playbackError||!source||video.error){await load(true);return;}
     if(video.paused){try{await video.play();}catch(error){warn(error);}}
-    else{video.pause();void checkpoint(true).catch(warn);}
+    else{video.pause();cancelPrefetch();void checkpoint(true).catch(warn);}
   }
   function setVolume(value:number){volume=Math.max(0,Math.min(1,Math.round(value*100)/100));}
   function volumeKey(event:KeyboardEvent){
     if(event.defaultPrevented||event.altKey||event.ctrlKey||event.metaKey||!live||mode!=='player'||event.target instanceof HTMLInputElement||event.target instanceof HTMLSelectElement||(event.target instanceof HTMLElement&&event.target.isContentEditable))return;
     if(event.code==='ArrowUp'||event.code==='ArrowDown'){event.preventDefault();setVolume(volume+(event.code==='ArrowUp'?.05:-.05));}
   }
-  export function pause(){seeking=null;resetBoost();if(video)video.pause();stopFrames();playing=false;}
+  export function pause(){cancelPrefetch();seeking=null;resetBoost();if(video)video.pause();stopFrames();playing=false;}
   function seekTo(target:number){
     position=target;frameTarget=target;seeking=null;frames();video.currentTime=target;
   }
@@ -219,7 +226,7 @@
   export function seekRelative(delta:number){if(video&&source)seekTo(Math.max(0,Math.min(duration,video.currentTime+delta)));}
   async function videoError(){
     if(!live||!source||!video?.error)return;
-    playing=false;playbackError=true;stopFrames();
+    playing=false;cancelPrefetch();playbackError=true;stopFrames();
     const ticket=epoch;const request=playRequest;const code=video.error.code;
     if(lease!==undefined)await raw('playback.report_error',{session:lease,code}).catch(()=>{});
     try{const data=await raw<Playback>('playback.status');if(!valid(ticket)||request!==playRequest)return;
@@ -230,7 +237,7 @@
     try{const session=old??(pending? (await pending).session:undefined);if(session!==undefined)await raw('playback.close',{session});}catch(error){if(String(error)!=='media_not_loaded')warn(error);}}
   async function changeEpisode(value:number){if(value===episode)return;await checkpoint(true).catch(warn);episode=value;position=watched=0;await load(true);}
   async function changeQuality(value:string){requestedQuality=quality=value;position=video?.currentTime??position;await load(!source||!!video?.error||playing);}
-  function ended(){if(!live||!active||playerLoading||!video.ended)return;playing=false;stopFrames();void checkpoint(true).catch(warn);const next=adjacent(episodes,episode,1);if(next!==undefined)void changeEpisode(next);}
+  function ended(){if(!live||!active||playerLoading||!video.ended)return;playing=false;stopFrames();const next=adjacent(episodes,episode,1);if(next!==undefined)void changeEpisode(next);}
 </script>
 
 {#snippet tabs()}<div class="tab-bar"><div class="tabs" aria-label="短剧页签"><button class:active={!accountOnly&&tab==='search'} aria-pressed={!accountOnly&&tab==='search'} title="搜索" onclick={()=>chooseTab('search')}>搜索</button><button class:active={!accountOnly&&tab==='favorites'} aria-pressed={!accountOnly&&tab==='favorites'} title="收藏" onclick={()=>chooseTab('favorites')}>收藏</button><button class:active={accountOnly} aria-pressed={accountOnly} title="短剧设置" onclick={()=>settingsChange(true)}>设置</button></div></div>{/snippet}

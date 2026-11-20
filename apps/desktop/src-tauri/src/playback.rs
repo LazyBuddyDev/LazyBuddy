@@ -231,6 +231,8 @@ fn allowed(method: &str) -> bool {
     matches!(
         method,
         "playback.open"
+            | "playback.prefetch"
+            | "playback.prefetch_cancel"
             | "playback.report_error"
             | "playback.status"
             | "playback.close"
@@ -418,6 +420,8 @@ mod tests {
     #[test]
     fn browser_bridge_only_exposes_media_session_operations() {
         assert!(allowed("playback.open"));
+        assert!(allowed("playback.prefetch"));
+        assert!(allowed("playback.prefetch_cancel"));
         assert!(allowed("account.login"));
         assert!(!allowed("media.open"));
         assert!(!allowed("progress.sync"));
