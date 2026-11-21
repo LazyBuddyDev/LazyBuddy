@@ -257,7 +257,7 @@
         {#snippet menus()}
           {#if episodes.length}<select aria-label="选集" title="选集" value={episode} onchange={event=>changeEpisode(Number(event.currentTarget.value))}>{#each episodes as value}<option value={value}>第{value}集</option>{/each}</select>{/if}
           <select aria-label="清晰度" title="清晰度" value={quality} onchange={event=>changeQuality(event.currentTarget.value)}>{#each qualities.length?qualities:['360p','480p','720p','1080p'] as value}<option value={value}>{value}</option>{/each}</select>
-          <select aria-label="倍速" title="倍速" value={speed} onchange={event=>{speed=Number(event.currentTarget.value);video.playbackRate=speed;}}>{#each [.5,1,1.5,2] as value}<option value={value}>{value}×</option>{/each}</select>
+          <select aria-label="倍速" title="倍速" value={speed} onchange={event=>{speed=Number(event.currentTarget.value);video.playbackRate=speed;}}>{#each [.5,.75,1,1.25,1.5,1.75,2] as value}<option value={value}>{value}×</option>{/each}</select>
         {/snippet}
       </MediaControls>
     </div></section>

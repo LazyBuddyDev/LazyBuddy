@@ -34,6 +34,13 @@ try{
   await video.focus();await page.keyboard.press('Enter');
   await page.waitForFunction(()=>!document.querySelector('video').paused);
   assert.equal(await page.evaluate(()=>window.hongguoCalls.filter(c=>c.method==='playback.open').length),opens,'toggle must reuse the current source');
+  const speed=page.getByRole('combobox',{name:'倍速',exact:true});
+  assert.deepEqual(await speed.locator('option').evaluateAll(options=>options.map(o=>Number(o.value))),[.5,.75,1,1.25,1.5,1.75,2]);
+  for(const value of [1.25,1.75]){
+    await speed.selectOption(String(value));assert.equal(await video.evaluate(v=>v.playbackRate),value);
+    await page.waitForFunction(value=>JSON.parse(localStorage.getItem('lazybuddy.hongguo.player')).speed===value,value);
+  }
+  await speed.selectOption('1');
   await page.setViewportSize({width:400,height:600});
   await video.focus();await page.keyboard.press('ArrowDown');
   await page.waitForFunction(()=>Math.abs(document.querySelector('video').volume-.45)<.001);
@@ -65,7 +72,7 @@ try{
       await page.screenshot({path:`${captures}/hongguo-${width}.png`});
     }
   }
-  console.log('Video clicks and volume popup, slider, arrow keys, limits and mute persistence passed.');
+  console.log('Video clicks, quarter-step speed selection/persistence, volume popup, slider, arrow keys, limits and mute persistence passed.');
 }finally{
   await browser?.close();await server.close();await rm(scratch,{recursive:true,force:true});
 }
