@@ -62,3 +62,5 @@ host 驱动安装外部新闻包，预置新鲜合成新闻缓存，验证 API�
 轻量视频页面的定向入口：`node apps/desktop/tests/bilibili-page.mjs`使用显式样例媒体状态，检查未登录零内容请求、登录恢复/过期清除、公共播放器按钮顺序、进度预览/提交、手动重试保留位置、浅深/窄窗/长标题截图、页签缓存、选集CID派发、设置、隐藏和迟到隔离。`node apps/desktop/tests/video-click.mjs --capture-layout`核对另一媒体页面使用相同控制组件后的本地播放、音量和布局，截图统一输出至`tmp/verification-media-controls/`。`node apps/desktop/tests/bilibili-live.mjs <独立服务EXE绝对路径> <已明确授权的隔离凭据scope>`使用实际组件与官方服务，验证推荐/动态、真实画面与PCM、倍速、第二P和隐藏断流；此入口访问真实账号，不能默认运行或传入生产scope，音频输出在测试音频图中静默，报告不包含账号名或资源地址。它不代替原生宿主的实机视觉/扬声器验收。
 
 `node apps/desktop/tests/hongguo-prefetch.mjs`使用本地真实媒体与固定600ms模拟准备延迟，对比普通打开和预加载接用时真实EOS到下一集首帧的耗时，检查单次预加载、最终断点只提交一次、隐藏零派发及恢复不自播。结果位于`tmp/verification-hongguo-prefetch/timings.json`；模拟延迟不是线上性能数据，来源和权限边界由独立服务测试维护。
+
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify/test-build-entry.ps1`使用与BAT相同的Windows PowerShell5.1，验证正常退出边界，并以原生UTF-8 JSON复现CP936解码失败及构建入口编码修复；无需真实账号或媒体请求。
