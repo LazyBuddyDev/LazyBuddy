@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "packages": [
+    {
+      "id": "news",
+      "name": "新闻速览",
+      "kind": "feature",
+      "version": "0.1.2",
+      "target": "windows-x86_64",
+      "dependencies": [],
+      "url": "https://github.com/LazyBuddyDev/LazyBuddy/releases/download/modules-v1.0.0/news-0.1.2-windows-x86_64.zip",
+      "sha256": "44b6411e09ac0344101ae6d28641eaede98879172f6ef1cb2b68d48b8d64f330",
+      "bytes": 1245732
+    },
+    {
+      "id": "hongguo",
+      "name": "红果短剧",
+      "kind": "feature",
+      "version": "0.2.14",
+      "target": "windows-x86_64",
+      "dependencies": [
+        {
+          "id": "python-runtime",
+          "version": "0.1.0"
+        }
+      ],
+      "url": "https://github.com/LazyBuddyDev/hongguo-service/releases/download/v0.2.14/hongguo-0.2.14-windows-x86_64.zip",
+      "sha256": "b6ea83608852f7278a0857de9dc0464ac90e09ea76da87862321d22f7ce7c4e2",
+      "bytes": 22145261
+    },
+    {
+      "id": "python-runtime",
+      "name": "Python Runtime",
+      "kind": "runtime",
+      "version": "0.1.0",
+      "target": "windows-x86_64",
+      "dependencies": [],
+      "url": "https://github.com/LazyBuddyDev/LazyBuddy/releases/download/modules-v1.0.0/python-runtime-0.1.0-windows-x86_64.zip",
+      "sha256": "30980f93517a1adcd99a2162104e8880914a9088ac748502c4f81da7d26186ef",
+      "bytes": 11147854
+    },
+    {
+      "id": "reader",
+      "name": "小说",
+      "kind": "feature",
+      "version": "0.1.16",
+      "target": "windows-x86_64",
+      "dependencies": [],
+      "url": "https://github.com/LazyBuddyDev/LazyBuddy/releases/download/v1.0.6/reader-0.1.16.zip",
+      "sha256": "eadb031a735478c8cce5688d8ac7adfd14e14c5aab8a7c45478fe5ca671984d4",
+      "bytes": 2791235
+    },
+    {
+      "id": "bilibili",
+      "name": "B站",
+      "kind": "feature",
+      "version": "0.1.4",
+      "target": "windows-x86_64",
+      "dependencies": [],
+      "url": "https://github.com/LazyBuddyDev/bilibili-service/releases/download/v0.1.4/bilibili-0.1.4.zip",
+      "sha256": "530c34ac47c5af05b6a830bdcb42d74bfba809333543d7768811b433977e973b",
+      "bytes": 1175802
+    }
+  ]
+}

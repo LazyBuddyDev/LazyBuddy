@@ -4,13 +4,13 @@
 
 ## 分发边界
 
-当前宿主版本为`v1.0.7`，使用`docs/modules/stable-v6-catalog.json`及其签名，新增B站bilibili0.1.2不可变资源（独立服务仓库`v0.1.2`）；reader0.1.16、news0.1.2、hongguo0.2.13和python-runtime0.1.0继续复用既有地址与精确依赖。1.0.6保留`stable-v5-catalog.json`、1.0.5保留v4和reader0.1.11、1.0.4保留v3和reader0.1.3；1.0.2–1.0.3保留v2，全部旧目录、签名和不可变资源保持原字节。现用通道沿用同一Ed25519身份；1.0.0及更早客户端需先手动安装新宿主，不能自动信任新身份。
+当前宿主版本为`v1.0.8`，使用`docs/modules/stable-v7-catalog.json`及其签名，更新bilibili0.1.4与hongguo0.2.14；reader0.1.16、news0.1.2和python-runtime0.1.0复用既有不可变包。用户已明确接受本轮身份轮换和手动安装一次：1.0.7及更早客户端不能自动获得新信任根，需手动安装1.0.8；此后沿用新身份。旧v6及更早目录、签名与资源保留原字节。
 
 各功能及其运行时由所属独立服务仓库构建，宿主不导入服务源码。按每个实际清单的精确依赖闭包安装；某个功能的运行时不能成为其他功能或基础宿主的先决条件，也不能混用旧包。当前Web宿主不使用可选原生`media-runtime`，具体包、来源与版本见签名目录。
 
 ## 维护者身份
 
-真实维护者私钥保存在工作区外的`%LOCALAPPDATA%/LazyBuddyDev/signing/module-catalog-ed25519.dpapi`，仅由当前用户DPAPI保护后保存，签名时只在进程内存解密，不导出、不上传或打包。DPAPI文件通常依赖原机器和用户，不是跨机器恢复备份；丢失身份需显式规划公钥轮换，不能静默换钥。
+真实维护者私钥保存在工作区外的`%LOCALAPPDATA%/LazyBuddyDev/signing/release-v3-ed25519.dpapi`，仅由当前用户DPAPI保护后保存，签名时只在进程内存解密，不导出、不上传或打包。DPAPI文件通常依赖原机器和用户，不是跨机器恢复备份；丢失身份需显式规划公钥轮换，不能静默换钥。
 
 维护工具环境统一为`target/tools/release/`，使用已验证的`cryptography==46.0.3`。已有私钥必须复用，普通构建不生成新身份；只有首次建立身份另获授权时才使用`--initialize-key`。详见[文件放置规范](file-layout.md)。
 
@@ -18,12 +18,12 @@
 
 所有执行端使用同一发布身份；不能按PC生成私钥。Windows DPAPI文件通常不能直接复制到另一台机器解密。本地文件的存在或同名不代表身份正确，必须先与仓库内应用和模块信任根同时核对公钥。
 
-集中入口为本仓库的 `Sign release metadata` 工作流，使用 `release-signing` 受保护环境中的 `LAZYBUDDY_RELEASE_SIGNING_KEY` Secret。环境限制为main分支；只有明确workflow_dispatch可调用，默认只读仓库权限。私钥只在签名进程内存中使用，不输出到Git、Release、日志或工作流产物；产物仅包含公开JSON原文和签名。调用端下载后必须用当前客户端公钥再次验签，不能信任工作流返回的新公钥。
+集中签名入口已准备，但私钥上传仍待明确授权；本轮1.0.8采用本机保护密钥签名，未上传私钥。集中入口为本仓库的 `Sign release metadata` 工作流，使用 `release-signing` 受保护环境中的 `LAZYBUDDY_RELEASE_SIGNING_KEY` Secret。环境限制为main分支；只有明确workflow_dispatch可调用，默认只读仓库权限。私钥只在签名进程内存中使用，不输出到Git、Release、日志或工作流产物；产物仅包含公开JSON原文和签名。调用端下载后必须用当前客户端公钥再次验签，不能信任工作流返回的新公钥。
 
 首次配置需要在持有当前有效私钥的那台PC更新到main后执行一次，使用已安装cryptography46.0.3的私有工具环境：
 
-```powershell
-.\target\tools\release\Scripts\python.exe -B scripts/release-signing.py register --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi"
+```bash
+./target/tools/release/Scripts/python.exe -B scripts/release-signing.py register --protected-key "$LOCALAPPDATA/LazyBuddyDev/signing/release-v3-ed25519.dpapi"
 ```
 
 该命令先读取远端main的两份公开信任根，拒绝过期执行端，再核对本机身份，失败时不上传；成功时通过本地stdin将现有密钥交给GitHub CLI，由CLI加密存入环境Secret，不产生明文临时文件或命令行密钥值。保留原DPAPI文件作为原机器恢复来源，不能把它当成跨机器备份。使用环境Secret意味着GitHub成为受信任签名执行端；具有修改main与签名环境权限的维护者必须受控，启用环境审核或进一步分离仓库时按团队权限配置。
