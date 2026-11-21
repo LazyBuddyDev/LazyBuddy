@@ -694,12 +694,13 @@ li button:hover {
 }
 .video-stage:hover .video-top,
 .video-stage:hover .video-bottom,
-.video-stage:focus-within .video-top,
-.video-stage:focus-within .video-bottom,
+.video-stage:has(:focus-visible) .video-top,
+.video-stage:has(:focus-visible) .video-bottom,
 .video-stage.paused .video-top,
 .video-stage.paused .video-bottom {
   opacity: 1;
 }
+.video-stage:has(select:open) :is(.video-top, .video-bottom) { opacity: 1; }
 .seek {
   width: 100%;
   height: 3px;
