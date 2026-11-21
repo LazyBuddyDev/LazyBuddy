@@ -10,7 +10,7 @@
 
 ## 维护者身份
 
-真实维护者私钥保存在工作区外的`%LOCALAPPDATA%/LazyBuddyDev/signing/release-v3-ed25519.dpapi`，仅由当前用户DPAPI保护后保存，签名时只在进程内存解密，不导出、不上传或打包。DPAPI文件通常依赖原机器和用户，不是跨机器恢复备份；丢失身份需显式规划公钥轮换，不能静默换钥。
+维护者私钥的本地副本保存在工作区外的`%LOCALAPPDATA%/LazyBuddyDev/signing/release-v3-ed25519.dpapi`，由当前用户DPAPI保护；同一身份已按用户明确授权加密存入GitHub受保护签名环境。签名时仅在进程内存使用，私钥不进入Git、Release、日志或普通构建产物。DPAPI文件通常依赖原机器和用户，不是跨机器恢复备份；丢失身份需显式规划公钥轮换，不能静默换钥。
 
 维护工具环境统一为`target/tools/release/`，使用已验证的`cryptography==46.0.3`。已有私钥必须复用，普通构建不生成新身份；只有首次建立身份另获授权时才使用`--initialize-key`。详见[文件放置规范](file-layout.md)。
 
@@ -18,9 +18,9 @@
 
 所有执行端使用同一发布身份；不能按PC生成私钥。Windows DPAPI文件通常不能直接复制到另一台机器解密。本地文件的存在或同名不代表身份正确，必须先与仓库内应用和模块信任根同时核对公钥。
 
-集中签名入口已准备，但私钥上传仍待明确授权；本轮1.0.8采用本机保护密钥签名，未上传私钥。集中入口为本仓库的 `Sign release metadata` 工作流，使用 `release-signing` 受保护环境中的 `LAZYBUDDY_RELEASE_SIGNING_KEY` Secret。环境限制为main分支；只有明确workflow_dispatch可调用，默认只读仓库权限。私钥只在签名进程内存中使用，不输出到Git、Release、日志或工作流产物；产物仅包含公开JSON原文和签名。调用端下载后必须用当前客户端公钥再次验签，不能信任工作流返回的新公钥。
+集中签名已启用：1.0.8先由本机签名发布，其后经用户明确授权将同一私钥加密迁入环境，云端产物已用现有客户端公钥验签，并与已发布签名逐字节核对一致。其他PC无需持有私钥或复制DPAPI文件，直接调用统一入口。集中入口为本仓库的 `Sign release metadata` 工作流，使用 `release-signing` 受保护环境中的 `LAZYBUDDY_RELEASE_SIGNING_KEY` Secret。环境限制为main分支；只有明确workflow_dispatch可调用，默认只读仓库权限。私钥只在签名进程内存中使用，不输出到Git、Release、日志或工作流产物；产物仅包含公开JSON原文和签名。调用端下载后必须用当前客户端公钥再次验签，不能信任工作流返回的新公钥。
 
-首次配置需要在持有当前有效私钥的那台PC更新到main后执行一次，使用已安装cryptography46.0.3的私有工具环境：
+首次配置已完成；仅在维护密钥存储时需要在持有当前有效私钥的那台PC更新到main后执行一次，使用已安装cryptography46.0.3的私有工具环境：
 
 ```bash
 ./target/tools/release/Scripts/python.exe -B scripts/release-signing.py register --protected-key "$LOCALAPPDATA/LazyBuddyDev/signing/release-v3-ed25519.dpapi"
@@ -36,10 +36,10 @@
 
 以下为发布操作参考，执行前核对当前授权、实际ZIP与来源提交。占位参数须替换；目录JSON、签名和可信配置的输出文件必须尚不存在，使用新暂存位置，不覆盖未经核对的旧产物。
 
-```powershell
-python -B scripts/assemble-catalog.py --packages <news.zip> <hongguo.zip> <python-runtime.zip> --base-url <HTTPS模块资源目录> --output target/packages/catalog/web-catalog.json
-.\target\tools\release\Scripts\python.exe -B scripts/sign-catalog.py --catalog target/packages/catalog/web-catalog.json --protected-key "$env:LOCALAPPDATA\LazyBuddyDev\signing\module-catalog-ed25519.dpapi" --source target/packages/catalog/module-catalog.json --url <HTTPS目录地址>
-.\start.bat -BuildOnly -Release
+```bash
+python -B scripts/assemble-catalog.py --packages "$NEWS_ZIP" "$HONGGUO_ZIP" "$PYTHON_RUNTIME_ZIP" --base-url "$MODULE_RELEASE_URL" --output target/packages/catalog/web-catalog.json
+./target/tools/release/Scripts/python.exe -B scripts/sign-catalog.py --catalog target/packages/catalog/web-catalog.json --protected-key "$LOCALAPPDATA/LazyBuddyDev/signing/release-v3-ed25519.dpapi" --source target/packages/catalog/module-catalog.json --url "$CATALOG_URL"
+MSYS_NO_PATHCONV=1 cmd.exe /d /c "start.bat -BuildOnly -Release"
 python -B scripts/package_base.py --output target/packages/base
 ```
 
