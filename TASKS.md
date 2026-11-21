@@ -42,8 +42,9 @@
 ### LB-20261121-02：修复媒体 CDN 跳转偶发拒绝
 
 - 目标：定位并消除已验证媒体链路的偶发跳转拒绝，保留逐跳 HTTPS/来源校验。
-- 状态：拒绝原因已定位，尚未修复；Windows Codex；2026-11-21；main，红果服务0.2.14。
+- 状态：修复与定向验收通过，构建/发布1.0.10中；Windows Codex；2026-11-21；main，服务eeca51f/0.2.15。
 - `[√]` 用户报告《抽象三国第六季：问鼎中原上》第14集1080p直连失败两次后正常；17:16:16宿主日志确认第1跳从qznovelvod.com跳到v.smtcdns.com；另一次目标为vegslb.com。服务progressive.allowed只允许*.qznovelvod.com，故check_redirect拒绝。尚无成功请求完整链路证据，不能断言重试成功的具体路由。
-- `[x]` 验证两个目标的官方媒体用途和可信跳转边界，再确定受限适配；不能仅凭域名归属或偶发成功放行整个共享CDN，也不新增自动重试。
-- `[x]` 修复后覆盖直连/代理逐跳校验、Range保持和拒绝路径，构建新服务包暂存development，再验证原集。
-- 下一步：证据与服务侧接手见target/service-exports/lazybuddy-hongguo-service/TASKS.md同ID；本轮仅诊断，未更改媒体代码或发布。
+- `[√]` 以历史HTTPS媒体响应建立两条初始来源到opaque节点的受限委派；不允许节点直接作为片源，不跨来源复用，直连/代理同一校验。34项受影响测试通过。
+- `[√]` 0.2.15完整包已暂存development；原集真实无头浏览器1920×1080、61帧/mediaTime2秒通过，无账号/进度写入。当前分配到v26正常节点，历史两类委派路径由合成回归覆盖，未声称现场复现。
+- `[x]` 完成1.0.10安装/跨版本升级、签名目录及真实HTTPS模块下载验收后发布。
+- 下一步：证据与服务侧接手见target/service-exports/lazybuddy-hongguo-service/TASKS.md同ID；修复、实播证据见tmp/verification-redirect-1.0.10，发布证据见tmp/verification-release-1.0.10。
