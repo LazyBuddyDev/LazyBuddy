@@ -38,3 +38,12 @@
 - `[√]` SDK将所有HTTP成功空体归为ErrAnonymousLimited，名称不是服务端限制原因。独立上游openhongguo#12与hongguo-open-player#102报告同类集中故障；具体服务端原因、与旧偶发问题是否同因仍未知。没有可靠修复，未轮换身份、扩大端点试探权限或改受保护媒体处理。
 - `[x]` 用户恢复本任务后，再定位兼容现有身份的原因并修复，完成新模块包和原失败剧集真实播放验收；本次日志交付未继续真实播放请求。
 - 证据/来源：服务tmp/verification-playback/current-incident.md、session-trace.json、intermittent-report.md；公开问题https://github.com/beilunyang/openhongguo/issues/12、https://github.com/zfdang/hongguo-open-player/issues/102。下一步等待用户恢复，不让该暂停任务阻塞已获豁免的1.0.3发布。
+
+### LB-20261121-02：修复媒体 CDN 跳转偶发拒绝
+
+- 目标：定位并消除已验证媒体链路的偶发跳转拒绝，保留逐跳 HTTPS/来源校验。
+- 状态：拒绝原因已定位，尚未修复；Windows Codex；2026-11-21；main，红果服务0.2.14。
+- `[√]` 用户报告《抽象三国第六季：问鼎中原上》第14集1080p直连失败两次后正常；17:16:16宿主日志确认第1跳从qznovelvod.com跳到v.smtcdns.com；另一次目标为vegslb.com。服务progressive.allowed只允许*.qznovelvod.com，故check_redirect拒绝。尚无成功请求完整链路证据，不能断言重试成功的具体路由。
+- `[x]` 验证两个目标的官方媒体用途和可信跳转边界，再确定受限适配；不能仅凭域名归属或偶发成功放行整个共享CDN，也不新增自动重试。
+- `[x]` 修复后覆盖直连/代理逐跳校验、Range保持和拒绝路径，构建新服务包暂存development，再验证原集。
+- 下一步：证据与服务侧接手见target/service-exports/lazybuddy-hongguo-service/TASKS.md同ID；本轮仅诊断，未更改媒体代码或发布。
