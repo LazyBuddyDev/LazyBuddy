@@ -67,11 +67,16 @@
 
 ## 工作区清理
 
-使用仓库内的 `scripts/cleanup.ps1`。脚本需要 Windows 上的 PowerShell 7 和 Git。默认预览，显式加 `-Apply` 才执行。输出为 JSON，每项包含相对路径、状态、字节数和跳过原因，并汇总候选及已删除字节数。删除失败、执行时遇到占用或边界问题，以及显式请求的目录被拒绝时返回非零退出码。已不存在的目录记为 `missing`，可重跑。字节数按文件长度计算，磁盘实际回收量会受硬链接和文件系统影响。
+从仓库根目录运行 `cleanup.bat`，它将参数和退出码传给 `scripts/cleanup.ps1`。脚本需要 Windows 上的 PowerShell 7 和 Git。默认预览，显式加 `-Apply` 才执行。输出为 JSON，每项包含相对路径、状态、字节数和跳过原因，并汇总候选及已删除字节数。删除失败、执行时遇到占用或边界问题，以及显式请求的目录被拒绝时返回非零退出码。已不存在的目录记为 `missing`，可重跑。字节数按文件长度计算，磁盘实际回收量会受硬链接和文件系统影响。
 
 ```bash
-pwsh.exe -NoProfile -File scripts/cleanup.ps1
-pwsh.exe -NoProfile -File scripts/cleanup.ps1 -Apply
+cmd.exe //c cleanup.bat
+```
+
+核对清单后执行。
+
+```bash
+cmd.exe //c cleanup.bat -Apply
 ```
 
 | 对象 | 认领与回收规则 |
@@ -85,7 +90,7 @@ pwsh.exe -NoProfile -File scripts/cleanup.ps1 -Apply
 
 ```bash
 pwsh.exe -NoProfile -Command '& ./scripts/cleanup.ps1 -ExpiredRun @("tmp/qa-example-finished", "tmp/profiles/example-finished")'
-pwsh.exe -NoProfile -File scripts/cleanup.ps1 -RetiredPackage target/packages/development/example/1.2.3
+cmd.exe //c cleanup.bat -RetiredPackage target/packages/development/example/1.2.3
 ```
 
 执行时重新核对目录归属、Git 状态、绝对路径、链接和运行占用。遇到重解析点保留整项，交由其创建方核对后移除链接本身。构建期间跳过缓存和包，避免结束用户进程或处理被占用的文件。剩余项按输出原因复核，可在问题解除后重跑。无需在每次构建前清缓存，也不要将清理加到构建或发布的隐式步骤。

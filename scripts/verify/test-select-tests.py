@@ -19,7 +19,7 @@ class Selection(unittest.TestCase):
             self.assertEqual(selection.plan([path]), [['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/verify/test-build-entry.ps1']])
 
     def test_cleanup_changes_run_only_the_isolated_cleanup_regression(self):
-        for path in ('scripts/cleanup.ps1', 'scripts/verify/test-cleanup.ps1'):
+        for path in ('cleanup.bat', 'scripts/cleanup.ps1', 'scripts/verify/test-cleanup.ps1'):
             self.assertEqual(selection.plan([path]), [['pwsh', '-NoProfile', '-File', 'scripts/verify/test-cleanup.ps1']])
 
     def repository(self):

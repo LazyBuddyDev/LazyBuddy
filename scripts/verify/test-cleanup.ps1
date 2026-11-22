@@ -8,6 +8,7 @@ $fixture = Join-Path $tmp "qa-cleanup-$([guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $fixture | Out-Null
 $junction = Join-Path $fixture 'tmp/qa-linked/points-outside'
 $script = Join-Path $fixture 'scripts/cleanup.ps1'
+$batch = Join-Path $fixture 'cleanup.bat'
 
 function Assert($value, [string]$message) {
     if (!$value) { throw $message }
@@ -28,6 +29,15 @@ function Run-Cleanup([int]$Code, [scriptblock]$Arguments) {
     return ($json | ConvertFrom-Json)
 }
 
+function Run-Batch([int]$Code, [string[]]$Options = @()) {
+    Push-Location (Join-Path $fixture 'tmp')
+    try {
+        $json = & $batch @Options
+        Assert ($LASTEXITCODE -eq $Code) "Unexpected cleanup.bat exit code: $LASTEXITCODE. Output: $json"
+        return ($json | ConvertFrom-Json)
+    } finally { Pop-Location }
+}
+
 try {
     & git -C $fixture init --quiet
     Assert ($LASTEXITCODE -eq 0) 'Git fixture failed.'
@@ -35,6 +45,7 @@ try {
     Write-Fixture 'notes.md' 'Keep target/packages/development/sample/1.0.1 for regression.'
     New-Item -ItemType Directory -Path (Split-Path -Parent $script) | Out-Null
     Copy-Item -LiteralPath (Join-Path $repo 'scripts/cleanup.ps1') -Destination $script
+    Copy-Item -LiteralPath (Join-Path $repo 'cleanup.bat') -Destination $batch
     Write-Fixture 'tmp/qa-finished/data.txt' 'generated data'
     Write-Fixture 'tmp/qa-tracked/source.txt' 'tracked source'
     & git -C $fixture add -- .gitignore notes.md
@@ -57,7 +68,7 @@ try {
     New-Item -ItemType Directory -Path (Split-Path -Parent $junction) | Out-Null
     New-Item -ItemType Junction -Path $junction -Target (Join-Path $fixture 'tmp/link-target') | Out-Null
 
-    $preview = Run-Cleanup 0 {param($script) & $script}
+    $preview = Run-Batch 0
     Assert ($preview.mode -eq 'preview' -and $preview.removed_bytes -eq 0) 'Default cleanup modified files.'
     $caches = @($preview.entries | Where-Object status -EQ 'candidate')
     Assert ($caches.Count -eq 2 -and $caches[0].path -like '*0000000000003' -and $caches[1].path -like '*0000000000001') 'Cache retention is wrong.'
@@ -70,10 +81,7 @@ try {
     $skips = @($blocked.entries | Where-Object status -EQ 'skipped')
     Assert ($skips.Count -eq 5) 'Expected rejection for link, tracked, escaped, latest and referenced paths.'
 
-    $result = Run-Cleanup 0 {
-        param($script)
-        & $script -Apply -ExpiredRun 'tmp/qa-finished' -RetiredPackage 'target/packages/development/sample/1.0.0'
-    }
+    $result = Run-Batch 0 @('-Apply', '-ExpiredRun', 'tmp/qa-finished', '-RetiredPackage', 'target/packages/development/sample/1.0.0')
     Assert ($result.mode -eq 'apply' -and $result.removed_bytes -gt 0) 'Apply returned no removals.'
     Assert (@($result.entries | Where-Object status -EQ 'removed').Count -eq 4) 'Wrong number of removals.'
     Assert (!(Test-Path -LiteralPath (Join-Path $fixture 'tmp/qa-finished'))) 'Finished fixture remains.'
@@ -104,7 +112,7 @@ exit 1
             if ($worker.HasExited -or [DateTime]::UtcNow -gt $until) { throw 'Test process did not become ready.' }
             Start-Sleep -Milliseconds 100
         }
-        $busy = Run-Cleanup 1 {param($script) & $script -Apply -ExpiredRun 'tmp/qa-active'}
+        $busy = Run-Batch 1 @('-Apply', '-ExpiredRun', 'tmp/qa-active')
         Assert ($busy.entries[0].status -eq 'failed' -and $busy.entries[0].reason -match 'process.*using') 'Active run was not recognized.'
         Assert (!$worker.HasExited) 'Cleanup stopped the test process.'
     } finally {
