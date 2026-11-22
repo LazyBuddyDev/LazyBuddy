@@ -16,7 +16,7 @@
       "id": "hongguo",
       "name": "红果短剧",
       "kind": "feature",
-      "version": "0.2.16",
+      "version": "0.2.17",
       "target": "windows-x86_64",
       "dependencies": [
         {
@@ -24,9 +24,9 @@
           "version": "0.1.0"
         }
       ],
-      "url": "https://github.com/LazyBuddyDev/hongguo-service/releases/download/v0.2.16/hongguo-0.2.16-windows-x86_64.zip",
-      "sha256": "42437f5991f8ab24357de9acd90efa9cbd99bfeac491e88c5d09ffc04894fbf0",
-      "bytes": 22145534
+      "url": "https://github.com/LazyBuddyDev/hongguo-service/releases/download/v0.2.17/hongguo-0.2.17-windows-x86_64.zip",
+      "sha256": "ce2daa5d70468a37c8397a7f03164bd7c1df1cf10b9d9c070a9492d76f8a4cab",
+      "bytes": 22145523
     },
     {
       "id": "python-runtime",
