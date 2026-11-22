@@ -65,6 +65,35 @@
 
 `tmp/`与`target/`保持Git忽略。构建工具、SDK和下载源由所属仓库管理，宿主不能隐式使用相邻服务源码或开发机固定路径。不要将SDK头文件、缓存、工具环境或验证数据打进用户安装包。
 
+## 工作区清理
+
+使用仓库内的 `scripts/cleanup.ps1`。脚本需要 Windows 上的 PowerShell 7 和 Git。默认预览，显式加 `-Apply` 才执行。输出为 JSON，每项包含相对路径、状态、字节数和跳过原因，并汇总候选及已删除字节数。删除失败、执行时遇到占用或边界问题，以及显式请求的目录被拒绝时返回非零退出码。已不存在的目录记为 `missing`，可重跑。字节数按文件长度计算，磁盘实际回收量会受硬链接和文件系统影响。
+
+```bash
+pwsh.exe -NoProfile -File scripts/cleanup.ps1
+pwsh.exe -NoProfile -File scripts/cleanup.ps1 -Apply
+```
+
+| 对象 | 认领与回收规则 |
+| --- | --- |
+| 默认宿主 Cargo 增量缓存 | 仅检查 `target/debug/incremental` 和 `target/release/incremental` 的已识别子目录。每个 crate 和构建配置保留最近两份，其他目录及内部文件七天内均未修改时才列为候选。Cargo 可重建这些缓存。 |
+| 失效的隔离运行 | `-ExpiredRun` 接受单个明确路径，位于 `tmp/qa-…` 或 `tmp/profiles/<运行名>`。维护者先核对目录归属、相关进程已正常退出、合成数据可重建、证据已留存，再显式传入。 |
+| 已替换的开发包 | `-RetiredPackage` 接受 `target/packages/development/<模块>/<版本>` 的明确路径。先核对未跟踪验证记录和已有替代品，确认不再用于交付或回归。脚本复核清单、入口、更新版本和 Git 文件中的引用。共享运行时、正式安装包和已签名发布资产保留。 |
+| 源码、证据和工具 | 保留 Git 仓库、未提交源码、用户数据、系统与运行时配置、私有 SDK、工具链、外部缓存、现用 EXE 和必要验证证据。禁止整体清理 `target` 或运行 `cargo clean`。 |
+
+明确路径统一相对仓库根目录。先用同一参数预览，核对输出后再追加 `-Apply`。传多个路径时可用 PowerShell 数组从 Bash 调用。
+
+```bash
+pwsh.exe -NoProfile -Command '& ./scripts/cleanup.ps1 -ExpiredRun @("tmp/qa-example-finished", "tmp/profiles/example-finished")'
+pwsh.exe -NoProfile -File scripts/cleanup.ps1 -RetiredPackage target/packages/development/example/1.2.3
+```
+
+执行时重新核对目录归属、Git 状态、绝对路径、链接和运行占用。遇到重解析点保留整项，交由其创建方核对后移除链接本身。构建期间跳过缓存和包，避免结束用户进程或处理被占用的文件。剩余项按输出原因复核，可在问题解除后重跑。无需在每次构建前清缓存，也不要将清理加到构建或发布的隐式步骤。
+
+新建测试脚本时，只在已忽略的临时位置创建本次独占目录。用 `finally`、测试清理回调或等价机制，正常退出自有进程并回收样例、隔离数据和临时安装包。清理前输出脱敏结果，必要证据落到 `tmp/verification-<用途>` 的稳定路径。遇到占用时留下精确相对路径和原因，便于复核。新增生成入口时，在对应文档写清输出归属、保留条件和重建入口。
+
+修改清理规则时，运行 `scripts/verify/test-cleanup.ps1` 的隔离回归。该测试使用临时 Git 仓库验证选取、链接边界、运行占用和重复执行。
+
 ## 运行资源、账号和密钥
 
 安装目录内的`uninstall.exe`由完整安装包直接携带，并纳入构建清单；不在首次启动时生成，不放入全局模块目录。运行时卸载助手用系统临时目录，验证时显式隔离到工作区`tmp/`，收尾只删除本次拥有的固定文件。
