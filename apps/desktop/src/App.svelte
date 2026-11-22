@@ -17,7 +17,7 @@
   let servicePlayback=$state(false);let realHongguo=$state<Hongguo>();let serviceActive=$state(false);
   let reader=$state<Reader>();let bilibili=$state<Bilibili>();
   let changing=$state(false);let pinSaving=false;let preferencesReadOnly=$state(false);
-  let notice=$state('正在启动');let updateReady=$state(false);let appUpdates=$state(false);let page:HTMLElement;let sequence=0;let lastAccountPage=false;
+  let notice=$state('正在启动');let updateReady=$state(false);let appUpdates=$state(false);let appVersion=$state('');let page:HTMLElement;let sequence=0;let lastAccountPage=false;
   let displayedCategory='appearance';
   let attentionItems=$state<AttentionItem[]>([]);
   const attention=new AttentionCenter(items=>attentionItems=items);const moduleSource=attention.register('modules');const updateSource=attention.register('host.update');
@@ -108,7 +108,7 @@
     void(async()=>{try{
       await Promise.all([subscribe<boolean>('shell-catalog',()=>catalogChanged()),subscribe<boolean>('shell-visibility',value=>void change(root,section,value)),subscribe<boolean>('shell-docked',value=>void renderDock(value)),subscribe<string>('shell-error',value=>notice=value),subscribe<boolean>('shell-update',value=>{if(appUpdates){updateReady=value;void syncUpdate();if(value)notice='应用更新已就绪';}})]);
       const saved=await call<{preferences:Preferences;startup:boolean;isolated:boolean;app_updates:boolean;preferences_read_only?:boolean}>('settings');preferences=saved.preferences;receipts=preferences.attention_receipts??{};startup=saved.startup;isolated=saved.isolated;appUpdates=saved.app_updates;preferencesReadOnly=saved.preferences_read_only===true;pinned=preferences.topmost;
-      await moduleAction('list');root=roots.find(m=>m.id===preferences?.root)?.id??roots[0]?.id??'news';const status=await call<{view:View}>('snapshot');visible=status.view.visible;
+      await moduleAction('list');root=roots.find(m=>m.id===preferences?.root)?.id??roots[0]?.id??'news';const status=await call<{version:string;view:View}>('snapshot');visible=status.view.visible;appVersion=status.version;
       ready=true;eventsReady=true;await change(root,roots.length?'content':'modules',visible);notice=roots.length?'就绪':'从功能页安装需要的功能';void syncUpdate();
     }catch(error){notice=`启动失败：${error}`;}})();
     const visibility=()=>{if(document.hidden)realHongguo?.pause();};document.addEventListener('visibilitychange',visibility);
@@ -132,7 +132,7 @@
 {:else if section==='settings'&&category!=='page'}<section class="settings-layout content-width">{@render settingsNavigation()}<div class="settings-content"><h1>{category==='appearance'?'显示设置':category==='system'?'系统设置':'关于我们'}</h1>
 {#if category==='appearance'}<div class="setting-row"><strong>深色模式</strong><Switch label="深色模式" checked={dark} onchange={value=>save({dark:value})}/></div><div class="setting-row"><label for="background-opacity">背景透明度</label><input id="background-opacity" aria-label="背景透明度" type="range" min="0" max="1" step=".05" value={preferences?.background_opacity??.94} onchange={event=>save({background_opacity:Number(event.currentTarget.value)})}/></div>
 {:else if category==='system'}<div class="setting-row"><strong>开机启动</strong><Switch label="开机启动" checked={startup} disabled={isolated} onchange={value=>call('set_startup',{enabled:value}).then(()=>startup=value).catch(error=>notice=String(error))}/></div><div class="setting-row"><span>显示 / 隐藏快捷键</span><ShortcutButton active={visible&&!docked} label={shortcutLabel()} save={value=>save({shortcut:value})} notice={text=>notice=text}/></div>{#if appUpdates}<div class="setting-row"><strong>应用自动更新</strong><Switch label="应用自动更新" checked={preferences?.auto_update??true} onchange={value=>save({auto_update:value})}/></div>{/if}<div class="setting-row">{#if appUpdates}<button onclick={checkUpdate}>检查更新</button>{/if}<button onclick={()=>call('open_logs').catch(error=>notice=String(error))}>打开日志</button></div>
-{:else}<h2>LazyBuddy</h2><p>1.0.3</p><p>Copyright © 2026 Leager · MIT</p>{/if}</div></section>
+{:else}<h2>LazyBuddy</h2>{#if appVersion}<p>{appVersion}</p>{/if}<p>Copyright © 2026 Leager · MIT</p>{/if}</div></section>
 {:else if section==='content'&&!roots.length}<div class="list-empty"><button onclick={toggleModules}>安装功能</button></div>
 {:else if section==='content'&&root==='hongguo'&&!servicePlayback}<div class="list-empty">请在功能页更新红果短剧模块</div>{/if}
 {/if}

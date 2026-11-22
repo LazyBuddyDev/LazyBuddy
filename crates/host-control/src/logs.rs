@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
-    os::windows::fs::OpenOptionsExt,
+    os::windows::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, OnceLock,
@@ -15,6 +15,9 @@ use std::{
 static WRITER: Mutex<()> = Mutex::new(());
 static EVENTS: OnceLock<Option<EventWriter>> = OnceLock::new();
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+const ACTIVE_BYTES: u64 = 4 * 1024 * 1024;
+const ARCHIVE_COUNT: usize = 8;
+const ARCHIVE_BYTES: u64 = ACTIVE_BYTES * ARCHIVE_COUNT as u64;
 pub fn next_id() -> u64 {
     SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1
 }
@@ -147,13 +150,9 @@ fn begin_in(directory: &Path) -> io::Result<Session> {
             })
             .map(str::to_owned)
             .unwrap_or_else(|| format!("unclean_{}", now().1));
-        let mut backup = directory.join(format!("LB_backup_{stamp}.log"));
-        let mut n = 1;
-        while backup.exists() {
-            backup = directory.join(format!("LB_backup_{stamp}_{n}.log"));
-            n += 1;
-        }
-        fs::rename(&path, backup)?;
+        archive(directory, &path, &stamp, size)?;
+    } else {
+        prune_archives(directory, None)?;
     }
     File::create(&path)?;
     append_unlocked(
@@ -165,6 +164,105 @@ fn begin_in(directory: &Path) -> io::Result<Session> {
         directory: directory.to_owned(),
         _lease: lease,
     })
+}
+fn archive_name(name: &str) -> bool {
+    let Some(stamp) = name
+        .strip_prefix("LB_backup_")
+        .and_then(|s| s.strip_suffix(".log"))
+    else {
+        return false;
+    };
+    let stamp = stamp
+        .strip_prefix("unclean_")
+        .or_else(|| stamp.strip_prefix("roll_"))
+        .unwrap_or(stamp);
+    let (minute, serial) = stamp.split_once('_').unwrap_or((stamp, "1"));
+    minute.len() == 12
+        && minute.bytes().all(|c| c.is_ascii_digit())
+        && serial
+            .parse::<u32>()
+            .is_ok_and(|n| n > 0 && n.to_string() == serial)
+}
+fn prune_archives(directory: &Path, reserve: Option<u64>) -> io::Result<()> {
+    let mut archives = Vec::new();
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        if !entry.file_name().to_str().is_some_and(archive_name) {
+            continue;
+        }
+        let metadata = entry.metadata()?;
+        // Do not delete reparse points even if they look like our own archives.
+        if metadata.is_file() && metadata.file_attributes() & 0x400 == 0 {
+            archives.push((metadata.modified().ok(), entry.path(), metadata.len()));
+        }
+    }
+    archives.sort_unstable();
+    let mut count = archives.len() + usize::from(reserve.is_some());
+    let mut bytes = archives
+        .iter()
+        .map(|(_, _, size)| *size as u128)
+        .sum::<u128>()
+        + u128::from(reserve.unwrap_or(0));
+    for (_, path, size) in archives {
+        if count <= ARCHIVE_COUNT && bytes <= u128::from(ARCHIVE_BYTES) {
+            break;
+        }
+        match fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        count -= 1;
+        bytes -= u128::from(size);
+    }
+    Ok(())
+}
+fn archive(directory: &Path, path: &Path, stamp: &str, size: u64) -> io::Result<()> {
+    prune_archives(directory, Some(size.min(ACTIVE_BYTES)))?;
+    for n in 0..=ARCHIVE_COUNT {
+        let suffix = if n == 0 {
+            String::new()
+        } else {
+            format!("_{n}")
+        };
+        let backup = directory.join(format!("LB_backup_{stamp}{suffix}.log"));
+        // Reparse points and files outside retention ownership still reserve their names.
+        match fs::symlink_metadata(&backup) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                if size <= ACTIVE_BYTES {
+                    return fs::rename(path, backup);
+                }
+                // Keep the latest complete lines from legacy files that predate size limits.
+                let mut source = File::open(path)?;
+                source.seek(SeekFrom::Start(size - ACTIVE_BYTES))?;
+                let mut tail = Vec::new();
+                source.take(ACTIVE_BYTES).read_to_end(&mut tail)?;
+                let start = tail
+                    .iter()
+                    .position(|&byte| byte == b'\n')
+                    .map_or(tail.len(), |n| n + 1);
+                let mut destination = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&backup)?;
+                let saved = destination
+                    .write_all(&tail[start..])
+                    .and_then(|()| destination.sync_data());
+                drop(destination);
+                if let Err(error) = saved.and_then(|()| fs::remove_file(path)) {
+                    let _ = fs::remove_file(backup);
+                    return Err(error);
+                }
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+            Ok(_) => {}
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "log archive names unavailable",
+    ))
 }
 // Project only the public diagnostic schema. Never log arbitrary API replies/resources.
 fn diagnostic(value: &Value) -> Value {
@@ -431,10 +529,21 @@ fn write(directory: &Path, text: &str, sync: bool) -> io::Result<()> {
 }
 fn append_unlocked(directory: &Path, text: &str, sync: bool) -> io::Result<()> {
     fs::create_dir_all(directory)?;
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(directory.join("LB.log"))?;
+    let path = directory.join("LB.log");
+    match fs::metadata(&path) {
+        Ok(metadata) if metadata.len().saturating_add(text.len() as u64) > ACTIVE_BYTES => {
+            archive(
+                directory,
+                &path,
+                &format!("roll_{}", now().1),
+                metadata.len(),
+            )?;
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
     file.write_all(text.as_bytes())?;
     if sync {
         file.sync_data()?
@@ -502,6 +611,102 @@ mod tests {
         assert!(directory.join("LB_backup_202611151024_1.log").exists());
         third.finish().unwrap();
         drop(third);
+        for entry in fs::read_dir(&directory).unwrap() {
+            fs::remove_file(entry.unwrap().path()).unwrap();
+        }
+        fs::remove_dir(directory).unwrap();
+    }
+    #[test]
+    fn rolls_at_size_limit_and_prunes_only_owned_archives() {
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp")
+            .join(format!("qa-log-retention-{}", std::process::id()));
+        let session = begin_in(&directory).unwrap();
+        let active = directory.join("LB.log");
+        for index in 0..ARCHIVE_COUNT {
+            let path = directory.join(format!("LB_backup_2026111510{index:02}.log"));
+            let file = File::create(path).unwrap();
+            file.set_len(ACTIVE_BYTES).unwrap();
+            file.set_times(
+                fs::FileTimes::new()
+                    .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(index as u64 + 1000)),
+            )
+            .unwrap();
+        }
+        let foreign = directory.join("LB_backup_do_not_remove.log");
+        let foreign_directory = directory.join("LB_backup_202611161010.log");
+        fs::write(&foreign, "keep").unwrap();
+        fs::create_dir(&foreign_directory).unwrap();
+        OpenOptions::new()
+            .write(true)
+            .open(&active)
+            .unwrap()
+            .set_len(ACTIVE_BYTES)
+            .unwrap();
+        write(&directory, "next record\n", false).unwrap();
+        assert_eq!(fs::read_to_string(&active).unwrap(), "next record\n");
+        assert!(!directory.join("LB_backup_202611151000.log").exists());
+        let mut files: Vec<_> = fs::read_dir(&directory)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_type().unwrap().is_file() && e.file_name().to_str().is_some_and(archive_name)
+            })
+            .collect();
+        assert_eq!(files.len(), ARCHIVE_COUNT);
+        assert!(files.iter().any(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("LB_backup_roll_")
+        }));
+        assert!(
+            files
+                .iter()
+                .map(|e| e.metadata().unwrap().len())
+                .sum::<u64>()
+                <= ARCHIVE_BYTES
+        );
+        assert_eq!(fs::read_to_string(&foreign).unwrap(), "keep");
+        assert!(foreign_directory.is_dir());
+        drop(session);
+        for entry in files.drain(..) {
+            fs::remove_file(entry.path()).unwrap();
+        }
+        for path in [foreign, active, directory.join("LB.session")] {
+            fs::remove_file(path).unwrap();
+        }
+        fs::remove_dir(foreign_directory).unwrap();
+        fs::remove_dir(directory).unwrap();
+    }
+    #[test]
+    fn startup_bounds_legacy_logs_and_keeps_the_latest_complete_line() {
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp")
+            .join(format!("qa-log-legacy-{}", std::process::id()));
+        fs::create_dir(&directory).unwrap();
+        for serial in [1, 2] {
+            let path = directory.join(format!("LB_backup_200101010100_{serial}.log"));
+            let log = File::create(path).unwrap();
+            log.set_len(ARCHIVE_BYTES / 2).unwrap();
+        }
+        let mut old = File::create(directory.join("LB.log")).unwrap();
+        old.seek(SeekFrom::Start(ACTIVE_BYTES * 2)).unwrap();
+        old.write_all(b"\nlatest closed_at=202611151024\n").unwrap();
+        drop(old);
+        let session = begin_in(&directory).unwrap();
+        assert_eq!(
+            fs::read_to_string(directory.join("LB_backup_202611151024.log")).unwrap(),
+            "latest closed_at=202611151024\n"
+        );
+        assert_eq!(
+            fs::read_dir(&directory)
+                .unwrap()
+                .flatten()
+                .filter(|e| e.file_name().to_str().is_some_and(archive_name))
+                .count(),
+            2
+        );
+        drop(session);
         for entry in fs::read_dir(&directory).unwrap() {
             fs::remove_file(entry.unwrap().path()).unwrap();
         }

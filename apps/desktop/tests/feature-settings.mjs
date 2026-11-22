@@ -81,6 +81,9 @@ try{
   await page.setViewportSize({width:440,height:600});
   await gear.click();await page.getByRole('switch',{name:'深色模式'}).click();
   await page.waitForSelector('.app-shell.dark');
+  await page.getByRole('button',{name:'关于我们',exact:true}).click();
+  await page.locator('main').getByText('9.8.7',{exact:true}).waitFor();
+  assert.equal(await page.locator('main').getByText(/Activation/i).count(),0);
   await page.getByRole('button',{name:'返回页面',exact:true}).click();
   await page.getByLabel('选择功能').selectOption('reader');await localSettings().click();
   await page.getByRole('heading',{name:'阅读设置',exact:true}).waitFor();

@@ -15,7 +15,7 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
  if(command==='module_call')return {entries:window.fixtureModules??[],installed:[{id:'news',name:'新闻速览'},{id:'hongguo',name:'红果短剧'},...(window.fixtureReader?[{id:'reader',name:'小说'}]:[])],catalog_ready:true};
  if(command==='update_status')return {ready:!!window.fixtureUpdateReady,build:window.fixtureUpdateReady?(window.fixtureUpdateBuild??'1.0.7:fixture-build'):null};
  if(command==='toggle_pin')return window.fixturePinned=!window.fixturePinned;
- if(command==='snapshot')return {media_route:'browser_service',view:{root:'hongguo',section:'content',visible:true,generation}};
+ if(command==='snapshot')return {version:'9.8.7',media_route:'browser_service',view:{root:'hongguo',section:'content',visible:true,generation}};
  if(command==='transition')return {...args,generation:++generation};
  if(command==='playback_call'){
    if(args.method==='account.restore')return window.fixtureSignedOut?{state:'idle',name:''}:{state:'signed_in',name:'用户样例'};
@@ -27,7 +27,7 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
  if(command==='reader_pick')return ['C:\\fixture\\样例.txt'];
  if(command==='reader_checkpoint'){const entry=(window.fixtureReaderEntries??[]).find(e=>e.id===args.position.book_id);if(entry)entry.position=args.position;return;}
  if(command==='reader_call'){
-   if(args.method==='health')return {sources:window.fixtureReaderSources??['fanqie'],source_channels:window.fixtureLegacySourceInfo?undefined:{fanqie:'app',qimao:'app',midu:'app',shuqi_app:'app',shuqi:'web'},capabilities:['online_search','online_details','online_shelf','shelf_membership','browsing_history',...(new URLSearchParams(location.search).has('reader-body')?['online_body']:[])]};
+   if(args.method==='health')return {sources:window.fixtureReaderSources??['fanqie'],source_channels:window.fixtureLegacySourceInfo?undefined:{fanqie:'app',qimao:'app',midu:'app',shuqi_app:'app',shuqi:'web'},capabilities:['online_search','online_details','online_shelf','shelf_membership','browsing_history',...(window.fixtureLegacyPaging?[]:['library_paging']),...(new URLSearchParams(location.search).has('reader-body')?['online_body']:[])]};
    if(args.method==='online.chapter'){if(args.args.chapter_id==='901'){const job=++onlineNext;onlineJobs.set(job,{body:true,...args.args});return {job,status:'pending'};}if(args.args.chapter_id==='902')throw 'source_access_denied';return {status:'complete',result:{total:30,chapter_version:'fixture-body-v1'}};}
    if(args.method==='online.search'){const job=++onlineNext;onlineJobs.set(job,args.args);return {job,status:'pending'};}
    if(args.method==='online.detail'){const job=++onlineNext;onlineJobs.set(job,{detail:true,...args.args});return {job,status:'pending'};}
@@ -62,8 +62,16 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
    if(args.method==='chapter.read'){const start=args.args.start??0,total=window.fixtureChapterBlocks??30;const result={start,total,chapter_version:onlineShelf.has(args.args.book_id)?'fixture-body-v1':null,blocks:Array.from({length:Math.max(0,Math.min(96,total-start))},(_,i)=>({id:`b${start+i}`,kind:'paragraph',text:`${start+i} ${window.fixtureParagraph??'用于布局验证的正文内容，保持自然换行和滚动。'}`,runs:[],resource:null}))};if(new URLSearchParams(location.search).has('reader-title')&&onlineShelf.has(args.args.book_id)){for(const block of result.blocks){if(block.id==='b0'){block.text='第1章';block.kind='heading';}if(block.id==='b1'){block.text='目录样例';block.kind='heading';}}}if(window.fixtureHoldChapter)await new Promise(resolve=>(window.fixtureChapterPending??=[]).push(resolve));return result;}
    if(args.method==='preferences.get')return readerPreferences;
    if(args.method==='preferences.set'){Object.assign(readerPreferences,args.args);if(window.fixturePersist)localStorage.setItem('fixture.reader.preferences',JSON.stringify(readerPreferences));return readerPreferences;}
-   if(args.method==='history.list'){const entries=(window.fixtureReaderEntries??[]).filter(e=>e.visited_ms).sort((a,b)=>b.visited_ms-a.visited_ms).slice(0,readerPreferences.history_limit);return {entries:entries.slice(args.args.start,args.args.start+args.args.limit),total:entries.length};}
-   if(args.method==='library.list'){const entries=(window.fixtureReaderEntries??[]).filter(e=>e.in_shelf!==false);return {entries,total:entries.length,last_book:null};}}
+   if(args.method==='library.lookup')return {entry:(window.fixtureReaderEntries??[]).find(e=>e.in_shelf!==false&&e.source.kind===args.args.source&&e.source.id===args.args.book_id)??null};
+   if(args.method==='history.list'||args.method==='library.list'){
+     const {start,limit,query=''}=args.args,isHistory=args.method==='history.list';
+     let entries=(window.fixtureReaderEntries??[]).filter(e=>isHistory?e.visited_ms:e.in_shelf!==false)
+       .sort((a,b)=>isHistory?b.visited_ms-a.visited_ms:b.updated_ms-a.updated_ms);
+     if(isHistory)entries=entries.slice(0,readerPreferences.history_limit);
+     entries=entries.filter(e=>e.title.toLowerCase().includes(query.toLowerCase()));
+     if(window.fixtureHoldList)await new Promise(resolve=>(window.fixtureListPending??=[]).push(resolve));
+     return {entries:structuredClone(entries.slice(start,start+limit)),total:entries.length,last_book:null};
+   }}
  if(command==='news_call'){
    if(args.method==='sources')return window.designSources??[{id:'fixture',name:'样例来源'}];
    if(args.method==='state')return {preferences:news,cache:window.designSources?Object.fromEntries(window.designSources.map(s=>[s.id,{updated_ms:Date.now(),stories:Array.from({length:16},(_,i)=>({title:window.fixtureNewsTitle??['周末城市漫步路线推荐','中国空间站最新科普直播','秋日限定风景正在上线','这些生活小技巧值得收藏','年轻人开始记录普通的一天','博物馆里的奇妙发现'][i%6],url:'https://example.invalid/',badge:['Hot',null,'New',null,'Explosive',null][i%6]}))}])):{}};

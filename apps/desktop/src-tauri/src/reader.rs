@@ -288,6 +288,7 @@ pub async fn reader_call(
             | "online.cancel"
             | "history.list"
             | "library.list"
+            | "library.lookup"
             | "library.import"
             | "library.remove"
             | "library.add"
@@ -301,6 +302,7 @@ pub async fn reader_call(
             | "preferences.get"
             | "preferences.set"
             | "progress.flush"
+            | "lifecycle.suspend"
     ) || !args.is_object()
     {
         return Err("invalid_reader_method".into());

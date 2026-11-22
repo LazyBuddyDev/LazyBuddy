@@ -157,7 +157,7 @@ fn apply_view(
 #[tauri::command]
 fn snapshot(state: tauri::State<Mutex<Model>>, window: tauri::WebviewWindow) -> serde_json::Value {
     let state = state.lock().unwrap();
-    serde_json::json!({"view":state.view,"feed_requests":state.feed_requests,"favorite_reads":window.state::<playback::State>().favorite_reads(),
+    serde_json::json!({"version":window.app_handle().package_info().version.to_string(),"view":state.view,"feed_requests":state.feed_requests,"favorite_reads":window.state::<playback::State>().favorite_reads(),
         "bilibili":window.state::<bilibili::State>().receipt(),"reader_requests":window.state::<reader::State>().requests(),"media_route":if playback::enabled(){"browser_service"}else{"unavailable"},"real_service":playback::enabled()&&std::env::var_os("LAZYBUDDY_BROWSER_FIXTURE_FILE").is_none(), "native_texture_integrated":false,"tray":window.app_handle().tray_by_id("shell").is_some(),"desktop":dock::snapshot(&window)})
 }
 #[derive(Deserialize, Serialize)]
