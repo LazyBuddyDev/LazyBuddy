@@ -29,9 +29,14 @@ def application_manifest(archive, url):
         for name, expected in files.items():
             if hashlib.sha256(package.read('LazyBuddy/' + name)).hexdigest() != expected:
                 raise ValueError('application file digest mismatch')
-    return dict(schema=1, target='windows-x86_64', version=info['version'], build=build,
+    metadata = dict(schema=1, target='windows-x86_64', version=info['version'], build=build,
                 url=url, bytes=archive.stat().st_size, sha256=hashlib.sha256(archive.read_bytes()).hexdigest(),
                 host_sha256=files['lazybuddy.exe'])
+    if 'sequence' in info:
+        if type(info['sequence']) is not int or not 0 < info['sequence'] < 2**64:
+            raise ValueError('invalid release sequence')
+        metadata['sequence'] = info['sequence']
+    return metadata
 
 
 def frontend_notices(destination, frontend=ROOT / 'apps/desktop'):
@@ -93,7 +98,10 @@ def main():
     parser.add_argument('--binary-dir', type=Path, help='explicit directory containing the host, CLI and updater executables')
     parser.add_argument('--catalog-source', type=Path)
     parser.add_argument('--download-url', default='https://github.com/LazyBuddyDev/LazyBuddy/releases/download/v2.0.0-preview.1/LazyBuddy-windows-x86_64.zip')
+    parser.add_argument('--sequence', type=int, help='monotonic signed release sequence. Omit for the legacy bridge release.')
     args = parser.parse_args()
+    if args.sequence is not None and not 0 < args.sequence < 2**64:
+        parser.error('--sequence must be a positive 64-bit integer')
     output = args.output.resolve()
     if not output.is_relative_to(ROOT / 'target') or output.exists():
         raise ValueError('new output directory inside target required')
@@ -130,7 +138,10 @@ def main():
     build = hashlib.sha256(json.dumps(files, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
     import tomllib
     version = tomllib.loads((ROOT / 'apps/desktop/src-tauri/Cargo.toml').read_text(encoding='utf-8'))['package']['version']
-    (directory / 'build-info.json').write_text(json.dumps(dict(schema=1, version=version, build=build, files=files), ensure_ascii=False, indent=2), encoding='utf-8')
+    build_info = dict(schema=1, version=version, build=build, files=files)
+    if args.sequence is not None:
+        build_info['sequence'] = args.sequence
+    (directory / 'build-info.json').write_text(json.dumps(build_info, ensure_ascii=False, indent=2), encoding='utf-8')
     archive = write_archive(directory, output)
     with archive.open('rb') as file:
         digest = hashlib.file_digest(file,'sha256').hexdigest()

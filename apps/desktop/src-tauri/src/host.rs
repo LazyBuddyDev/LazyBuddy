@@ -6,7 +6,13 @@ use lazybuddy_module_manager::{
 };
 use lazybuddy_service_client::Session;
 use serde_json::{Value, json};
-use std::{path::PathBuf, sync::Mutex};
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 use tauri::{Emitter, Manager};
 
 const APP_UPDATES: bool = !cfg!(debug_assertions);
@@ -23,7 +29,8 @@ pub struct State {
     logging: Option<lazybuddy_host_control::logs::Session>,
     pub news: Mutex<Option<(bool, Session)>>,
     catalog: Mutex<Option<Catalog>>,
-    operation: tokio::sync::Mutex<()>,
+    operation: Arc<tokio::sync::Mutex<()>>,
+    exiting: Arc<AtomicBool>,
     preferences: Mutex<crate::preferences::Preferences>,
     writer: crate::preferences::Writer,
     prepared: Mutex<Option<lazybuddy_app_updater::Prepared>>,
@@ -47,7 +54,8 @@ impl State {
             data,
             news: Mutex::new(None),
             catalog: Mutex::new(None),
-            operation: tokio::sync::Mutex::new(()),
+            operation: Default::default(),
+            exiting: Default::default(),
             preferences: Mutex::new(preferences),
             prepared: Mutex::new(None),
             checking: Default::default(),
@@ -69,6 +77,9 @@ impl State {
     }
     pub fn preferences(&self) -> crate::preferences::Preferences {
         self.preferences.lock().unwrap().clone()
+    }
+    pub fn set_exiting(&self, exiting: bool) {
+        self.exiting.store(exiting, Ordering::Release);
     }
     pub async fn exit_barrier(&self) -> tokio::sync::MutexGuard<'_, ()> {
         self.operation.lock().await
@@ -160,7 +171,9 @@ async fn modules_with_progress(
     on_progress: Option<tauri::ipc::Channel<Value>>,
 ) -> Result<Value, String> {
     let state = app.state::<State>();
-    let _guard = state.operation.lock().await;
+    if state.exiting.load(Ordering::Acquire) {
+        return Err("应用正在退出".into());
+    }
     if action != "list" && action != "catalog" {
         let model = app.state::<Mutex<crate::Model>>();
         if model.lock().unwrap().view.section != crate::Section::Modules {
@@ -176,7 +189,21 @@ async fn modules_with_progress(
     }
     let root = state.data.join("modules");
     let catalog = state.catalog.lock().unwrap().clone();
-    let reply = tauri::async_runtime::spawn_blocking(move || -> Result<_, String> {
+    let operation = state.operation.clone();
+    let exiting = state.exiting.clone();
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let run = move || -> Result<_, String> {
+        let cancelled = || exiting.load(Ordering::Acquire);
+        let begin_commit = || {
+            let guard = operation.clone().blocking_lock_owned();
+            if cancelled() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "application is exiting",
+                ));
+            }
+            Ok(guard)
+        };
         let manager = Modules::new(root);
         let mut loaded = None;
         match action.as_str() {
@@ -196,7 +223,7 @@ async fn modules_with_progress(
                     );
                 }
                 manager
-                    .install_from_catalog_progress(
+                    .install_from_catalog_controlled(
                         catalog.as_ref().ok_or("目录未就绪")?,
                         id.as_deref().ok_or("缺少功能 ID")?,
                         |stage, downloaded, total| {
@@ -206,17 +233,20 @@ async fn modules_with_progress(
                                 );
                             }
                         },
+                        cancelled,
+                        begin_commit,
                     )
                     .map_err(failure)?;
             }
             "uninstall" => {
+                let _guard = begin_commit().map_err(failure)?;
                 manager
                     .uninstall(id.as_deref().ok_or("缺少功能 ID")?)
                     .map_err(failure)?;
             }
             _ => return Err("未知功能操作".into()),
         }
-        let mut installed = manager.list().map_err(failure)?;
+        let mut installed = manager.list_active().map_err(failure)?;
         if let Some(path) = std::env::var_os("LAZYBUDDY_BROWSER_PACKAGES") {
             let manifest: lazybuddy_module_contract::Manifest = serde_json::from_slice(
                 &std::fs::read(PathBuf::from(path).join("hongguo/module.json")).map_err(failure)?,
@@ -227,9 +257,12 @@ async fn modules_with_progress(
             installed.push(manifest);
         }
         Ok((installed, loaded))
-    })
-    .await
-    .map_err(failure)??;
+    };
+    // A blocking network read must not keep the app runtime alive on exit.
+    std::thread::spawn(move || {
+        let _ = send.send(run());
+    });
+    let reply = receive.await.map_err(failure)??;
     if let Some(catalog) = reply.1 {
         *state.catalog.lock().unwrap() = Some(catalog);
     }

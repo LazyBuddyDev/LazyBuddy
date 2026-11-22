@@ -54,7 +54,8 @@ def validate(payload, kind, version):
         raise ValueError('Invalid signing schema')
     if kind == 'update':
         expected = f'https://github.com/{REPOSITORY}/releases/download/v{version}/LazyBuddy-windows-x86_64.zip'
-        if (set(v) != {'schema','target','version','build','url','bytes','sha256','host_sha256'}
+        if (set(v) - {'sequence'} != {'schema','target','version','build','url','bytes','sha256','host_sha256'}
+            or ('sequence' in v and (type(v['sequence']) is not int or not 0 < v['sequence'] < 2**64))
             or v['version'] != version or v['url'] != expected or v['target'] != 'windows-x86_64'
             or not all(digest(v[k]) for k in ('build','sha256','host_sha256'))
             or type(v['bytes']) is not int or not 0 < v['bytes'] <= 256*1024*1024):

@@ -88,7 +88,11 @@ impl Session {
                             Ok(client) => client.request_cancellable(&request, &worker_cancelled),
                             Err(_) => Err(io::Error::other("service startup failed")),
                         };
+                        let disconnected = result.is_err();
                         let _ = reply.send(result);
+                        if disconnected {
+                            break;
+                        }
                     }
                 }
             }
@@ -178,6 +182,35 @@ mod tests {
                 .recv_timeout(std::time::Duration::from_secs(2))
                 .unwrap()
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn lifecycle_timeout_covers_a_blocked_pipe_write() {
+        let session = Session::start(
+            PathBuf::from("pwsh.exe"),
+            vec![
+                "-NoProfile".into(),
+                "-Command".into(),
+                "Start-Sleep -Seconds 30".into(),
+            ],
+        );
+        let (send, received) = std::sync::mpsc::channel();
+        let request = session.request(json!({"version":1,"id":"blocked","method":"lifecycle.suspend","pad":"x".repeat(60000)}));
+        std::thread::spawn(move || {
+            let _ = send.send(futures::executor::block_on(request));
+        });
+        assert!(
+            received
+                .recv_timeout(std::time::Duration::from_secs(12))
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            futures::executor::block_on(
+                session.request(json!({"version":1,"id":"next","method":"health"}))
+            )
+            .is_err()
         );
     }
 

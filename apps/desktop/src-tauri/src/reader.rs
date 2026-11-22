@@ -75,7 +75,12 @@ impl State {
             .service(app)?
             .request(json!({"version":1,"id":"web-reader","method":method,"args":args}))
             .await;
-        let reply = result.map_err(|_| "reader_disconnected".to_owned())?;
+        let reply = result.map_err(|_| {
+            if let Some(session) = self.session.lock().unwrap().take() {
+                session.stop();
+            }
+            "reader_disconnected".to_owned()
+        })?;
         if reply["ok"] != true {
             let code = reply["error"]["code"]
                 .as_str()
@@ -113,10 +118,14 @@ impl State {
     pub async fn suspend(&self, app: &tauri::AppHandle) -> Result<(), String> {
         self.selected.lock().unwrap().clear();
         let _guard = self.operation.lock().await;
-        if self.session.lock().unwrap().is_none() {
-            return Ok(());
+        let connected = self.session.lock().unwrap().is_some();
+        if connected {
+            if let Err(error) = self.request(app, "lifecycle.suspend", json!({})).await {
+                if error != "reader_disconnected" {
+                    return Err(error);
+                }
+            }
         }
-        self.request(app, "lifecycle.suspend", json!({})).await?;
         self.flush(app).await
     }
     pub async fn disconnect(&self, app: &tauri::AppHandle) -> Result<(), String> {

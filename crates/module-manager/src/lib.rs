@@ -99,6 +99,10 @@ impl Manager {
             return Ok(vec![]);
         }
         let _lock = self.lock()?;
+        self.list_active()
+    }
+
+    pub fn list_active(&self) -> io::Result<Vec<Manifest>> {
         Ok(self
             .manifests(&registry::read(&self.root)?)?
             .into_values()

@@ -39,6 +39,7 @@ pub(super) fn fixture(directory: &Path, label: &str) -> Manifest {
     let info = BuildInfo {
         schema: 1,
         version: "2.0.0".into(),
+        sequence: None,
         build: build.clone(),
         files,
     };
@@ -47,6 +48,7 @@ pub(super) fn fixture(directory: &Path, label: &str) -> Manifest {
         schema: 1,
         target: "windows-x86_64".into(),
         version: "2.0.0".into(),
+        sequence: None,
         build,
         url: "https://example.invalid/app.zip".into(),
         bytes: 1,
@@ -78,6 +80,7 @@ fn archive(directory: &Path, path: &Path, extra: Option<&str>) -> Manifest {
         schema: 1,
         target: "windows-x86_64".into(),
         version: info.version,
+        sequence: info.sequence,
         build: info.build,
         url: "https://example.invalid/app.zip".into(),
         bytes: fs::metadata(path).unwrap().len(),
@@ -124,6 +127,32 @@ fn same_version_replaced_build_is_an_update_and_bad_local_marker_is_not_current(
     fs::write(old.join("lazybuddy.exe"), b"changed").unwrap();
     assert!(!current(&old, &first));
 }
+#[test]
+fn accepts_only_forward_versions_and_signed_sequences() {
+    let temp = Temporary::new();
+    let install = temp.0.join("install");
+    let old = fixture(&install, "old");
+    let mut next = fixture(&temp.0.join("next"), "new");
+    assert!(update_allowed(&install, &old).unwrap());
+    assert!(!update_allowed(&install, &next).unwrap());
+    next.version = "2.1.0".into();
+    assert!(update_allowed(&install, &next).unwrap());
+    next.version = "2.0.0".into();
+    next.sequence = Some(20);
+    assert!(update_allowed(&install, &next).unwrap());
+    let mut info: BuildInfo = read_json(&install.join(INFO)).unwrap();
+    info.sequence = Some(20);
+    fs::write(install.join(INFO), serde_json::to_vec(&info).unwrap()).unwrap();
+    assert!(!update_allowed(&install, &next).unwrap());
+    next.sequence = Some(21);
+    assert!(update_allowed(&install, &next).unwrap());
+    next.version = "1.9.0".into();
+    assert!(!update_allowed(&install, &next).unwrap());
+    next.version = "3.0.0".into();
+    next.sequence = None;
+    assert!(!update_allowed(&install, &next).unwrap());
+}
+
 #[test]
 fn verified_archive_unpacks_and_rejects_wrong_hash_traversal_or_user_files() {
     let temp = Temporary::new();
@@ -197,6 +226,48 @@ fn partial_replacement_rolls_back_when_a_later_file_is_locked() {
     drop(locked);
     assert!(current(&install, &old));
 }
+#[test]
+fn reads_recovery_journal_after_losing_the_transaction_process() {
+    let temp = Temporary::new();
+    let install = temp.0.join("install");
+    let stage = temp.0.join("stage");
+    let backup = install.join(RECOVERY);
+    let old = fixture(&install, "old");
+    let new = fixture(&stage, "new");
+    let info = verify_stage(&stage, &new).unwrap();
+    let mut transaction = Transaction::new(&install, &backup).unwrap();
+    transaction.replace(&stage, &info).unwrap();
+    assert!(backup.join(JOURNAL).is_file());
+    drop(transaction);
+    fs::write(
+        copy_temporary(&install.join("lazybuddy.exe")),
+        b"interrupted temporary",
+    )
+    .unwrap();
+    assert!(Transaction::new(&install, &backup).is_err());
+    recover_transaction(&install, &backup).unwrap();
+    assert!(!backup.join(JOURNAL).exists());
+    assert!(current(&install, &old));
+    assert!(build_info(&install).is_ok());
+}
+
+#[test]
+fn legacy_bridge_can_retry_before_the_first_replacement() {
+    let temp = Temporary::new();
+    let install = temp.0.join("install");
+    let backup = install.join(RECOVERY);
+    let old = fixture(&install, "old");
+    fs::create_dir(&backup).unwrap();
+    fs::copy(install.join("lazybuddy.exe"), backup.join("lazybuddy.exe")).unwrap();
+    fs::write(backup.join(JOURNAL), br#"[["lazybuddy.exe",true]]"#).unwrap();
+    let temp_file = copy_temporary(&install.join("lazybuddy.exe"));
+    fs::write(&temp_file, b"incomplete update").unwrap();
+    discard_unstarted_transaction(&install, &backup).unwrap();
+    assert!(current(&install, &old));
+    assert!(!temp_file.exists());
+    assert!(!backup.join(JOURNAL).exists());
+}
+
 #[test]
 fn active_update_cache_is_not_pruned() {
     let temp = Temporary::new();

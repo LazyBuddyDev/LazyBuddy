@@ -20,10 +20,11 @@ parser.add_argument('--report',type=Path,default=ROOT/'tmp/verification-updates/
 parser.add_argument('--online',action='store_true',help='exercise public feed/download through host check/apply API')
 args=parser.parse_args()
 binaries=args.host_dir.resolve()
-def info(directory):
+def info(directory, version="2.0.1", sequence=None):
     files={path.relative_to(directory).as_posix():hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(directory.rglob('*')) if path.is_file() and path.name!='build-info.json'}
     build=hashlib.sha256(json.dumps(files,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
-    result=dict(schema=1,version='2.0.1',build=build,files=files)
+    result=dict(schema=1,version=version,build=build,files=files)
+    if sequence is not None:result['sequence']=sequence
     (directory/'build-info.json').write_text(json.dumps(result),encoding='utf-8')
     return result
 with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=TMP,ignore_cleanup_errors=True) as temporary:
@@ -33,7 +34,7 @@ with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=TMP,ignore_clea
         shutil.copyfile(binaries/name,install/name)
     directory=None
     if args.online:
-        old_info=info(install)
+        old_info=info(install,version="1.0.0")
         old_info['build']='0'*64
         (install/'build-info.json').write_text(json.dumps(old_info),encoding='utf-8')
     else:
@@ -43,11 +44,11 @@ with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=TMP,ignore_clea
         old_info=info(install)
         stage=root/'stage';shutil.copytree(install,stage)
         (stage/'README.txt').write_text('same version, replaced test build',encoding='utf-8')
-        new_info=info(stage)
+        new_info=info(stage,sequence=1)
         assert old_info['version']==new_info['version'] and old_info['build']!=new_info['build']
         directory=root/'updates'/new_info['build'];directory.mkdir(parents=True)
         shutil.move(str(stage),str(directory/'stage'))
-        manifest=dict(schema=1,target='windows-x86_64',version='2.0.1',build=new_info['build'],url='https://example.invalid/app.zip',bytes=1,sha256='0'*64,host_sha256=new_info['files']['lazybuddy.exe'])
+        manifest=dict(schema=1,target='windows-x86_64',version='2.0.1',build=new_info['build'],sequence=1,url='https://example.invalid/app.zip',bytes=1,sha256='0'*64,host_sha256=new_info['files']['lazybuddy.exe'])
         payload=json.dumps(manifest).encode()
         (directory/'manifest.json').write_bytes(payload);(directory/'manifest.json.sig').write_bytes(key.sign(payload))
     data.mkdir();(data/'modules').mkdir();(data/'modules/keep').write_text('module data',encoding='utf-8')
@@ -106,7 +107,30 @@ with tempfile.TemporaryDirectory(prefix='qa-update-process-',dir=TMP,ignore_clea
         deadline=time.monotonic()+10
         while (directory/'stage').exists() and time.monotonic()<deadline:time.sleep(.1)
         assert not (directory/'stage').exists() and not (directory/'backup').exists()
-        report=dict(passed=True,waited_for_normal_exit=True,same_version_build_changed=old_info['version']==new_info['version'] and old_info['build']!=new_info['build'],restarted_pid_changed=True,user_data_preserved=True,staging_cleaned=True,real_account_tested=False,network_used=args.online)
+        recovered=False
+        if not args.online:
+            rpc('app.quit')
+            deadline=time.monotonic()+20
+            while rpc('status',required=False):
+                assert time.monotonic()<deadline, 'updated host did not exit before recovery fixture'
+                time.sleep(.1)
+            recovery=install/'.lazybuddy-update-transaction'
+            recovery.mkdir()
+            shutil.copyfile(binaries/'lazybuddy-updater.exe',recovery/'recover.exe')
+            (recovery/'recovery-manifest.json').write_bytes(payload)
+            (recovery/'recovery-manifest.sig').write_bytes(key.sign(payload))
+            shutil.copyfile(install/'build-info.json',recovery/'recovery-build.json')
+            shutil.copyfile(install/'README.txt',recovery/'README.txt')
+            (recovery/'journal.json').write_text(json.dumps([['README.txt',True]]),encoding='utf-8')
+            (install/'README.txt').write_text('interrupted replacement',encoding='utf-8')
+            interrupted=subprocess.Popen([str(install/'lazybuddy.exe'),'--background'],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=subprocess.CREATE_NO_WINDOW)
+            interrupted.wait(timeout=20)
+            after_recovery=wait(lambda status:status['pid']!=interrupted.pid and not status['hidden'])
+            assert after_recovery['pid']!=state['pid']
+            assert not (recovery/'journal.json').exists()
+            assert (install/'README.txt').read_text(encoding='utf-8')=='same version, replaced test build'
+            recovered=True
+        report=dict(passed=True,interrupted_update_recovered=recovered,waited_for_normal_exit=True,same_version_build_changed=old_info['version']==new_info['version'] and old_info['build']!=new_info['build'],restarted_pid_changed=True,user_data_preserved=True,staging_cleaned=True,real_account_tested=False,network_used=args.online)
     finally:
         if rpc('status',required=False):rpc('app.quit')
         if old.poll() is None:old.wait(timeout=20)

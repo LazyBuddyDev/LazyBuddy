@@ -18,6 +18,10 @@ use std::{
 
 pub const SOURCE: &str = "app-update-source.json";
 const INFO: &str = "build-info.json";
+const RECOVERY: &str = ".lazybuddy-update-transaction";
+const JOURNAL: &str = "journal.json";
+const INSTALL_LOCK: &str = ".lazybuddy-update.lock";
+const UPDATE_TRIAL: &str = "LAZYBUDDY_UPDATE_TRIAL";
 const REQUIRED: [&str; 6] = [
     "lazybuddy.exe",
     "lazybuddy-cli.exe",
@@ -37,6 +41,8 @@ pub struct Manifest {
     pub target: String,
     pub version: String,
     pub build: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sequence: Option<u64>,
     pub url: String,
     pub bytes: u64,
     pub sha256: String,
@@ -48,6 +54,8 @@ pub struct BuildInfo {
     pub schema: u32,
     pub version: String,
     pub build: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sequence: Option<u64>,
     pub files: BTreeMap<String, String>,
 }
 #[derive(Clone, Debug)]
@@ -104,6 +112,7 @@ pub fn verify_manifest(payload: &[u8], signature: &[u8], key: &[u8]) -> io::Resu
         || !hex(&manifest.sha256)
         || !hex(&manifest.host_sha256)
         || !manifest.url.starts_with("https://")
+        || manifest.sequence == Some(0)
         || manifest.bytes == 0
         || manifest.bytes > 256 * 1024 * 1024
     {
@@ -147,16 +156,22 @@ fn destination(root: &Path, name: &str) -> io::Result<PathBuf> {
     }
     Ok(path)
 }
-fn build_info(stage: &Path) -> io::Result<BuildInfo> {
-    let info: BuildInfo = read_json(&stage.join(INFO))?;
+fn read_build_info(path: &Path) -> io::Result<BuildInfo> {
+    let info: BuildInfo = read_json(path)?;
     if info.schema != 1
         || !version(&info.version)
+        || info.sequence == Some(0)
         || info.files.len() > 10000
         || digest(&serde_json::to_vec(&info.files).map_err(io::Error::other)?) != info.build
         || REQUIRED.iter().any(|name| !info.files.contains_key(*name))
     {
         return Err(invalid("application build mismatch"));
     }
+    Ok(info)
+}
+
+fn build_info(stage: &Path) -> io::Result<BuildInfo> {
+    let info = read_build_info(&stage.join(INFO))?;
     for (name, expected) in &info.files {
         if !hex(expected) || file_digest(&destination(stage, name)?)? != *expected {
             return Err(invalid("application file digest mismatch"));
@@ -166,19 +181,55 @@ fn build_info(stage: &Path) -> io::Result<BuildInfo> {
 }
 pub fn verify_stage(stage: &Path, manifest: &Manifest) -> io::Result<BuildInfo> {
     let info = build_info(stage)?;
+    match_manifest(&info, manifest)?;
+    Ok(info)
+}
+
+fn match_manifest(info: &BuildInfo, manifest: &Manifest) -> io::Result<()> {
     if info.version != manifest.version
+        || info.sequence != manifest.sequence
         || info.build != manifest.build
         || info.files.get("lazybuddy.exe") != Some(&manifest.host_sha256)
     {
         return Err(invalid("application build mismatch"));
     }
-    Ok(info)
+    Ok(())
 }
 fn current(install: &Path, manifest: &Manifest) -> bool {
-    read_json::<BuildInfo>(&install.join(INFO)).is_ok_and(|info| info.build == manifest.build)
-        && file_digest(&install.join("lazybuddy.exe"))
-            .is_ok_and(|hash| hash == manifest.host_sha256)
+    read_json::<BuildInfo>(&install.join(INFO)).is_ok_and(|info| {
+        info.version == manifest.version
+            && info.build == manifest.build
+            && info.sequence == manifest.sequence
+    }) && file_digest(&install.join("lazybuddy.exe")).is_ok_and(|hash| hash == manifest.host_sha256)
 }
+fn update_allowed(install: &Path, manifest: &Manifest) -> io::Result<bool> {
+    let installed: BuildInfo = read_json(&install.join(INFO))?;
+    if installed.schema != 1 || !version(&installed.version) || installed.sequence == Some(0) {
+        return Err(invalid("invalid installed build marker"));
+    }
+    let numeric = |version: &str| {
+        version
+            .split('.')
+            .map(|part| part.parse::<u32>().unwrap())
+            .collect::<Vec<_>>()
+    };
+    if !version(&manifest.version) || numeric(&manifest.version) < numeric(&installed.version) {
+        return Ok(false);
+    }
+    if installed.version == manifest.version
+        && installed.build == manifest.build
+        && installed.sequence == manifest.sequence
+    {
+        return Ok(true); // The signed build can repair its own files.
+    }
+    Ok(match (installed.sequence, manifest.sequence) {
+        (Some(current), Some(incoming)) => incoming > current,
+        (None, Some(_)) => true,
+        (None, None) => numeric(&manifest.version) > numeric(&installed.version),
+        (Some(_), None) => false,
+    })
+}
+
 fn unpack(archive: &Path, stage: &Path, manifest: &Manifest) -> io::Result<()> {
     if fs::metadata(archive)?.len() != manifest.bytes || file_digest(archive)? != manifest.sha256 {
         return Err(invalid("application archive digest mismatch"));
@@ -253,10 +304,21 @@ fn prune(cache: &Path, keep: Option<&str>) {
     }
 }
 pub fn prepare(install: &Path, cache: &Path) -> io::Result<Option<Prepared>> {
+    let recovery = install.join(RECOVERY);
+    if !install.join(INFO).is_file() || recovery.join(JOURNAL).exists() {
+        return Ok(None);
+    }
+    if recovery.is_dir() {
+        if let Ok(_lock) = windows::lock(&install.join(INSTALL_LOCK)) {
+            if !recovery.join(JOURNAL).exists() {
+                let _ = clear_directory(&recovery);
+            }
+        }
+    }
     let source = Source::load(&install.join(SOURCE))?;
     let (payload, signature) = download_signed_payload(&source.url, &source.public_key)?;
     let manifest = verify_manifest(&payload, &signature, &source.public_key)?;
-    if current(install, &manifest) {
+    if current(install, &manifest) || !update_allowed(install, &manifest)? {
         prune(cache, None);
         return Ok(None);
     }
@@ -289,6 +351,9 @@ pub fn prepare(install: &Path, cache: &Path) -> io::Result<Option<Prepared>> {
     }))
 }
 pub fn start_helper(prepared: &Prepared, install: &Path) -> io::Result<()> {
+    if install.join(RECOVERY).join(JOURNAL).exists() {
+        return Err(invalid("update recovery is pending"));
+    }
     let directory = &prepared.directory;
     plain(directory)?;
     let source = Source::load(&install.join(SOURCE))?;
@@ -297,6 +362,9 @@ pub fn start_helper(prepared: &Prepared, install: &Path) -> io::Result<()> {
         &fs::read(directory.join("manifest.json.sig"))?,
         &source.public_key,
     )?;
+    if !update_allowed(install, &manifest)? {
+        return Err(invalid("update is older than the installed release"));
+    }
     verify_stage(&directory.join("stage"), &manifest)?;
     let ready = directory.join("ready");
     if ready.exists() {
@@ -314,10 +382,14 @@ pub fn start_helper(prepared: &Prepared, install: &Path) -> io::Result<()> {
         directory.join("stage/lazybuddy-updater.exe"),
         directory.join("apply.exe"),
     )?;
-    let mut child = windows::command(&directory.join("apply.exe"))
+    let child = windows::command(&directory.join("apply.exe"))
         .arg("--apply")
         .arg(directory.join("job.json"))
         .spawn()?;
+    wait_ready(child, &ready)
+}
+
+fn wait_ready(mut child: std::process::Child, ready: &Path) -> io::Result<()> {
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
         if ready.is_file() {
@@ -340,6 +412,9 @@ struct Transaction {
 }
 impl Transaction {
     fn new(install: &Path, backup: &Path) -> io::Result<Self> {
+        if backup.join(JOURNAL).exists() {
+            return Err(invalid("update recovery is pending"));
+        }
         if backup.exists() {
             clear_directory(backup)?;
         }
@@ -352,10 +427,14 @@ impl Transaction {
         })
     }
     fn replace(&mut self, stage: &Path, info: &BuildInfo) -> io::Result<()> {
-        for name in info
-            .files
-            .keys()
-            .map(String::as_str)
+        // A first-time upgrade from a legacy host needs the new startup recovery hook.
+        for name in std::iter::once("lazybuddy.exe")
+            .chain(
+                info.files
+                    .keys()
+                    .map(String::as_str)
+                    .filter(|name| *name != "lazybuddy.exe"),
+            )
             .chain(std::iter::once(INFO))
         {
             let target = destination(&self.install, name)?;
@@ -363,58 +442,216 @@ impl Transaction {
             if existed {
                 let backup = destination(&self.backup, name)?;
                 fs::create_dir_all(backup.parent().unwrap())?;
-                fs::copy(&target, backup)?;
+                atomic_copy(&target, &backup)?;
+            }
+            self.changed.push((name.into(), existed));
+            let recorded = atomic_write(&self.backup.join(JOURNAL), |file| {
+                serde_json::to_writer(file, &self.changed).map_err(io::Error::other)
+            });
+            if let Err(error) = recorded {
+                self.changed.pop();
+                return Err(error);
             }
             atomic_copy(&destination(stage, name)?, &target)?;
-            self.changed.push((name.into(), existed));
         }
         Ok(())
     }
     fn rollback(&self) -> io::Result<()> {
         let mut failed = false;
         for (name, existed) in self.changed.iter().rev() {
-            let target = destination(&self.install, name)?;
-            let result = if *existed {
-                atomic_copy(&destination(&self.backup, name)?, &target)
-            } else {
-                fs::remove_file(&target)
-            };
-            failed |= result.is_err();
+            failed |= (|| -> io::Result<()> {
+                let target = destination(&self.install, name)?;
+                let temporary = copy_temporary(&target);
+                if temporary.exists() {
+                    plain(&temporary)?;
+                    fs::remove_file(temporary)?;
+                }
+                if *existed {
+                    let backup = destination(&self.backup, name)?;
+                    if file_digest(&target)
+                        .ok()
+                        .zip(file_digest(&backup).ok())
+                        .is_some_and(|(a, b)| a == b)
+                    {
+                        return Ok(());
+                    }
+                    atomic_copy(&backup, &target)
+                } else if target.exists() {
+                    fs::remove_file(target)
+                } else {
+                    Ok(())
+                }
+            })()
+            .is_err();
         }
         if failed {
-            Err(invalid("rollback failed; update backup retained"))
-        } else {
-            Ok(())
+            return Err(invalid("rollback failed; update backup retained"));
+        }
+        self.finish()
+    }
+
+    fn finish(&self) -> io::Result<()> {
+        match fs::remove_file(self.backup.join(JOURNAL)) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
         }
     }
 }
-fn atomic_copy(source: &Path, target: &Path) -> io::Result<()> {
-    fs::create_dir_all(target.parent().unwrap())?;
-    let temporary = target.with_file_name(format!(
+
+fn copy_temporary(target: &Path) -> PathBuf {
+    target.with_file_name(format!(
         ".{}.lazybuddy-new",
         target.file_name().unwrap().to_string_lossy()
-    ));
+    ))
+}
+
+fn atomic_write(
+    target: &Path,
+    write: impl FnOnce(&mut fs::File) -> io::Result<()>,
+) -> io::Result<()> {
+    fs::create_dir_all(target.parent().unwrap())?;
+    let temporary = copy_temporary(target);
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)?;
     let result = (|| {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)?;
-        io::copy(&mut fs::File::open(source)?, &mut file)?;
+        write(&mut file)?;
         file.flush()?;
-        file.sync_all()?;
-        drop(file);
-        fs::rename(&temporary, target)
+        file.sync_all()
     })();
+    drop(file);
+    let result = result.and_then(|()| windows::replace(&temporary, target));
     if result.is_err() {
         let _ = fs::remove_file(temporary);
     }
     result
 }
-fn launch_and_confirm(install: &Path) -> io::Result<()> {
-    let mut child = windows::command(&install.join("lazybuddy.exe"))
+
+fn atomic_copy(source: &Path, target: &Path) -> io::Result<()> {
+    atomic_write(target, |file| {
+        io::copy(&mut fs::File::open(source)?, file)?;
+        Ok(())
+    })
+}
+
+/// Return true if startup must yield to an updater holding the install lock.
+pub fn recover_on_start(install: &Path) -> io::Result<bool> {
+    let backup = install.join(RECOVERY);
+    if !backup.join(JOURNAL).exists() {
+        return Ok(false);
+    }
+    let _lock = match windows::lock(&install.join(INSTALL_LOCK)) {
+        Ok(lock) => lock,
+        Err(error) if error.raw_os_error() == Some(32) => {
+            return Ok(std::env::var_os(UPDATE_TRIAL).is_none());
+        }
+        Err(error) => return Err(error),
+    };
+    plain(&backup)?;
+    let helper = backup.join("recover.exe");
+    verify_recovery_helper(install, &backup, &helper)?;
+    let ready = backup.join("recovery-ready");
+    if ready.exists() {
+        fs::remove_file(&ready)?;
+    }
+    // The helper owns the lock from the handshake through the restoration.
+    drop(_lock);
+    let child = windows::command(&helper)
+        .arg("--recover")
+        .arg(std::process::id().to_string())
+        .spawn()?;
+    wait_ready(child, &ready)?;
+    Ok(true)
+}
+
+fn verify_recovery_helper(install: &Path, backup: &Path, helper: &Path) -> io::Result<()> {
+    let source = Source::load(&install.join(SOURCE))?;
+    let manifest = verify_manifest(
+        &fs::read(backup.join("recovery-manifest.json"))?,
+        &fs::read(backup.join("recovery-manifest.sig"))?,
+        &source.public_key,
+    )?;
+    let info = read_build_info(&backup.join("recovery-build.json"))?;
+    match_manifest(&info, &manifest)?;
+    plain(helper)?;
+    if file_digest(helper)? != info.files["lazybuddy-updater.exe"] {
+        return Err(invalid("recovery helper digest mismatch"));
+    }
+    Ok(())
+}
+
+fn discard_unstarted_transaction(install: &Path, backup: &Path) -> io::Result<()> {
+    plain(backup)?;
+    let journal = backup.join(JOURNAL);
+    plain(&journal)?;
+    let changed: Vec<(String, bool)> = read_json(&journal)?;
+    // Legacy hosts cannot run the startup recovery hook before their EXE is replaced.
+    if changed.as_slice() != [("lazybuddy.exe".into(), true)]
+        || file_digest(&destination(install, "lazybuddy.exe")?)?
+            != file_digest(&destination(backup, "lazybuddy.exe")?)?
+    {
+        return Err(invalid("update recovery is pending"));
+    }
+    recover_transaction(install, backup)
+}
+
+fn recover_transaction(install: &Path, backup: &Path) -> io::Result<()> {
+    plain(backup)?;
+    let journal = backup.join(JOURNAL);
+    plain(&journal)?;
+    let changed: Vec<(String, bool)> = read_json(&journal)?;
+    let mut names = std::collections::BTreeSet::new();
+    if changed.is_empty()
+        || changed.len() > 10_001
+        || changed
+            .iter()
+            .any(|(name, _)| !owned(name) || !names.insert(name))
+    {
+        return Err(invalid("invalid update recovery journal"));
+    }
+    Transaction {
+        install: install.to_owned(),
+        backup: backup.to_owned(),
+        changed,
+    }
+    .rollback()
+}
+
+pub fn recover_job(parent: u32) -> io::Result<()> {
+    let executable = std::env::current_exe()?;
+    let backup = executable
+        .parent()
+        .ok_or_else(|| invalid("missing recovery directory"))?;
+    if executable.file_name().and_then(|name| name.to_str()) != Some("recover.exe")
+        || backup.file_name().and_then(|name| name.to_str()) != Some(RECOVERY)
+    {
+        return Err(invalid("invalid recovery executable location"));
+    }
+    let install = backup
+        .parent()
+        .ok_or_else(|| invalid("missing installation"))?;
+    let _lock = windows::lock(&install.join(INSTALL_LOCK))?;
+    verify_recovery_helper(install, backup, &executable)?;
+    windows::wait_parent(
+        parent,
+        &install.join("lazybuddy.exe"),
+        &backup.join("recovery-ready"),
+    )?;
+    recover_transaction(install, backup)?;
+    launch_and_confirm(install, false)
+}
+fn launch_and_confirm(install: &Path, trial: bool) -> io::Result<()> {
+    let mut command = windows::command(&install.join("lazybuddy.exe"));
+    command
         .arg("--background")
         .current_dir(install)
-        .spawn()?;
+        .env_remove(UPDATE_TRIAL);
+    if trial {
+        command.env(UPDATE_TRIAL, "1");
+    }
+    let mut child = command.spawn()?;
     let deadline = Instant::now() + Duration::from_secs(30);
     while Instant::now() < deadline {
         if child.try_wait()?.is_some() {
@@ -458,36 +695,53 @@ pub fn apply_job(path: &Path) -> io::Result<()> {
         &source.public_key,
     )?;
     verify_stage(&directory.join("stage"), &manifest)?;
-    let _install_lock = windows::lock(&install.join(".lazybuddy-update.lock"))?;
+    let _install_lock = windows::lock(&install.join(INSTALL_LOCK))?;
+    let recovery = install.join(RECOVERY);
+    if recovery.join(JOURNAL).exists() {
+        discard_unstarted_transaction(&install, &recovery)?;
+    }
+    if !update_allowed(&install, &manifest)? {
+        return Err(invalid("update is older than the installed release"));
+    }
     windows::wait_parent(
         job.parent_pid,
         &install.join("lazybuddy.exe"),
         &directory.join("ready"),
     )?;
     let initialized = verify_stage(&directory.join("stage"), &manifest).and_then(|info| {
-        Transaction::new(&install, &directory.join("backup")).map(|transaction| (info, transaction))
+        let transaction = Transaction::new(&install, &install.join(RECOVERY))?;
+        for (source, target) in [
+            ("stage/lazybuddy-updater.exe", "recover.exe"),
+            ("manifest.json", "recovery-manifest.json"),
+            ("manifest.json.sig", "recovery-manifest.sig"),
+            ("stage/build-info.json", "recovery-build.json"),
+        ] {
+            atomic_copy(&directory.join(source), &transaction.backup.join(target))?;
+        }
+        Ok((info, transaction))
     });
     let (info, mut transaction) = match initialized {
         Ok(value) => value,
         Err(error) => {
-            let _ = launch_and_confirm(&install);
+            let _ = launch_and_confirm(&install, false);
             return Err(error);
         }
     };
     let result = transaction
         .replace(&directory.join("stage"), &info)
-        .and_then(|_| launch_and_confirm(&install));
+        .and_then(|_| launch_and_confirm(&install, true));
     if result.is_err() {
         transaction.rollback()?;
+        let _ = launch_and_confirm(&install, false);
+    } else {
+        transaction.finish()?;
     }
     let status = serde_json::json!({"ok":result.is_ok(),"build":manifest.build});
     fs::write(
         directory.parent().unwrap().join("result.json"),
         serde_json::to_vec(&status).map_err(io::Error::other)?,
     )?;
-    if result.is_err() {
-        let _ = launch_and_confirm(&install);
-    }
+    let _ = clear_directory(&transaction.backup);
     if result.is_ok() {
         for name in ["stage", "backup"] {
             let _ = clear_directory(&directory.join(name));

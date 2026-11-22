@@ -63,7 +63,13 @@ impl State {
             .service(app)?
             .request(json!({"version":1,"id":"web-bilibili","method":method,"args":args}))
             .await
-            .map_err(|_| "bilibili_disconnected")?;
+            .map_err(|_| {
+                if let Some(session) = self.session.lock().unwrap().take() {
+                    session.stop();
+                }
+                self.jobs.lock().unwrap().clear();
+                "bilibili_disconnected"
+            })?;
         if reply["ok"] != true {
             let code = reply["error"]["code"]
                 .as_str()
@@ -81,8 +87,14 @@ impl State {
     pub async fn suspend(&self, app: &tauri::AppHandle) -> Result<(), String> {
         let _guard = self.operation.lock().await;
         if self.session.lock().unwrap().is_some() {
-            self.request(app, "lifecycle.suspend", json!({"release":true}))
-                .await?;
+            if let Err(error) = self
+                .request(app, "lifecycle.suspend", json!({"release":true}))
+                .await
+            {
+                if error != "bilibili_disconnected" {
+                    return Err(error);
+                }
+            }
         }
         self.jobs.lock().unwrap().clear();
         Ok(())

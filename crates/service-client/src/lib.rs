@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     io::{self, BufRead, BufReader, Read, Write},
     path::Path,
-    process::{Child, ChildStdin, Command, Stdio},
+    process::{Child, Command, Stdio},
     sync::mpsc,
     thread,
     time::Duration,
@@ -18,7 +18,8 @@ pub struct Client {
     #[cfg(windows)]
     job: std::sync::Arc<job::Job>,
     child: Child,
-    input: Option<ChildStdin>,
+    input: Option<mpsc::Sender<Vec<u8>>>,
+    writer: Option<thread::JoinHandle<()>>,
     replies: mpsc::Receiver<io::Result<Value>>,
     reader: Option<thread::JoinHandle<()>>,
 }
@@ -58,9 +59,19 @@ impl Client {
             let _ = child.wait();
             return Err(error);
         }
-        let input = child.stdin.take();
+        let mut input = child.stdin.take().expect("piped input");
         let output = child.stdout.take().expect("piped output");
         let (sender, replies) = mpsc::sync_channel(1);
+        let errors = sender.clone();
+        let (input_sender, writes) = mpsc::channel::<Vec<u8>>();
+        let writer = thread::spawn(move || {
+            while let Ok(bytes) = writes.recv() {
+                if let Err(error) = input.write_all(&bytes).and_then(|_| input.flush()) {
+                    let _ = errors.send(Err(error));
+                    return;
+                }
+            }
+        });
         let reader = thread::spawn(move || {
             let mut output = BufReader::new(output);
             loop {
@@ -69,7 +80,7 @@ impl Client {
                     .take(4 * 1024 * 1024 + 1)
                     .read_until(b'\n', &mut line);
                 let reply = match result {
-                    Ok(0) => return,
+                    Ok(0) => Err(io::Error::other("service disconnected")),
                     Ok(_) if line.len() > 4 * 1024 * 1024 => {
                         Err(io::Error::other("service reply too large"))
                     }
@@ -87,7 +98,8 @@ impl Client {
             #[cfg(windows)]
             job,
             child,
-            input,
+            input: Some(input_sender),
+            writer: Some(writer),
             replies,
             reader: Some(reader),
         })
@@ -105,18 +117,22 @@ impl Client {
         if cancelled.load(Ordering::Acquire) {
             return Err(io::Error::other("request cancelled"));
         }
-        let bytes = serde_json::to_vec(request)?;
+        let mut bytes = serde_json::to_vec(request)?;
         if bytes.len() > 65536 || !request["id"].is_string() {
             return Err(io::Error::other("invalid client request"));
         }
-        let input = self
-            .input
-            .as_mut()
-            .ok_or_else(|| io::Error::other("service stopped"))?;
-        input.write_all(&bytes)?;
-        input.write_all(b"\n")?;
-        input.flush()?;
-        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        let timeout = if request["method"] == "lifecycle.suspend" {
+            Duration::from_secs(8)
+        } else {
+            Duration::from_secs(60)
+        };
+        let deadline = std::time::Instant::now() + timeout;
+        bytes.push(b'\n');
+        self.input
+            .as_ref()
+            .ok_or_else(|| io::Error::other("service stopped"))?
+            .send(bytes)
+            .map_err(|_| io::Error::other("service disconnected"))?;
         let reply = loop {
             if cancelled.load(Ordering::Acquire) || std::time::Instant::now() >= deadline {
                 #[cfg(windows)]
@@ -147,6 +163,9 @@ impl Drop for Client {
         // Closing the receiver releases a writer waiting on an unsolicited reply.
         let (_, empty) = mpsc::channel();
         self.replies = empty;
+        if let Some(writer) = self.writer.take() {
+            let _ = writer.join();
+        }
         if let Some(reader) = self.reader.take() {
             let _ = reader.join();
         }

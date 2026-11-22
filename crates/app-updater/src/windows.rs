@@ -1,12 +1,13 @@
 use std::{
     fs::{File, OpenOptions},
     io,
-    os::windows::{fs::OpenOptionsExt, process::CommandExt},
+    os::windows::{ffi::OsStrExt, fs::OpenOptionsExt, process::CommandExt},
     path::Path,
     process::Command,
 };
 use windows_sys::Win32::{
     Foundation::{CloseHandle, WAIT_OBJECT_0},
+    Storage::FileSystem::{MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW},
     System::Threading::{
         OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
         QueryFullProcessImageNameW, WaitForSingleObject,
@@ -26,6 +27,22 @@ pub fn lock(path: &Path) -> io::Result<File> {
         .share_mode(0)
         .open(path)
 }
+pub fn replace(source: &Path, target: &Path) -> io::Result<()> {
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain([0]).collect();
+    let target: Vec<u16> = target.as_os_str().encode_wide().chain([0]).collect();
+    if unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            target.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 pub fn wait_parent(pid: u32, expected: &Path, ready: &Path) -> io::Result<()> {
     let handle = unsafe {
         OpenProcess(

@@ -249,16 +249,19 @@ fn window_action(action: &str, window: tauri::WebviewWindow) -> Result<(), Strin
             if !window.state::<reader::State>().begin_exit() {
                 return Ok(());
             }
+            window.state::<host::State>().set_exiting(true);
             let app = window.app_handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(error) = app.state::<bilibili::State>().disconnect(&app).await {
                     let _ = app.emit("shell-error", error);
                     app.state::<reader::State>().cancel_exit();
+                    app.state::<host::State>().set_exiting(false);
                     return;
                 }
                 if let Err(error) = app.state::<reader::State>().disconnect(&app).await {
                     let _ = app.emit("shell-error", format!("阅读进度保存失败，未退出：{error}"));
                     app.state::<reader::State>().cancel_exit();
+                    app.state::<host::State>().set_exiting(false);
                     return;
                 }
                 let Some(completed) = app.state::<playback::State>().shutdown() else {
@@ -334,6 +337,16 @@ fn resize(width: u32, height: u32, window: tauri::WebviewWindow) -> Result<(), S
 }
 
 fn main() {
+    if let Ok(exe) = std::env::current_exe() {
+        match lazybuddy_app_updater::recover_on_start(exe.parent().unwrap()) {
+            Ok(false) => {}
+            Ok(true) => return,
+            Err(error) => {
+                eprintln!("update recovery could not start: {error}");
+                return;
+            }
+        }
+    }
     let host = host::State::new().expect("host settings unavailable");
     tauri::Builder::default()
         .manage(host)

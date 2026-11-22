@@ -42,6 +42,13 @@ class Signing(unittest.TestCase):
     bad=dict(v);bad[key]=value
     with self.assertRaises(ValueError):m.validate(json.dumps(bad).encode(),'update','1.0.8')
    with self.assertRaises(ValueError):m.validate(b'{"schema":1,"schema":1}','update','1.0.8')
+ def test_update_sequence_has_a_bounded_integer_value(self):
+  with tempfile.TemporaryDirectory(dir=ROOT/'tmp') as d:
+   _,update=self.fixture(Path(d),Ed25519PrivateKey.generate())
+   m.validate(json.dumps(dict(update,sequence=42)).encode(),'update','1.0.8')
+   for sequence in (0,True,-1,2**64,None):
+    with self.assertRaises(ValueError):
+     m.validate(json.dumps(dict(update,sequence=sequence)).encode(),'update','1.0.8')
  def test_catalog_dependencies_and_hosts_are_checked(self):
   v=json.loads((ROOT/'docs/modules/stable-v6-catalog.json').read_bytes());m.validate(json.dumps(v).encode(),'catalog','1.0.8')
   v['packages'][0]['url']='https://example.com/untrusted.zip'
