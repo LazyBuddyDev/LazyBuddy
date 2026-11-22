@@ -14,7 +14,6 @@ struct Connection {
     service: Session,
     direct: bool,
     lease: Option<u64>,
-    account_pending: bool,
 }
 #[derive(Default)]
 pub struct State {
@@ -127,12 +126,17 @@ fn connect(direct: bool) -> Result<Session, String> {
     ))
 }
 fn environment(direct: bool) -> Result<Vec<(String, String)>, String> {
-    let scope = lazybuddy_host_control::isolated_credential_scope()
-        .map_err(|e| e.to_string())?
-        .unwrap_or_else(|| "shell-preview".into());
+    let isolated =
+        lazybuddy_host_control::isolated_credential_scope().map_err(|e| e.to_string())?;
     let mut environment = vec![
-        ("LAZYBUDDY_INSTANCE".into(), scope.clone()),
-        ("LAZYBUDDY_CREDENTIAL_SCOPE".into(), scope),
+        (
+            "LAZYBUDDY_INSTANCE".into(),
+            isolated.clone().unwrap_or_else(|| "default".into()),
+        ),
+        (
+            "LAZYBUDDY_CREDENTIAL_SCOPE".into(),
+            isolated.unwrap_or_else(|| "shell-preview".into()),
+        ),
         (
             "LAZYBUDDY_DATA_DIR".into(),
             data_directory()?.to_string_lossy().into_owned(),
@@ -170,6 +174,17 @@ impl State {
         }
         self.epoch.fetch_add(1, Ordering::AcqRel);
         let mut slot = self.connection.lock().unwrap();
+        if let Some(connection) = slot.as_ref()
+            && (page || account)
+            && (visible || connection.lease.is_some())
+        {
+            let pending = connection.service.lifecycle(
+                json!({"version":1,"id":"cancel-playback-work","method":"work.cancel","args":{}}),
+            );
+            tauri::async_runtime::spawn(async move {
+                let _ = pending.await;
+            });
+        }
         if (page || account) && visible {
             if previous.0 != page || previous.1 != account {
                 if slot
@@ -177,11 +192,7 @@ impl State {
                     .is_some_and(|connection| connection.lease.is_none())
                 {
                     if let Some(connection) = slot.take() {
-                        if connection.account_pending {
-                            tauri::async_runtime::spawn(connection.service.shutdown());
-                        } else {
-                            connection.service.stop();
-                        }
+                        tauri::async_runtime::spawn(connection.service.shutdown());
                     }
                 }
             }
@@ -200,11 +211,7 @@ impl State {
         }
         if !page && !account {
             if let Some(connection) = slot.take() {
-                if connection.lease.is_none() && !connection.account_pending {
-                    connection.service.stop();
-                } else {
-                    tauri::async_runtime::spawn(connection.service.shutdown());
-                }
+                tauri::async_runtime::spawn(connection.service.shutdown());
             }
         } else if let Some(connection) = slot.as_ref() {
             if let Some(lease) = connection.lease {
@@ -212,11 +219,11 @@ impl State {
                 let pending = service.lifecycle(json!({"version":1,"id":"visibility","method":"playback.suspend","args":{"session":lease}}));
                 tauri::async_runtime::spawn(async move {
                     if !pending.await.is_ok_and(|reply| reply["ok"] == true) {
-                        service.stop();
+                        service.shutdown().await;
                     }
                 });
             } else if let Some(connection) = slot.take() {
-                connection.service.stop();
+                tauri::async_runtime::spawn(connection.service.shutdown());
             }
         }
     }
@@ -312,7 +319,11 @@ pub async fn playback_call(
     if let Some(connection) = previous {
         connection.service.shutdown().await;
     }
-    let (service, pending) = {
+    let deferred = matches!(
+        method.as_str(),
+        "search" | "cover.read" | "account.restore" | "account.cancel"
+    );
+    let (service, pending, scope, scope_generation) = {
         let model = model.lock().unwrap();
         let mut slot = state.connection.lock().unwrap();
         if !admissible(&model) || epoch != state.epoch.load(Ordering::Acquire) {
@@ -326,13 +337,18 @@ pub async fn playback_call(
                 service: connect(direct)?,
                 direct,
                 lease: None,
-                account_pending: false,
             });
         }
         let service = slot.as_ref().unwrap().service.clone();
-        let pending =
-            service.request(json!({"version":1,"id":"web-playback","method":method,"args":args}));
-        (service, pending)
+        let scope = model.active_generation.clone();
+        let scope_generation = model.view.generation;
+        let request = if deferred {
+            json!({"version":1,"id":"web-playback","method":"work.begin","args":{"method":method,"args":args}})
+        } else {
+            json!({"version":1,"id":"web-playback","method":method,"args":args})
+        };
+        let pending = service.request_scoped(request, scope.clone(), scope_generation);
+        (service, pending, scope, scope_generation)
     };
     drop(connecting);
     if method == "favorites.read" {
@@ -341,6 +357,11 @@ pub async fn playback_call(
     let request_id = lazybuddy_host_control::logs::next_id();
     let began = std::time::Instant::now();
     let reply = pending.await;
+    let reply = if deferred {
+        finish_work(&service, scope, scope_generation, &method, args, reply).await
+    } else {
+        reply
+    };
     let model = model.lock().unwrap();
     let mut slot = state.connection.lock().unwrap();
     if !admissible(&model)
@@ -412,11 +433,58 @@ pub async fn playback_call(
         if method.starts_with("playback.") {
             connection.lease = resource_session(&reply["data"]);
         }
-        if account_method || method.starts_with("favorites.") {
-            connection.account_pending = reply["data"]["operation"] == "pending";
-        }
     }
     Ok(reply["data"].clone())
+}
+
+async fn finish_work(
+    service: &Session,
+    scope: std::sync::Arc<AtomicU64>,
+    generation: u64,
+    method: &str,
+    args: Value,
+    reply: std::io::Result<Value>,
+) -> std::io::Result<Value> {
+    let reply = reply?;
+    if reply["error"]["code"] == "unknown_method" {
+        return service
+            .request_scoped(
+                json!({"version":1,"id":"web-playback","method":method,"args":args}),
+                scope,
+                generation,
+            )
+            .await;
+    }
+    if reply["ok"] != true {
+        return Ok(reply);
+    }
+    let job = reply["data"]["job"]
+        .as_u64()
+        .ok_or_else(|| std::io::Error::other("invalid media work receipt"))?;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(65);
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let mut result = service
+            .request_scoped(
+                json!({"version":1,"id":"web-playback","method":"work.status","args":{"job":job}}),
+                scope.clone(),
+                generation,
+            )
+            .await?;
+        if result["ok"] != true {
+            return Ok(result);
+        }
+        if result["data"]["pending"] == true {
+            if tokio::time::Instant::now() >= deadline {
+                return Ok(json!({"ok":false,"error":{"code":"work_cancelled"}}));
+            }
+            continue;
+        }
+        return result["data"]
+            .get_mut("reply")
+            .map(Value::take)
+            .ok_or_else(|| std::io::Error::other("missing media work result"));
+    }
 }
 fn resource_session(data: &Value) -> Option<u64> {
     if data["loading"] == true || data["prepared"] == true {

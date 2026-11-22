@@ -23,6 +23,8 @@ export function message(error:unknown):string {
     saved_session_verification_failed:'已保存的登录状态核对失败，请重新登录',favorites_unavailable:'收藏列表读取失败',favorites_sync_failed:'收藏同步失败',
     app_access_denied:'当前账号无法访问该媒体',episode_unavailable:'当前集不可播放',quality_unavailable:'当前清晰度不可用',
     app_playback_unavailable:'App 播放接口暂不可用，尚未获取视频资源',app_playback_empty_response:'App 播放接口返回空内容（HTTP 200），尚未获取视频资源',
+    app_resolver_unavailable:'红果取源组件不可用',app_response_invalid:'取源组件返回了无法识别的数据',invalid_catalog:'分集目录数据无效',
+    unsupported_wrapped_material:'当前媒体使用了服务无法处理的加密封装',invalid_credential_scope:'当前实例未配置独立的凭据空间',
     media_access_denied:'媒体访问被拒绝',media_network_error:'媒体网络请求失败',app_source_network_error:'取源网络请求失败',
     browser_format_unsupported:'浏览器不支持该视频编码或封装',browser_decode_failed:'视频解码失败',
     browser_media_error:'浏览器媒体加载失败，具体原因请结合日志定位',
