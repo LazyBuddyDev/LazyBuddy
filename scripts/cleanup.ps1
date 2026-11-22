@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+#Requires -Version 5.1
 [CmdletBinding()]
 param(
     [switch]$Apply,
@@ -156,7 +156,7 @@ function Test-Occupied($Entry, $Processes) {
     return $busy.Count -gt 0
 }
 
-if (!$IsWindows) { throw 'The cleanup script requires Windows.' }
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'The cleanup script requires Windows.' }
 for ($ancestor = Get-Item -Force -LiteralPath $root; $ancestor; $ancestor = $ancestor.Parent) {
     if ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Workspace is under a reparse point.' }
 }

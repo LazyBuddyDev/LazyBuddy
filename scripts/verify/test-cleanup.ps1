@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+#Requires -Version 5.1
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
 $tmp = Join-Path $repo 'tmp'
@@ -9,6 +9,8 @@ New-Item -ItemType Directory -Path $fixture | Out-Null
 $junction = Join-Path $fixture 'tmp/qa-linked/points-outside'
 $script = Join-Path $fixture 'scripts/cleanup.ps1'
 $batch = Join-Path $fixture 'cleanup.bat'
+$powershell = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+$gitDirectory = Split-Path -Parent (Get-Command git.exe -CommandType Application | Select-Object -First 1).Source
 
 function Assert($value, [string]$message) {
     if (!$value) { throw $message }
@@ -24,18 +26,25 @@ function Run-Cleanup([int]$Code, [scriptblock]$Arguments) {
     $path = $script.Replace("'", "''")
     $command = "& { $Arguments } '$path'; exit `$LASTEXITCODE"
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
-    $json = & ([Environment]::ProcessPath) -NoProfile -EncodedCommand $encoded
+    $json = & $powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded
     Assert ($LASTEXITCODE -eq $Code) "Unexpected cleanup exit code: $LASTEXITCODE. Output: $json"
     return ($json | ConvertFrom-Json)
 }
 
 function Run-Batch([int]$Code, [string[]]$Options = @()) {
+    $originalPath = $env:Path
     Push-Location (Join-Path $fixture 'tmp')
     try {
+        $env:Path = "$gitDirectory;$env:SystemRoot\System32"
+        Assert (!(Get-Command pwsh.exe -ErrorAction SilentlyContinue)) 'Fixture unexpectedly resolves PowerShell 7.'
+        Assert (!(Get-Command powershell.exe -ErrorAction SilentlyContinue)) 'Fixture should require the built-in PowerShell absolute path.'
         $json = & $batch @Options
         Assert ($LASTEXITCODE -eq $Code) "Unexpected cleanup.bat exit code: $LASTEXITCODE. Output: $json"
         return ($json | ConvertFrom-Json)
-    } finally { Pop-Location }
+    } finally {
+        $env:Path = $originalPath
+        Pop-Location
+    }
 }
 
 try {
@@ -101,11 +110,8 @@ for ($i = 0; $i -lt 300; $i++) {
 }
 exit 1
 '@
-    $info = [Diagnostics.ProcessStartInfo]::new([Environment]::ProcessPath)
-    $info.UseShellExecute = $false
-    $info.CreateNoWindow = $true
-    foreach ($arg in @('-NoProfile','-File',(Join-Path $fixture 'tmp/qa-active/hold.ps1'))) { $info.ArgumentList.Add($arg) }
-    $worker = [Diagnostics.Process]::Start($info)
+    $holdScript = Join-Path $fixture 'tmp/qa-active/hold.ps1'
+    $worker = Start-Process -FilePath $powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"{0}"' -f $holdScript) -WindowStyle Hidden -PassThru
     try {
         $until = [DateTime]::UtcNow.AddSeconds(5)
         while (!(Test-Path -LiteralPath (Join-Path $fixture 'tmp/qa-active/ready'))) {
