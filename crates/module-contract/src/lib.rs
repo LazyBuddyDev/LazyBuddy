@@ -119,15 +119,21 @@ impl Manifest {
     }
 }
 
+pub fn parse_version(value: &str) -> Option<[u32; 3]> {
+    let mut parts = value.split('.');
+    let mut version = [0; 3];
+    for number in &mut version {
+        let part = parts.next()?;
+        if !part.bytes().all(|b| b.is_ascii_digit()) || (part.len() > 1 && part.starts_with('0')) {
+            return None;
+        }
+        *number = part.parse().ok()?;
+    }
+    parts.next().is_none().then_some(version)
+}
+
 pub fn version(value: &str) -> bool {
-    let parts: Vec<_> = value.split('.').collect();
-    parts.len() == 3
-        && parts.iter().all(|part| {
-            !part.is_empty()
-                && part.bytes().all(|b| b.is_ascii_digit())
-                && (part.len() == 1 || !part.starts_with('0'))
-                && part.parse::<u32>().is_ok()
-        })
+    parse_version(value).is_some()
 }
 
 /// A visible activation owns its replies; old A -> B -> A results are discarded.

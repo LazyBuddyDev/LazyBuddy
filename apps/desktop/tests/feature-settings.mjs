@@ -29,7 +29,8 @@ try{
     await page.setViewportSize({width,height:640});let baseline;
     for(const id of ['news','hongguo','reader']){
       await page.getByLabel('选择功能').selectOption(id);
-      await page.locator('main .tabs:visible button').first().click();
+      const contentTab={news:'全部来源',hongguo:'搜索',reader:'书架'}[id];
+      await page.locator('main .tabs:visible').getByRole('button',{name:contentTab,exact:true}).click();
       await page.waitForSelector('[data-section=content]');
       const content=await barBounds();assert.equal(content.border,'1px');assert.equal(content.margin,'12px');
       baseline??=content;assert.deepEqual(content,baseline,'feature tab separators share the same position');
@@ -39,8 +40,8 @@ try{
     }
   }
   await page.setViewportSize({width:780,height:640});
-  await page.locator('main .tabs:visible button').first().click();
-  for(const [id,heading,tabs] of [['news','新闻设置',['全部来源','已关注','设置']],['hongguo','红果账号',['搜索','收藏','设置']],['reader','阅读设置',['书架','设置']]]){
+  await page.locator('main .tabs:visible').getByRole('button',{name:'书架',exact:true}).click();
+  for(const [id,heading,tabs] of [['news','新闻设置',['全部来源','已关注','设置']],['hongguo','红果账号',['搜索','收藏','设置']],['reader','阅读设置',['在线搜书','书架','浏览记录','设置']]]){
     await page.getByLabel('选择功能').selectOption(id);
     await localSettings().click();await page.getByRole('heading',{name:heading,exact:true}).waitFor();
     assert.equal(await page.locator('main .tabs:visible button.active').textContent(),'设置');
@@ -56,7 +57,7 @@ try{
       await localSettings().click();
     }
     await gear.click();await page.getByRole('heading',{name:'显示设置',exact:true}).waitFor();
-    assert.deepEqual(await page.locator('.settings-nav button').allTextContents(),['显示设置','系统设置','关于我们','返回页面']);
+    assert.deepEqual((await page.locator('.settings-nav button').allTextContents()).map(label=>label.trim()),['显示设置','系统设置','关于我们','返回页面']);
     assert.equal(await page.locator('#card-opacity:visible').count(),0);
     const quiet=await calls();await page.waitForTimeout(250);assert.equal(await calls(),quiet,'global settings silence all features');
     // Global settings remain selected while changing roots; hidden/restored settings stay quiet.

@@ -5,7 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Mutex,
 };
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[derive(Default)]
 pub struct State {
@@ -51,16 +51,18 @@ impl State {
                     .to_string_lossy()
                     .into_owned(),
             ));
-            if lazybuddy_host_control::isolated() {
-                launch.environment.push((
-                    "LAZYBUDDY_CREDENTIAL_SCOPE".into(),
-                    lazybuddy_host_control::instance().map_err(|_| "invalid_credential_scope")?,
-                ));
+            if let Some(scope) = lazybuddy_host_control::isolated_credential_scope()
+                .map_err(|_| "invalid_credential_scope")?
+            {
+                launch
+                    .environment
+                    .push(("LAZYBUDDY_CREDENTIAL_SCOPE".into(), scope));
             }
-            *slot = Some(Session::with_environment(
+            *slot = Some(Session::with_lease(
                 launch.executable,
                 launch.arguments,
                 launch.environment,
+                Some(launch.lease),
             ));
         }
         Ok(slot.as_ref().unwrap().clone())
@@ -71,11 +73,41 @@ impl State {
         method: &str,
         args: Value,
     ) -> Result<Value, String> {
-        let result = self
-            .service(app)?
-            .request(json!({"version":1,"id":"web-reader","method":method,"args":args}))
-            .await;
-        let reply = result.map_err(|_| {
+        self.dispatch(app, method, args, None).await
+    }
+
+    async fn dispatch(
+        &self,
+        app: &tauri::AppHandle,
+        method: &str,
+        args: Value,
+        generation: Option<u64>,
+    ) -> Result<Value, String> {
+        let request = json!({"version":1,"id":"web-reader","method":method,"args":args});
+        let result = if let Some(generation) = generation {
+            let pending = {
+                let model = app.state::<Mutex<crate::Model>>();
+                let model = model.lock().unwrap();
+                if model.view.generation != generation {
+                    return Err("stale_reader_reply".into());
+                }
+                self.service(app)?.request_scoped(
+                    request,
+                    model.active_generation.clone(),
+                    generation,
+                )
+            };
+            pending.await
+        } else {
+            self.service(app)?.lifecycle(request).await
+        };
+        let reply = result.map_err(|error| {
+            if error.kind() == std::io::ErrorKind::Interrupted {
+                return "stale_reader_reply".to_owned();
+            }
+            if error.kind() == std::io::ErrorKind::WouldBlock {
+                return "request_busy".to_owned();
+            }
             if let Some(session) = self.session.lock().unwrap().take() {
                 session.stop();
             }
@@ -115,6 +147,33 @@ impl State {
         }
         Ok(())
     }
+    pub fn leave(&self, app: &tauri::AppHandle, generation: u64) {
+        self.selected.lock().unwrap().clear();
+        let pending = self.session.lock().unwrap().as_ref().map(|service| {
+            service.lifecycle(
+                json!({"version":1,"id":"view-reader","method":"lifecycle.suspend","args":{}}),
+            )
+        });
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = app.state::<State>();
+            if let Some(pending) = pending {
+                let _ = pending.await;
+            }
+            let _guard = state.operation.lock().await;
+            let current = app
+                .state::<Mutex<crate::Model>>()
+                .lock()
+                .unwrap()
+                .view
+                .generation;
+            if current == generation
+                && let Err(error) = state.flush(&app).await
+            {
+                let _ = app.emit("shell-error", format!("阅读进度保存失败：{error}"));
+            }
+        });
+    }
     pub async fn suspend(&self, app: &tauri::AppHandle) -> Result<(), String> {
         self.selected.lock().unwrap().clear();
         let _guard = self.operation.lock().await;
@@ -133,7 +192,7 @@ impl State {
         let _guard = self.operation.lock().await;
         let session = self.session.lock().unwrap().take();
         if let Some(session) = session {
-            session.shutdown().await;
+            session.close_after_cleanup().await;
         }
         Ok(())
     }
@@ -212,10 +271,6 @@ pub fn reader_checkpoint(
     Ok(())
 }
 #[tauri::command]
-pub async fn reader_suspend(app: tauri::AppHandle) -> Result<(), String> {
-    app.state::<State>().suspend(&app).await
-}
-#[tauri::command]
 pub async fn reader_call(
     method: String,
     args: Value,
@@ -279,7 +334,9 @@ pub async fn reader_call(
     if method == "library.remove" {
         state.flush(&app).await?;
     }
-    let reply = state.request(&app, &method, args).await?;
+    let reply = state
+        .dispatch(&app, &method, args, Some(generation))
+        .await?;
     if !allowed(
         &app.state::<Mutex<crate::Model>>().lock().unwrap(),
         generation,

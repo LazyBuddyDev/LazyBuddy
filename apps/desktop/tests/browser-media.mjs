@@ -58,7 +58,8 @@ try{
   await page.getByAltText('红果登录二维码').waitFor();
   await page.locator('.toolbar').getByRole('button',{name:'设置',exact:true}).click();
   await page.getByRole('button',{name:'显示设置',exact:true}).click();
-  const inactive=await invoke('playback_call',{method:'account.status',args:{}}).then(()=>'',error=>String(error));
+  const hiddenView=(await invoke('snapshot')).view;
+  const inactive=await invoke('playback_call',{method:'account.status',args:{},generation:hiddenView.generation}).then(()=>'',error=>String(error));
   assert.match(inactive,/inactive_media_page/);
   await page.getByRole('dialog',{name:'扫码登录'}).waitFor({state:'hidden'});
   await page.getByRole('button',{name:'返回页面',exact:true}).click();

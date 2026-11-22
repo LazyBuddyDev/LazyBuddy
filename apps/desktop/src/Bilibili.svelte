@@ -20,7 +20,8 @@
   function qrModal(node:HTMLDialogElement){node.showModal();return{destroy(){node.close();}};}
   function stopBoost(){clearTimeout(boost);boost=undefined;if(boosted&&video)video.playbackRate=speed;boosted=false;}
   function detach(){seeking=null;stopBoost();cancelMetadata?.();cancelMetadata=undefined;if(video){if(video.readyState>0&&Number.isFinite(video.currentTime))position=video.currentTime;video.pause();video.removeAttribute('src');video.load();}playing=false;}
-  export async function suspend(release=false){rememberList();const g=generation;live=false;epoch++;clearTimeout(poll);poll=undefined;for(const[t,r]of delays){clearTimeout(t);r();}delays.clear();detach();busy=false;loading=false;account={...account,qr_image:'',attempt:0,state:account.state==='signed_in'?'signed_in':'idle'};if(release)resource=undefined;try{await invoke('bilibili_suspend',{generation:g,release});}catch{}}
+  export function suspend(release=false){rememberList();live=false;epoch++;clearTimeout(poll);poll=undefined;for(const[t,r]of delays){clearTimeout(t);r();}delays.clear();detach();busy=false;loading=false;account={...account,qr_image:'',attempt:0,state:account.state==='signed_in'?'signed_in':'idle'};if(release)resource=undefined;}
+  async function suspendTab(){const g=generation;suspend();try{await invoke('bilibili_suspend',{generation:g,release:false});}catch{}}
   async function activate(){
     live=true;const ticket=++epoch;void restoreList(ticket);busy=true;
     try{
@@ -47,12 +48,12 @@
   async function chooseTab(next:typeof tab){
     if(!settings&&next===tab)return;
     if(settings){tab=next;settingsChange(false);return;}
-    await suspend();if(!active)return;live=true;epoch++;tab=next;failure='';void restoreList();
+    await suspendTab();if(!active)return;live=true;epoch++;tab=next;failure='';void restoreList();
     if(!lists[next].loaded&&next!=='search')void loadList();
   }
   async function login(){if(!live||busy)return;const ticket=epoch;busy=true;failure='';account={state:'preparing',name:'',qr_image:'',attempt:0};try{account=await work<Account>('account.login',{},ticket);if(valid(ticket))schedulePoll(ticket);}catch(e){if(valid(ticket)){account={...account,state:'idle',qr_image:''};warn(e);}}finally{if(valid(ticket))busy=false;}}
   function schedulePoll(ticket:number){if(!valid(ticket)||!['pending','scanned'].includes(account.state))return;poll=setTimeout(async()=>{poll=undefined;if(!valid(ticket))return;try{account=await work<Account>('account.poll',{attempt:account.attempt},ticket);if(valid(ticket)){if(account.state==='signed_in'){notice('B站登录已确认并安全保存');if(!settings&&tab!=='search'&&!lists[tab].loaded)void loadList();}else schedulePoll(ticket);}}catch(e){if(valid(ticket)){account={...account,state:'idle',qr_image:''};warn(e);}}},2000);}
-  async function cancelLogin(){await suspend();if(active)await activate();}
+  async function cancelLogin(){await suspendTab();if(active)await activate();}
   async function logout(){if(!live||busy)return;const ticket=++epoch;busy=true;try{const result=await raw<Account>('account.logout');if(!valid(ticket))return;account=result;lists={home:empty(),search:empty(),following:empty()};episodes=[];current=undefined;resource=undefined;selected=undefined;mode='list';notice('已退出B站账号');}catch(e){if(valid(ticket))warn(e);}finally{if(valid(ticket))busy=false;}}
   async function attachAndPlay(ticket:number){await tick();if(!valid(ticket)||!video||!resource)return;const element=video;const src=resource.resource.url;
     if(!element.getAttribute('src')){const ready=new Promise<void>((resolve,reject)=>{const clean=()=>{element.removeEventListener('loadedmetadata',loaded);element.removeEventListener('error',failed);cancelMetadata=undefined;};const loaded=()=>{clean();resolve();};const failed=()=>{clean();reject('video_decode_failed');};cancelMetadata=()=>{clean();reject('cancelled');};element.addEventListener('loadedmetadata',loaded,{once:true});element.addEventListener('error',failed,{once:true});});element.src=src;element.preload='metadata';element.load();await ready;if(!valid(ticket))return;duration=element.duration;if(position>0)element.currentTime=Math.min(position,Math.max(0,element.duration-.1));}

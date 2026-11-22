@@ -39,16 +39,18 @@ impl State {
                     .to_string_lossy()
                     .into_owned(),
             ));
-            if lazybuddy_host_control::isolated() {
-                launch.environment.push((
-                    "LAZYBUDDY_CREDENTIAL_SCOPE".into(),
-                    lazybuddy_host_control::instance().map_err(|_| "invalid_credential_scope")?,
-                ));
+            if let Some(scope) = lazybuddy_host_control::isolated_credential_scope()
+                .map_err(|_| "invalid_credential_scope")?
+            {
+                launch
+                    .environment
+                    .push(("LAZYBUDDY_CREDENTIAL_SCOPE".into(), scope));
             }
-            *slot = Some(Session::with_environment(
+            *slot = Some(Session::with_lease(
                 launch.executable,
                 launch.arguments,
                 launch.environment,
+                Some(launch.lease),
             ));
         }
         Ok(slot.as_ref().unwrap().clone())
@@ -59,17 +61,47 @@ impl State {
         method: &str,
         args: Value,
     ) -> Result<Value, String> {
-        let reply = self
-            .service(app)?
-            .request(json!({"version":1,"id":"web-bilibili","method":method,"args":args}))
-            .await
-            .map_err(|_| {
-                if let Some(session) = self.session.lock().unwrap().take() {
-                    session.stop();
+        self.dispatch(app, method, args, None).await
+    }
+
+    async fn dispatch(
+        &self,
+        app: &tauri::AppHandle,
+        method: &str,
+        args: Value,
+        generation: Option<u64>,
+    ) -> Result<Value, String> {
+        let request = json!({"version":1,"id":"web-bilibili","method":method,"args":args});
+        let result = if let Some(generation) = generation {
+            let pending = {
+                let model = app.state::<Mutex<crate::Model>>();
+                let model = model.lock().unwrap();
+                if model.view.generation != generation {
+                    return Err("stale_bilibili_reply".into());
                 }
-                self.jobs.lock().unwrap().clear();
-                "bilibili_disconnected"
-            })?;
+                self.service(app)?.request_scoped(
+                    request,
+                    model.active_generation.clone(),
+                    generation,
+                )
+            };
+            pending.await
+        } else {
+            self.service(app)?.lifecycle(request).await
+        };
+        let reply = result.map_err(|error| {
+            if error.kind() == std::io::ErrorKind::Interrupted {
+                return "stale_bilibili_reply";
+            }
+            if error.kind() == std::io::ErrorKind::WouldBlock {
+                return "request_busy";
+            }
+            if let Some(session) = self.session.lock().unwrap().take() {
+                session.stop();
+            }
+            self.jobs.lock().unwrap().clear();
+            "bilibili_disconnected"
+        })?;
         if reply["ok"] != true {
             let code = reply["error"]["code"]
                 .as_str()
@@ -99,35 +131,24 @@ impl State {
         self.jobs.lock().unwrap().clear();
         Ok(())
     }
-    pub async fn suspend_if_inactive(&self, app: &tauri::AppHandle) {
-        let _guard = self.operation.lock().await;
-        let release;
-        {
-            let m = app.state::<Mutex<crate::Model>>();
-            let m = m.lock().unwrap();
-            release =
-                m.view.root != crate::Root::Bilibili || m.view.section != crate::Section::Content;
-            if m.view.root == crate::Root::Bilibili
-                && m.view.visible
-                && (m.view.section == crate::Section::Content
-                    || m.view.section == crate::Section::Settings && m.account_page)
-            {
-                return;
-            }
-        }
-        if self.session.lock().unwrap().is_some() {
-            let _ = self
-                .request(app, "lifecycle.suspend", json!({"release":release}))
-                .await;
-        }
+    pub fn leave(&self, release: bool) {
         self.jobs.lock().unwrap().clear();
+        if let Some(service) = self.session.lock().unwrap().as_ref() {
+            let service = service.clone();
+            let pending = service.lifecycle(json!({"version":1,"id":"view-bilibili","method":"lifecycle.suspend","args":{"release":release}}));
+            tauri::async_runtime::spawn(async move {
+                if !pending.await.is_ok_and(|reply| reply["ok"] == true) {
+                    service.stop();
+                }
+            });
+        }
     }
     pub async fn disconnect(&self, app: &tauri::AppHandle) -> Result<(), String> {
         self.suspend(app).await?;
         let _guard = self.operation.lock().await;
         let session = self.session.lock().unwrap().take();
         if let Some(s) = session {
-            s.shutdown().await;
+            s.close_after_cleanup().await;
         }
         Ok(())
     }
@@ -178,20 +199,20 @@ pub async fn bilibili_call(
     {
         return Err("stale_bilibili_job".into());
     }
-    let reply = s.request(&app, &method, args).await?;
-    if let Some(id) = reply["job"].as_u64() {
-        if reply["status"] == "pending" && method != "task.status" {
-            let mut jobs = s.jobs.lock().unwrap();
-            jobs.clear();
-            jobs.insert(id, (generation, method.clone()));
-        }
-    }
+    let reply = s.dispatch(&app, &method, args, Some(generation)).await?;
     if !allowed(
         &app.state::<Mutex<crate::Model>>().lock().unwrap(),
         generation,
         &method,
     ) {
         return Err("inactive_bilibili_page".into());
+    }
+    if let Some(id) = reply["job"].as_u64() {
+        if reply["status"] == "pending" && method != "task.status" {
+            let mut jobs = s.jobs.lock().unwrap();
+            jobs.clear();
+            jobs.insert(id, (generation, method.clone()));
+        }
     }
     if method == "task.status" && reply["status"] == "failed" {
         if let Some(id) = reply["job"].as_u64() {

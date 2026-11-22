@@ -7,13 +7,13 @@
 .\start.bat -Release
 ```
 
-默认输出在 `target/debug` 或 `target/release`；可显式设置 `CARGO_TARGET_DIR`。脚本仅在 node_modules 缺失时安装精确 npm 依赖，使用 npm.cmd。无需媒体 SDK，不自动下载业务运行时。构建前通过CLI正常退出与目标EXE路径匹配的本项目实例，等待退出后直接构建，不生成独立候选文件，不关闭其他安装实例。正常退出或构建失败时停止，不启动旧产物。`-LaunchOnly` 只启动已有新入口，`-ServicePackages <绝对目录>` 是显式红果开发包入口，不能代替可信线上安装。
+默认输出在 `target/debug` 或 `target/release`；可显式设置 `CARGO_TARGET_DIR`。脚本仅在 node_modules 缺失时安装精确 npm 依赖，使用 npm.cmd。无需媒体 SDK，不自动下载业务运行时。构建前通过CLI正常退出与目标EXE路径匹配的本项目实例，等待退出后直接构建，不生成独立候选文件，不关闭其他安装实例。正常退出或构建失败时停止，不启动旧产物。`-LaunchOnly` 只启动已有新入口，`-ServicePackages <绝对目录>` 是仅限隔离实例的显式开发包入口。
 
 构建工具与SDK按[文件放置规范](file-layout.md)由所属服务独立管理；具体准备入口见[红果服务README](https://github.com/LazyBuddyDev/hongguo-service/blob/main/README.md)，移动宿主安装位置不需要复制这些构建输入。
 
 生产模块和全局配置位于 `%LOCALAPPDATA%/LazyBuddy`，Web 设置文件为 `web-preferences.json`。红果沿用已验证的 `%LOCALAPPDATA%/LazyBuddyShellPreview/hongguo` 与安全存储 scope `shell-preview`，避免复制或导出凭据；这是服务会话命名空间，不再表示另一套宿主入口。隔离实例的红果数据改用其独立数据目录。
 
-同一Windows用户下，开发版与安装版默认共享 `%LOCALAPPDATA%/LazyBuddy/modules`：注册表位于该目录，功能和Python等运行时按精确版本保存在 `packages/<id>/<version>/`。开发版安装过的模块可由之后安装的新Web版本直接使用，反之亦然，无需按EXE目录重复下载。运行时从公共模块目录启动，构建工具链不作为运行依赖；显式指定隔离实例或自定义 `LAZYBUDDY_DATA_DIR` 时使用各自目录。
+同一Windows用户下，开发版与安装版默认共享 `%LOCALAPPDATA%/LazyBuddy/modules`：注册表位于该目录，功能和Python等运行时按精确版本保存在 `packages/<id>/<version>/`。开发版安装过的模块可由之后安装的新Web版本直接使用，反之亦然，无需按EXE目录重复下载。运行时从公共模块目录启动，构建工具链不作为运行依赖；隔离实例须同时指定非默认实例名和独立的绝对数据目录，目录不存在时也会核对其真实父路径。隔离凭据使用 `isolated-` 前缀，既有测试会话需在新范围重新登录。
 
 ```powershell
 $env:LAZYBUDDY_INSTANCE='local-qa'

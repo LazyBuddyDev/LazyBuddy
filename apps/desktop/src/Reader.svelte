@@ -83,15 +83,14 @@
     observer?.disconnect();observer=undefined;resourceQueue=[];images={};readingImages=false;importing=false;loading=false;saving=false;onlineSearching=false;onlineOpening=false;adding=false;
   }
   export async function suspend(capture=true){
-    if(capture&&active&&!settings)await checkpoint();
+    if(capture&&!suspended&&!settings)await checkpoint(true);
     stopLocal();needsList=true;
-    await invoke('reader_suspend');
   }
   export function resume(){if(active&&suspended)void activate();}
   $effect(()=>{const enabled=active;const gen=generation;const prefs=settings;untrack(()=>{stopLocal();if(enabled)void activate();});});
   onDestroy(()=>stopLocal());
-  async function checkpoint(){
-    if(!active||settings||online||!book||!scroll||restoring||swapping||!blocks.length)return;
+  async function checkpoint(final=false){
+    if((!active&&!final)||settings||online||!book||!scroll||restoring||swapping||!blocks.length)return;
     const anchor=visibleAnchor(scroll);if(!anchor)return;
     const position:Position={book_id:book.id,content_version:book.content_version,chapter_id:book.chapters[chapter].id,...(chapterVersion?{chapter_version:chapterVersion}:{}),...anchor};
     currentPosition=position;

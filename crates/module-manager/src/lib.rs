@@ -15,6 +15,8 @@ pub struct Manager {
     root: PathBuf,
 }
 pub struct Launch {
+    pub manifest: Manifest,
+    pub lease: fs::File,
     pub executable: PathBuf,
     pub arguments: Vec<String>,
     pub environment: Vec<(String, String)>,
@@ -31,6 +33,21 @@ impl Manager {
     pub fn root(&self) -> &Path {
         &self.root
     }
+    fn activation_lease(&self, shared: bool) -> io::Result<fs::File> {
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(self.root.join(".activation.lock"))?;
+        let locked = if shared {
+            file.try_lock_shared()
+        } else {
+            file.try_lock()
+        };
+        locked.map_err(|_| invalid("module packages are in use or being activated"))?;
+        Ok(file)
+    }
     fn lock(&self) -> io::Result<fs::File> {
         fs::create_dir_all(&self.root)?;
         let file = fs::OpenOptions::new()
@@ -43,7 +60,9 @@ impl Manager {
             .map_err(|_| invalid("another module operation is running"))?;
         let registry = registry::read(&self.root)?;
         // Old running executables may defer deletion; activation remains committed.
-        let _ = registry::prune(&self.root, &registry);
+        if let Ok(_activation) = self.activation_lease(false) {
+            let _ = registry::prune(&self.root, &registry);
+        }
         for entry in fs::read_dir(&self.root)? {
             let entry = entry?;
             let name = entry.file_name();
@@ -84,7 +103,9 @@ impl Manager {
         if !valid_id(id) {
             return Err(invalid("invalid module ID"));
         }
-        let registry = registry::read(&self.root)?;
+        self.manifest_in(&registry::read(&self.root)?, id)
+    }
+    fn manifest_in(&self, registry: &registry::Registry, id: &str) -> io::Result<Manifest> {
         let version = registry
             .get(id)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "module not installed"))?;
@@ -109,6 +130,7 @@ impl Manager {
             .collect())
     }
     pub(crate) fn activate_many(&self, staged: &[Staged]) -> io::Result<Vec<Manifest>> {
+        let _activation = self.activation_lease(false)?;
         let mut registry = registry::read(&self.root)?;
         let mut manifests = self.manifests(&registry)?;
         for package in staged {
@@ -200,6 +222,7 @@ impl Manager {
     }
     pub fn uninstall(&self, id: &str) -> io::Result<()> {
         let _lock = self.lock()?;
+        let _activation = self.activation_lease(false)?;
         self.manifest(id)?;
         let mut registry = registry::read(&self.root)?;
         let mut manifests = self.manifests(&registry)?;
@@ -245,7 +268,12 @@ impl Manager {
             .join(manifest.entrypoint))
     }
     pub fn launch(&self, id: &str) -> io::Result<Launch> {
-        let manifest = self.manifest(id)?;
+        if !valid_id(id) {
+            return Err(invalid("invalid module ID"));
+        }
+        let lease = self.activation_lease(true)?;
+        let registry = registry::read(&self.root)?;
+        let manifest = self.manifest_in(&registry, id)?;
         let own = self
             .directory(id, &manifest.version)
             .join(&manifest.entrypoint);
@@ -257,7 +285,10 @@ impl Manager {
                 .to_owned(),
         )];
         for dependency in &manifest.dependencies {
-            let provider = self.manifest(&dependency.id)?;
+            let provider = self.manifest_in(&registry, &dependency.id)?;
+            if provider.version != dependency.version {
+                return Err(invalid("dependency version mismatch"));
+            }
             let directory = self.directory(&provider.id, &provider.version);
             environment.push((
                 format!(
@@ -271,7 +302,7 @@ impl Manager {
             ));
         }
         if let Some(runtime) = &manifest.runtime {
-            let provider = self.manifest(runtime)?;
+            let provider = self.manifest_in(&registry, runtime)?;
             if provider.kind != Kind::Runtime {
                 return Err(invalid("runtime provider required"));
             }
@@ -281,19 +312,23 @@ impl Manager {
                     .ok_or_else(|| invalid("entrypoint is not UTF-8"))?
                     .to_owned(),
             );
-            arguments.extend(manifest.arguments);
+            arguments.extend(manifest.arguments.iter().cloned());
             Ok(Launch {
                 executable: self
                     .directory(runtime, &provider.version)
                     .join(provider.entrypoint),
                 arguments,
                 environment,
+                manifest,
+                lease,
             })
         } else {
             Ok(Launch {
                 executable: own,
-                arguments: manifest.arguments,
+                arguments: manifest.arguments.clone(),
                 environment,
+                manifest,
+                lease,
             })
         }
     }
@@ -409,6 +444,11 @@ mod tests {
         let launch = manager.launch("feature").unwrap();
         assert_eq!(launch.arguments[0], "-I");
         assert!(launch.arguments[1].contains("feature"));
+        let concurrent = manager.launch("feature").unwrap();
+        assert_eq!(concurrent.manifest.version, "1.0.0");
+        assert!(manager.uninstall("feature").is_err());
+        drop(concurrent);
+        drop(launch);
         let second = vec![
             stage("python", "2.0.0", None),
             stage("feature", "2.0.0", Some("2.0.0")),
@@ -437,6 +477,21 @@ mod tests {
         }
         assert_eq!(manager.manifest("feature").unwrap().version, "2.0.0");
         assert_eq!(manager.manifest("python").unwrap().version, "2.0.0");
+        let mut mismatched = registry::read(&manager.root).unwrap();
+        let mut wrong = manager.manifest("python").unwrap();
+        wrong.version = "2.0.1".into();
+        let wrong_path = manager.directory("python", &wrong.version);
+        fs::create_dir_all(&wrong_path).unwrap();
+        fs::write(
+            wrong_path.join("module.json"),
+            serde_json::to_vec(&wrong).unwrap(),
+        )
+        .unwrap();
+        mismatched.insert("python".into(), wrong.version);
+        registry::write(&manager.root, &mismatched).unwrap();
+        assert!(manager.launch("feature").is_err());
+        mismatched.insert("python".into(), "2.0.0".into());
+        registry::write(&manager.root, &mismatched).unwrap();
         manager.uninstall("feature").unwrap();
         assert!(manager.list().unwrap().is_empty());
         fs::remove_dir_all(root).unwrap();

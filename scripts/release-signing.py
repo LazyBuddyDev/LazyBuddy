@@ -40,6 +40,16 @@ def digest(value):
     return isinstance(value, str) and re.fullmatch('[a-f0-9]{64}', value) is not None
 
 
+def package_version(value):
+    if not isinstance(value,str):
+        return False
+    parts = value.split('.')
+    return len(parts) == 3 and all(
+        re.fullmatch(r'0|[1-9][0-9]{0,9}', part) and int(part) <= 2**32-1
+        for part in parts
+    )
+
+
 def validate(payload, kind, version):
     if len(payload) > 1024*1024:
         raise ValueError('Signing payload exceeds limit')
@@ -67,7 +77,7 @@ def validate(payload, kind, version):
         for row in v['packages']:
             if (not isinstance(row,dict) or row.get('id') not in {'news','hongguo','reader','bilibili','python-runtime'}
                 or row['id'] in entries or row.get('target') != 'windows-x86_64'
-                or not isinstance(row.get('version'),str) or re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+',row['version']) is None
+                or not package_version(row.get('version'))
                 or not github_asset(row.get('url','')) or not digest(row.get('sha256'))
                 or type(row.get('bytes')) is not int or not 0 < row['bytes'] <= 128*1024*1024
                 or not isinstance(row.get('dependencies'),list)):

@@ -35,8 +35,8 @@ async function quit(){
 try{
  const page=await start();
  const invoke=(command,args={})=>page.evaluate(([command,args])=>window.__TAURI_INTERNALS__.invoke(command,args),[command,args]);
- await invoke('transition',{root:'hongguo',section:'content',visible:true,accountPage:false});
- const failure=await invoke('playback_call',{method:'playback.status',args:{},direct:true}).then(()=>'',String);
+ const view=await invoke('transition',{root:'hongguo',section:'content',visible:true,accountPage:false});
+ const failure=await invoke('playback_call',{method:'playback.status',args:{},direct:true,generation:view.generation}).then(()=>'',String);
  assert.match(failure,/fixture_failure/);
  const log=path.join(data,'logs/LB.log');let text=await readFile(log,'utf8');
  assert.match(text,/playback.rs:\d+/);assert.match(text,/接口：playback.status/);

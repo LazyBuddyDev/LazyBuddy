@@ -32,6 +32,7 @@ pub struct State {
     operation: Arc<tokio::sync::Mutex<()>>,
     exiting: Arc<AtomicBool>,
     preferences: Mutex<crate::preferences::Preferences>,
+    preferences_read_only: bool,
     writer: crate::preferences::Writer,
     prepared: Mutex<Option<lazybuddy_app_updater::Prepared>>,
     checking: std::sync::atomic::AtomicBool,
@@ -40,8 +41,23 @@ pub struct State {
 impl State {
     pub fn new() -> Result<Self, String> {
         let data = lazybuddy_host_control::data_dir().map_err(|e| e.to_string())?;
-        let preferences = crate::preferences::Preferences::load(&data.join("web-preferences.json"))
-            .map_err(|e| format!("设置读取失败：{e}"))?;
+        if !lazybuddy_host_control::isolated()
+            && [
+                "LAZYBUDDY_BROWSER_FIXTURE_FILE",
+                "LAZYBUDDY_PROTOTYPE_PROBE",
+                "LAZYBUDDY_PROTOTYPE_DATA_DIR",
+            ]
+            .iter()
+            .any(|name| std::env::var_os(name).is_some())
+        {
+            return Err("测试配置要求独立实例".into());
+        }
+        let loaded = crate::preferences::Preferences::load(&data.join("web-preferences.json"));
+        let preferences_read_only = loaded.is_err();
+        let preferences = loaded.unwrap_or_else(|_| crate::preferences::Preferences {
+            auto_update: false,
+            ..Default::default()
+        });
         let logging = lazybuddy_host_control::logs::begin().ok();
         lazybuddy_host_control::logs::event(
             "host",
@@ -57,6 +73,7 @@ impl State {
             operation: Default::default(),
             exiting: Default::default(),
             preferences: Mutex::new(preferences),
+            preferences_read_only,
             prepared: Mutex::new(None),
             checking: Default::default(),
             news_slots: std::sync::Arc::new(tokio::sync::Semaphore::new(4)),
@@ -85,10 +102,14 @@ impl State {
         self.operation.lock().await
     }
     pub async fn flush(&self) -> Result<(), String> {
+        if self.preferences_read_only {
+            return Ok(());
+        }
         self.writer.save(self.preferences()).await
     }
     pub fn remember_window(&self, window: &tauri::WebviewWindow) {
-        if crate::dock::is_docked(window)
+        if self.preferences_read_only
+            || crate::dock::is_docked(window)
             || !window.is_visible().unwrap_or(false)
             || window.is_minimized().unwrap_or(false)
         {
@@ -97,20 +118,26 @@ impl State {
         let (Ok(position), Ok(size)) = (window.outer_position(), window.inner_size()) else {
             return;
         };
-        let saved = {
-            let mut preferences = self.preferences.lock().unwrap();
-            preferences.window = Some([
-                position.x,
-                position.y,
-                size.width as i32,
-                size.height as i32,
-            ]);
-            self.writer.save(preferences.clone())
-        };
+        let bounds = [
+            position.x,
+            position.y,
+            size.width as i32,
+            size.height as i32,
+        ];
         let app = window.app_handle().clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(error) = saved.await {
-                let _ = app.emit("shell-error", error);
+            let state = app.state::<State>();
+            let _guard = state.operation.lock().await;
+            if state.exiting.load(Ordering::Acquire) {
+                return;
+            }
+            let mut value = state.preferences();
+            value.window = Some(bounds);
+            match state.writer.save(value.clone()).await {
+                Ok(()) => *state.preferences.lock().unwrap() = value,
+                Err(error) => {
+                    let _ = app.emit("shell-error", error);
+                }
             }
         });
     }
@@ -126,23 +153,26 @@ pub fn features(
     for m in installed.iter().filter(|m| m.kind == Kind::Feature) {
         entries.insert(
             m.id.clone(),
-            json!({"id":m.id,"name":m.name,"version":m.version,"installed":true,"update":false}),
+            json!({"id":m.id,"name":m.name,"version":m.version,"installed":true,"update":false,
+                "compatible":crate::Root::accepts_manifest(m)}),
         );
     }
     for p in catalog
         .into_iter()
         .flat_map(|c| &c.packages)
-        .filter(|p| p.kind == Kind::Feature)
+        .filter(|p| p.kind == Kind::Feature && crate::Root::from_module(&p.id).is_some())
     {
+        let Some(available) = lazybuddy_module_contract::parse_version(&p.version) else {
+            continue;
+        };
         if let Some(entry) = entries.get_mut(&p.id) {
-            let version = |s: &str| {
-                s.split('.')
-                    .map(|v| v.parse::<u32>().unwrap())
-                    .collect::<Vec<_>>()
-            };
             entry["available_version"] = json!(p.version);
-            entry["update"] =
-                json!(version(&p.version) > version(entry["version"].as_str().unwrap()));
+            entry["update"] = json!(
+                entry["version"]
+                    .as_str()
+                    .and_then(lazybuddy_module_contract::parse_version)
+                    .is_some_and(|installed| available > installed)
+            );
         } else {
             entries.insert(p.id.clone(),json!({"id":p.id,"name":if p.name.is_empty(){&p.id}else{&p.name},"version":p.version,"installed":false,"update":false}));
         }
@@ -174,12 +204,18 @@ async fn modules_with_progress(
     if state.exiting.load(Ordering::Acquire) {
         return Err("应用正在退出".into());
     }
+    if action == "install" && id.as_deref().and_then(crate::Root::from_module).is_none() {
+        return Err("当前宿主未支持此功能".into());
+    }
     if action != "list" && action != "catalog" {
         let model = app.state::<Mutex<crate::Model>>();
         if model.lock().unwrap().view.section != crate::Section::Modules {
             return Err("请先打开功能管理".into());
         }
-        state.stop_news();
+        let news = state.news.lock().unwrap().take();
+        if let Some((_, service)) = news {
+            service.shutdown().await;
+        }
         // Drain account/media transactions before immutable package directories can be reclaimed.
         app.state::<crate::playback::State>().disconnect().await;
         app.state::<crate::reader::State>().disconnect(&app).await?;
@@ -194,7 +230,13 @@ async fn modules_with_progress(
     let (send, receive) = tokio::sync::oneshot::channel();
     let run = move || -> Result<_, String> {
         let cancelled = || exiting.load(Ordering::Acquire);
-        let begin_commit = || {
+        let begin_commit = |manifests: &[lazybuddy_module_contract::Manifest]| {
+            if manifests
+                .iter()
+                .any(|m| m.kind == Kind::Feature && !crate::Root::accepts_manifest(m))
+            {
+                return Err(std::io::Error::other("模块页面与当前宿主不兼容"));
+            }
             let guard = operation.clone().blocking_lock_owned();
             if cancelled() {
                 return Err(std::io::Error::new(
@@ -239,7 +281,7 @@ async fn modules_with_progress(
                     .map_err(failure)?;
             }
             "uninstall" => {
-                let _guard = begin_commit().map_err(failure)?;
+                let _guard = begin_commit(&[]).map_err(failure)?;
                 manager
                     .uninstall(id.as_deref().ok_or("缺少功能 ID")?)
                     .map_err(failure)?;
@@ -247,9 +289,9 @@ async fn modules_with_progress(
             _ => return Err("未知功能操作".into()),
         }
         let mut installed = manager.list_active().map_err(failure)?;
-        if let Some(path) = std::env::var_os("LAZYBUDDY_BROWSER_PACKAGES") {
+        if let Some(path) = crate::playback::development_packages() {
             let manifest: lazybuddy_module_contract::Manifest = serde_json::from_slice(
-                &std::fs::read(PathBuf::from(path).join("hongguo/module.json")).map_err(failure)?,
+                &std::fs::read(path.join("hongguo/module.json")).map_err(failure)?,
             )
             .map_err(failure)?;
             manifest.validate().map_err(failure)?;
@@ -268,7 +310,7 @@ async fn modules_with_progress(
     }
     let catalog = state.catalog.lock().unwrap();
     Ok(
-        json!({"entries":features(&reply.0,catalog.as_ref()),"installed":reply.0.into_iter().filter(|m|m.kind==Kind::Feature).collect::<Vec<_>>(),"catalog_ready":catalog.is_some()}),
+        json!({"entries":features(&reply.0,catalog.as_ref()),"installed":reply.0.into_iter().filter(crate::Root::accepts_manifest).collect::<Vec<_>>(),"catalog_ready":catalog.is_some()}),
     )
 }
 #[tauri::command]
@@ -322,7 +364,7 @@ pub async fn news_call(
         None
     };
     let direct = direct.unwrap_or(true);
-    let service = {
+    let (service, active_generation) = {
         let model = app.state::<Mutex<crate::Model>>();
         let mut model = model.lock().unwrap();
         if !news_allowed(&model, &method, generation) {
@@ -337,16 +379,12 @@ pub async fn news_call(
         }
         if slot.is_none() {
             let modules = state.modules();
-            let manifest = modules.manifest("news").map_err(failure)?;
-            let version = manifest
-                .version
-                .split('.')
-                .map(|v| v.parse::<u32>().unwrap())
-                .collect::<Vec<_>>();
-            if version.as_slice() < [0, 1, 1].as_slice() {
+            let mut launch = modules.launch("news").map_err(failure)?;
+            if !lazybuddy_module_contract::parse_version(&launch.manifest.version)
+                .is_some_and(|v| v >= [0, 1, 1])
+            {
                 return Err("请在功能管理中更新新闻模块至 0.1.1 以上，以使用连接设置".into());
             }
-            let mut launch = modules.launch("news").map_err(failure)?;
             launch.environment.push((
                 "LAZYBUDDY_NEWS_DATA_DIR".into(),
                 state
@@ -361,15 +399,27 @@ pub async fn news_call(
             ));
             *slot = Some((
                 direct,
-                Session::with_environment(launch.executable, launch.arguments, launch.environment),
+                Session::with_lease(
+                    launch.executable,
+                    launch.arguments,
+                    launch.environment,
+                    Some(launch.lease),
+                ),
             ));
         }
-        slot.as_ref().unwrap().1.clone()
+        (
+            slot.as_ref().unwrap().1.clone(),
+            model.active_generation.clone(),
+        )
     };
     let request_id = lazybuddy_host_control::logs::next_id();
     let began = std::time::Instant::now();
     let reply = service
-        .request(json!({"version":1,"id":"web-news","method":method,"args":args}))
+        .request_scoped(
+            json!({"version":1,"id":"web-news","method":method,"args":args}),
+            active_generation,
+            generation,
+        )
         .await
         .map_err(failure)?;
     let model = app.state::<Mutex<crate::Model>>();
@@ -379,7 +429,7 @@ pub async fn news_call(
             .lock()
             .unwrap()
             .as_ref()
-            .is_some_and(|(mode, _)| *mode == direct)
+            .is_some_and(|(mode, current)| *mode == direct && current.same_connection(&service))
     {
         return Err("stale_news_reply".into());
     }
@@ -436,9 +486,12 @@ pub async fn settings(
 ) -> Result<Value, String> {
     let state = app.state::<State>();
     if let Some(mut value) = value {
-        // The serialized writer is also the exit barrier; never write settings on the UI thread.
+        if state.preferences_read_only {
+            return Err("设置文件无法读取，原文件已保留。修复文件并重启后可保存。".into());
+        }
         let _guard = state.operation.lock().await;
-        value.window = state.preferences().window;
+        let previous = state.preferences();
+        value.window = previous.window;
         if !value.shortcut.supported()
             || !value.valid_attention()
             || !(0.0..=1.0).contains(&value.background_opacity)
@@ -446,28 +499,39 @@ pub async fn settings(
         {
             return Err("无效设置".into());
         }
-        let window = app.get_webview_window("main").ok_or("窗口未就绪")?;
-        if state.preferences().shortcut != value.shortcut {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let shortcut = value.shortcut;
-            app.run_on_main_thread(move || {
-                let _ = tx.send(crate::platform::register(&window, shortcut));
-            })
-            .map_err(failure)?;
-            rx.await.map_err(failure)??;
+        let shortcut_changed = previous.shortcut != value.shortcut;
+        let saved = async {
+            if shortcut_changed {
+                set_shortcut(&app, value.shortcut).await?;
+            }
+            state.writer.save(value.clone()).await
         }
-        let saved = {
-            let mut preferences = state.preferences.lock().unwrap();
-            value.window = preferences.window;
-            *preferences = value.clone();
-            state.writer.save(value)
-        };
-        saved.await?;
+        .await;
+        if let Err(error) = saved {
+            if shortcut_changed && set_shortcut(&app, previous.shortcut).await.is_err() {
+                return Err(format!("{error} 原快捷键恢复失败。"));
+            }
+            return Err(error);
+        }
+        *state.preferences.lock().unwrap() = value;
     }
     Ok(
-        json!({"preferences":state.preferences(),"startup":crate::startup::enabled(),"isolated":lazybuddy_host_control::isolated(),"shortcut_capturing":crate::platform::capturing(),"app_updates":APP_UPDATES}),
+        json!({"preferences":state.preferences(),"startup":crate::startup::enabled(),"isolated":lazybuddy_host_control::isolated(),"shortcut_capturing":crate::platform::capturing(),"app_updates":APP_UPDATES,"preferences_read_only":state.preferences_read_only}),
     )
 }
+async fn set_shortcut(
+    app: &tauri::AppHandle,
+    shortcut: crate::shortcut::Shortcut,
+) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("窗口未就绪")?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        let _ = tx.send(crate::platform::resume(&window, shortcut));
+    })
+    .map_err(failure)?;
+    rx.await.map_err(failure)?
+}
+
 #[tauri::command]
 pub async fn set_startup(enabled: bool) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || crate::startup::set(enabled).map_err(failure))
@@ -617,6 +681,18 @@ mod tests {
         assert!(!news_allowed(&model, "sources", old));
         model.account_page = false;
         assert!(!news_allowed(&model, "configure", model.view.generation));
+    }
+    #[test]
+    fn only_known_compatible_features_are_navigable() {
+        let mut known: lazybuddy_module_contract::Manifest =
+            serde_json::from_str(include_str!("../../../../contracts/fixtures/reader.json"))
+                .unwrap();
+        assert!(crate::Root::accepts_manifest(&known));
+        known.id = "other".into();
+        assert!(!crate::Root::accepts_manifest(&known));
+        assert_eq!(features(&[known.clone()], None)[0]["compatible"], false);
+        known.id = "news".into();
+        assert!(!crate::Root::accepts_manifest(&known));
     }
     #[test]
     fn unavailable_catalog_keeps_installed_features() {

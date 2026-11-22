@@ -1,7 +1,8 @@
 <script lang="ts">
   import {tick} from 'svelte';import Bilibili from '../src/Bilibili.svelte';
   let active=$state(true),showing=$state(true),settings=$state(false),generation=$state(1),notice=$state('');let component:Bilibili;
-  const fixture={confirmLogin:false,failMethod:'',async accountState(state:string){account={...account,state};await fixture.refresh();},calls:[] as any[],delay:0,next:0,jobs:new Map<number,{method:string;args:any}>(),async visibility(value:boolean){await component.suspend();active=value;generation++;await tick();},async section(value:boolean){await component.suspend(true);active=false;await tick();settings=value;generation++;active=true;},async refresh(){active=false;await tick();generation++;active=true;}};
+  const fixture={confirmLogin:false,failMethod:'',async accountState(state:string){account={...account,state};await fixture.refresh();},calls:[] as any[],delay:0,next:0,jobs:new Map<number,{method:string;args:any}>(),async visibility(value:boolean){component.suspend();if(active&&!value)await nativeSuspend(false);active=value;generation++;await tick();},async section(value:boolean){component.suspend(true);if(active)await nativeSuspend(true);active=false;await tick();settings=value;generation++;active=true;},async refresh(){active=false;await tick();generation++;active=true;}};
+  async function nativeSuspend(release:boolean){await (window as any).__TAURI_INTERNALS__.invoke('bilibili_suspend',{generation,release});}
   let account={state:new URLSearchParams(location.search).has('signedOut')?'idle':'signed_in',name:'样例用户',qr_image:'',attempt:0};
   (window as any).fixture=fixture;
   if(!(window as any).bilibiliInvoke){

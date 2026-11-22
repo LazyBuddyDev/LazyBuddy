@@ -254,13 +254,14 @@ pub fn verify_catalog(bytes: &[u8], signature: &[u8], public_key: &[u8]) -> io::
         .map_err(|_| invalid("catalog signature invalid"))?;
     let catalog: Catalog =
         serde_json::from_slice(bytes).map_err(|_| invalid("catalog JSON invalid"))?;
-    if catalog.schema != 1 {
+    if catalog.schema != 1 || catalog.packages.len() > 64 {
         return Err(invalid("unsupported catalog version"));
     }
     let mut ids = std::collections::BTreeSet::new();
     for package in &catalog.packages {
         if !valid_id(&package.id)
             || !ids.insert(&package.id)
+            || !lazybuddy_module_contract::version(&package.version)
             || package.target != "windows-x86_64"
             || !package.url.starts_with("https://")
             || package.bytes == 0
@@ -287,7 +288,7 @@ impl Manager {
         id: &str,
         progress: impl FnMut(&str, u64, u64),
     ) -> io::Result<Manifest> {
-        self.install_from_catalog_controlled(catalog, id, progress, || false, || Ok(()))
+        self.install_from_catalog_controlled(catalog, id, progress, || false, |_| Ok(()))
     }
 
     pub fn install_from_catalog_controlled<G>(
@@ -296,7 +297,7 @@ impl Manager {
         id: &str,
         mut progress: impl FnMut(&str, u64, u64),
         cancelled: impl Fn() -> bool,
-        begin_commit: impl FnOnce() -> io::Result<G>,
+        begin_commit: impl FnOnce(&[Manifest]) -> io::Result<G>,
     ) -> io::Result<Manifest> {
         check_cancelled(&cancelled)?;
         let _lock = self.lock()?;
@@ -324,7 +325,11 @@ impl Manager {
             }
             check_cancelled(&cancelled)?;
             if !staged.is_empty() {
-                let _commit = begin_commit()?;
+                let manifests = staged
+                    .iter()
+                    .map(|p| p.manifest.clone())
+                    .collect::<Vec<_>>();
+                let _commit = begin_commit(&manifests)?;
                 check_cancelled(&cancelled)?;
                 progress("install", downloaded, total);
                 self.activate_many(&staged)?;
@@ -613,6 +618,22 @@ mod tests {
         assert!(verify_catalog(data, signature.as_ref(), other.public_key().as_ref()).is_err());
     }
 
+    #[test]
+    fn signed_catalog_rejects_noncanonical_versions() {
+        let signer = Ed25519KeyPair::from_seed_unchecked(&[7u8; 32]).unwrap();
+        for version in ["1.00.0", "4294967296.0.0", "1.0.0"] {
+            let bytes = serde_json::to_vec(&serde_json::json!({"schema":1,"packages":[{
+                "id":"news","name":"News","version":version,"target":"windows-x86_64",
+                "url":"https://example.invalid/package.zip","bytes":1,"sha256":"a".repeat(64)
+            }]}))
+            .unwrap();
+            let signature = signer.sign(&bytes);
+            assert_eq!(
+                verify_catalog(&bytes, signature.as_ref(), signer.public_key().as_ref()).is_ok(),
+                version == "1.0.0"
+            );
+        }
+    }
     #[test]
     fn dependencies_are_installed_first_and_cycles_are_rejected() {
         let mut catalog: Catalog = serde_json::from_value(serde_json::json!({"schema":1,"packages":[

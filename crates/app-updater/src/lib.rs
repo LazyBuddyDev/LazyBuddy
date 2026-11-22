@@ -48,7 +48,7 @@ pub struct Manifest {
     pub sha256: String,
     pub host_sha256: String,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BuildInfo {
     pub schema: u32,
@@ -305,7 +305,10 @@ fn prune(cache: &Path, keep: Option<&str>) {
 }
 pub fn prepare(install: &Path, cache: &Path) -> io::Result<Option<Prepared>> {
     let recovery = install.join(RECOVERY);
-    if !install.join(INFO).is_file() || recovery.join(JOURNAL).exists() {
+    if !install.join(INFO).is_file()
+        || recovery.join(JOURNAL).exists()
+        || uninstall::removal_pending(install)?
+    {
         return Ok(None);
     }
     if recovery.is_dir() {
@@ -351,6 +354,9 @@ pub fn prepare(install: &Path, cache: &Path) -> io::Result<Option<Prepared>> {
     }))
 }
 pub fn start_helper(prepared: &Prepared, install: &Path) -> io::Result<()> {
+    if uninstall::removal_pending(install)? {
+        return Err(invalid("uninstallation is pending"));
+    }
     if install.join(RECOVERY).join(JOURNAL).exists() {
         return Err(invalid("update recovery is pending"));
     }
@@ -696,6 +702,9 @@ pub fn apply_job(path: &Path) -> io::Result<()> {
     )?;
     verify_stage(&directory.join("stage"), &manifest)?;
     let _install_lock = windows::lock(&install.join(INSTALL_LOCK))?;
+    if uninstall::removal_pending(&install)? {
+        return Err(invalid("uninstallation is pending"));
+    }
     let recovery = install.join(RECOVERY);
     if recovery.join(JOURNAL).exists() {
         discard_unstarted_transaction(&install, &recovery)?;

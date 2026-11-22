@@ -49,6 +49,11 @@ class Signing(unittest.TestCase):
    for sequence in (0,True,-1,2**64,None):
     with self.assertRaises(ValueError):
      m.validate(json.dumps(dict(update,sequence=sequence)).encode(),'update','1.0.8')
+ def test_catalog_versions_match_rust_integer_rules(self):
+  v=json.loads((ROOT/'docs/modules/stable-v6-catalog.json').read_bytes())
+  for version in ('1.00.0','4294967296.0.0','1.0.0.0'):
+   v['packages'][0]['version']=version
+   with self.assertRaises(ValueError):m.validate(json.dumps(v).encode(),'catalog','1.0.8')
  def test_catalog_dependencies_and_hosts_are_checked(self):
   v=json.loads((ROOT/'docs/modules/stable-v6-catalog.json').read_bytes());m.validate(json.dumps(v).encode(),'catalog','1.0.8')
   v['packages'][0]['url']='https://example.com/untrusted.zip'

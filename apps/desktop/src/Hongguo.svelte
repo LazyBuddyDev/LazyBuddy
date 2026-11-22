@@ -4,7 +4,7 @@
   import Icon from './Icon.svelte';import Cover from './Cover.svelte';
   import Switch from './Switch.svelte';import MediaControls from './MediaControls.svelte';
   import {coverPixels,watchedLabel,filterFavorites,loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails,playerPreferences,type CoverData,type Account,type Item,type Playback} from './hongguo';
-  let {active,showing,accountOnly,notice,settingsChange}: {active:boolean;showing:boolean;accountOnly:boolean;notice:(text:string)=>void;settingsChange:(settings:boolean)=>void}=$props();
+  let {active,showing,accountOnly,generation=0,notice,settingsChange}: {active:boolean;showing:boolean;accountOnly:boolean;generation?:number;notice:(text:string)=>void;settingsChange:(settings:boolean)=>void}=$props();
   function savedPlayer(){try{return playerPreferences(JSON.parse(localStorage.getItem('lazybuddy.hongguo.player')??'null'));}catch{return playerPreferences(null);}}
   const saved=savedPlayer();let defaultFavorites=$state(saved.favorites);
   let account=$state<Account>({state:'idle',name:''});let signedOut=false;
@@ -56,11 +56,12 @@
   function resetBoost(){clearTimeout(boostTimer);boostTimer=undefined;if(boosted&&video)video.playbackRate=speed;boosted=false;}
   function hold(event:PointerEvent){if(event.button!==2||!live||!playing)return;video.setPointerCapture(event.pointerId);const ticket=epoch;boostTimer=setTimeout(()=>{if(valid(ticket)&&!video.paused){boosted=true;video.playbackRate=2;}},400);}
   function release(event:PointerEvent){if(event.button!==2)return;const accelerated=boosted;resetBoost();if(!accelerated&&live&&playing)seekRelative(5);}
-  const raw=<T,>(method:string,args:Record<string,unknown>={})=>invoke<T>('playback_call',{method,args,direct});
+  const raw=<T,>(method:string,args:Record<string,unknown>={})=>invoke<T>('playback_call',{method,args,direct,generation});
   async function changeConnection(value:boolean){
+    const previousGeneration=generation;await suspend(false);
+    if(!active||generation!==previousGeneration)return;
     signedOut=false;direct=value;localStorage.setItem('lazybuddy.hongguo.direct',String(value));
-    notice(value?'红果直连已开启':'红果已恢复跟随系统代理');
-    await suspend(false);await activate();
+    notice(value?'红果直连已开启':'红果已恢复跟随系统代理');await activate();
   }
   const valid=(ticket:number)=>live&&active&&ticket===epoch;
   function warn(error:unknown){const value=String(error);if(!/stale_|inactive_|页面已暂停/.test(value))notice(message(error));}

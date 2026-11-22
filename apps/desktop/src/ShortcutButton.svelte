@@ -22,7 +22,7 @@
     const key=event.code.startsWith('Key')?event.code.charCodeAt(3):event.code.startsWith('Digit')?event.code.charCodeAt(5):/^F\d+$/.test(event.code)?111+Number(event.code.slice(1)):0;
     if(!key)return;
     saving=true;
-    try{if(await save({modifiers:(event.altKey?1:0)|(event.ctrlKey?2:0)|(event.shiftKey?4:0),key}))await stop();}
+    try{await save({modifiers:(event.altKey?1:0)|(event.ctrlKey?2:0)|(event.shiftKey?4:0),key});await stop();}
     finally{saving=false;}
   }
   function blur(){if(recording||arming)void stop();}

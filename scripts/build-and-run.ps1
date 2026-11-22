@@ -1,5 +1,6 @@
 param([switch]$BuildOnly,[switch]$Release,[switch]$LaunchOnly,[string]$ServicePackages,[string]$ModulePackages)
 $ErrorActionPreference='Stop'
+if($ServicePackages -and (!$env:LAZYBUDDY_INSTANCE -or $env:LAZYBUDDY_INSTANCE -eq 'default' -or !$env:LAZYBUDDY_DATA_DIR)){throw 'ServicePackages requires an isolated instance and data directory.'}
 if($BuildOnly -and $LaunchOnly){throw 'BuildOnly and LaunchOnly cannot be combined.'}
 $repoRoot=Split-Path -Parent $PSScriptRoot
 $profile=if($Release){'release'}else{'debug'}
