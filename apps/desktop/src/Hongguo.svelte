@@ -49,6 +49,7 @@
     return data;
   }
   let favoritesReady=$state(false);let favoritesPending=$state(false);
+  let syncAfterFavorites=false;
   let favoriteChange=$state<{id:string;value:boolean}|null>(null);
   function isFavorite(id:string|undefined){return favoriteValue(favorites,favoriteChange,id);}
   let requestedQuality=$state(saved.quality);
@@ -116,6 +117,7 @@
   }
   function detach(){danmakuSession=undefined;seeking=null;resetBoost();cancelMetadata?.();stopFrames();frameTarget=null;playing=false;if(video){video.pause();video.removeAttribute('src');video.load();}source=undefined;}
   export async function suspend(retain=false){
+    syncAfterFavorites=false;
     const wasLive=live;resetBoost();live=false;epoch++;playRequest++;clearTimeout(timer);timer=undefined;
     if(favoritesPending){favoritesReady=false;favoritesPending=false;favoriteChange=null;}
     if(video&&video.readyState>0)position=video.currentTime;
@@ -159,7 +161,9 @@
   $effect(()=>{const enabled=active;const retain=showing&&!accountOnly;untrack(()=>{if(enabled){void activate();}else{void suspend(retain);}});});
   onDestroy(()=>{void suspend(false);});
   function acceptAccount(data:Account){
-    account=data;
+    account={...account,...data};
+    if(data.history)history=data.history;
+    if(data.sync_error)notice('观看记录同步失败，已保留本地记录');
     if(data.favorites_error)notice(message(data.favorites_error));
     if(favoritesPending&&data.operation!=='pending'){
       if(!data.favorites_error&&data.favorites){favorites=data.favorites;favoritesReady=true;favoritesRevision++;}
@@ -172,7 +176,12 @@
     if(accountOnly)return;
     const data=await raw<{history:typeof history}>('progress.read');if(!valid(ticket))return;
     history=data.history??{};
-    if(!favoritesReady)await readFavorites();
+    if(!favoritesReady)await readFavorites();else await syncProgress();
+  }
+  async function syncProgress(){
+    const ticket=epoch;
+    try{const data=await raw<Account>('progress.sync');if(!valid(ticket))return;acceptAccount(data);if(data.operation==='pending')poll(ticket);}
+    catch(error){if(valid(ticket))warn(error);}
   }
   function poll(ticket:number){
     clearTimeout(timer);
@@ -180,6 +189,7 @@
       if(!valid(ticket))return;
       try{
         const previous=account.state;const data=await raw<Account>('account.status');if(!valid(ticket))return;acceptAccount(data);
+        if(syncAfterFavorites&&!favoritesPending&&data.operation!=='pending'){syncAfterFavorites=false;await syncProgress();return;}
         if(previous!=='signed_in'&&data.state==='signed_in')await signedIn(ticket);
         if(loginPending(data.state)||data.operation==='pending')poll(ticket);
         else if(data.error)notice(message(data.error));
@@ -207,10 +217,10 @@
     }catch(error){if(valid(ticket))warn(error);}finally{if(valid(ticket))busy=false;}
   }
   async function readFavorites(){
-    if(favoritesPending)return;favoritesPending=true;
+    if(favoritesPending)return;favoritesPending=true;syncAfterFavorites=true;
     const ticket=epoch;
-    try{const data=await raw<Account>('favorites.read');if(!valid(ticket))return;acceptAccount(data);if(data.operation==='pending')poll(ticket);}
-    catch(error){if(valid(ticket)){favoritesPending=false;warn(error);}}
+    try{const data=await raw<Account>('favorites.read');if(!valid(ticket))return;acceptAccount(data);if(data.operation==='pending')poll(ticket);else{syncAfterFavorites=false;await syncProgress();}}
+    catch(error){if(valid(ticket)){favoritesPending=false;syncAfterFavorites=false;warn(error);}}
   }
   async function chooseTab(value:'search'|'favorites'){tab=value;if(accountOnly){settingsChange(false);return;}if(value==='favorites'&&account.state==='signed_in'&&!favoritesReady)await readFavorites();}
   async function favorite(item:Item){
@@ -307,7 +317,7 @@
       <form onsubmit={event=>{event.preventDefault();if(tab==='search')void search();else void readFavorites();}}><div class="media-search collection-toolbar" role="toolbar" aria-label={tab==='search'?'搜索工具栏':'收藏工具栏'}><label class="search-box"><Icon name="search" size={16}/>{#if tab==='search'}<input aria-label="搜索短剧" placeholder="搜索短剧" bind:value={query}/>{:else}<input aria-label="筛选收藏" placeholder="筛选收藏" bind:value={favoritesQuery}/>{/if}</label><button type="button" class="icon-button" aria-label={listView==='list'?'切换图标视图':'切换列表视图'} title={listView==='list'?'图标视图':'列表视图'} onclick={toggleView}><Icon name={listView==='list'?'grid':'list'} size={15}/></button><button type="submit" class="icon-button" aria-label={tab==='search'?'搜索':'刷新收藏'} title={tab==='search'?'搜索':'刷新收藏'} disabled={tab==='search'?busy||!query.trim():account.operation==='pending'}><Icon name={tab==='search'?'search':'refresh'} size={15}/></button></div></form>
       {#key tab==='favorites'?`favorites:${favoritesRevision}`:tab}
       {#if listView==='grid'}
-      <div class="favorites-grid">{#each visibleItems as item (item.id)}<article class="favorite-tile"><button class="cover-open" aria-label={`播放${item.title}`} onclick={()=>open(item)}><Cover active={active&&live&&item.has_cover!==false} title={item.title} load={()=>readCover(item.id)}/><strong title={item.title}>{item.title}</strong><span class="item-description">{watchedLabel(history[item.id])}{item.episodes?` · 共 ${item.episodes} 集`:''}</span></button><button class="grid-favorite" aria-label={isFavorite(item.id)?`取消收藏${item.title}`:`收藏${item.title}`} disabled={account.operation==='pending'||!!favoriteChange} onclick={()=>favorite(item)}><Icon name="star" size={15} filled={isFavorite(item.id)}/></button></article>{/each}</div>
+      <div class="favorites-grid">{#each visibleItems as item (item.id)}<article class="favorite-tile"><button class="cover-open" aria-label={`播放${item.title}`} onclick={()=>open(item)}><Cover active={active&&live&&item.has_cover!==false} title={item.title} cached={tab==='favorites'?coverCache.get(item.id):undefined} load={()=>readCover(item.id)}/><strong title={item.title}>{item.title}</strong><span class="item-description">{watchedLabel(history[item.id])}{item.episodes?` · 共 ${item.episodes} 集`:''}</span></button><button class="grid-favorite" aria-label={isFavorite(item.id)?`取消收藏${item.title}`:`收藏${item.title}`} disabled={account.operation==='pending'||!!favoriteChange} onclick={()=>favorite(item)}><Icon name="star" size={15} filled={isFavorite(item.id)}/></button></article>{/each}</div>
       {:else}
       {#each visibleItems as item (item.id)}<div class="media-result collection-row"><div><h2 class="item-title" title={item.title}>{item.title}</h2><span class="item-description">{watchedLabel(history[item.id])}{item.episodes?` · 共 ${item.episodes} 集`:''}</span></div><div class="row-actions"><button aria-label={isFavorite(item.id)?`取消收藏${item.title}`:`收藏${item.title}`} disabled={account.operation==='pending'||!!favoriteChange} onclick={()=>favorite(item)}><Icon name="star" size={15} filled={isFavorite(item.id)}/></button><button aria-label={`播放${item.title}`} onclick={()=>open(item)}><Icon name="play" size={15}/>播放</button></div></div>{/each}
       {/if}

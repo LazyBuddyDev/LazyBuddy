@@ -21,6 +21,7 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>callbacks.push(callback)
    if(args.method==='account.restore')return window.fixtureSignedOut?{state:'idle',name:''}:{state:'signed_in',name:'用户样例'};
    if(args.method==='search')return {items:window.fixtureItems??[],has_more:false};
    if(args.method==='progress.read')return {history:{}};
+   if(args.method==='progress.sync')return {state:'signed_in',name:'用户样例',history:{},operation:null};
    if(args.method==='favorites.read')return {state:'signed_in',name:'用户样例',favorites:window.fixtureItems??[]};
    return {};
  }

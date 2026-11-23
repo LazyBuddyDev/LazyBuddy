@@ -10,6 +10,7 @@
     const {method,args}=request;fixture.calls.push({method,args,at:performance.now()});
     if(method==='account.restore')return {state:'signed_in',name:'样例'};
     if(method==='progress.read')return {history:{}};
+    if(method==='progress.sync')return {state:'signed_in',name:'样例',history:{},operation:null};
     if(method==='favorites.read')return {state:'signed_in',favorites:[{id:'1',title:'连播样例',episodes:3}],operation:null};
     if(method==='playback.open'){
       const reused=enabled&&next===args.episode;readyAt=reused?warmAt:performance.now()+delay;current=args.episode;session++;next=undefined;return snapshot();

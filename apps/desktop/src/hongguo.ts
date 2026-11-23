@@ -4,7 +4,7 @@ export function playerPreferences(value:unknown){
   const number=(value:unknown,min:number,max:number,fallback:number)=>typeof value==='number'&&Number.isFinite(value)&&value>=min&&value<=max?value:fallback;
   return {volume:number(p.volume,0,1,.5),speed:number(p.speed,.25,4,1),mute:p.muteChosen===true&&p.mute===true,muteChosen:p.muteChosen===true,quality:typeof p.quality==='string'&&['360p','480p','720p','1080p'].includes(p.quality)?p.quality:'720p',favorites:p.favorites===true};
 }
-export type Account = {state:string;name:string;qr_png?:string;error?:string|null;favorites_error?:string|null;favorites?:Item[];operation?:string|null};
+export type Account = {state:string;name:string;qr_png?:string;error?:string|null;favorites_error?:string|null;favorites?:Item[];operation?:string|null;history?:Record<string,{episode:number;time:number}>;sync_error?:string|null};
 export type Playback = {session:number;loading:boolean;prepared:boolean;suspended:boolean;resource:{url:string;mime:string}|null;episodes?:number[];available_qualities?:number[];error?:string|null;progress_error?:string|null;danmaku?:boolean};
 export type Danmaku = {text:string;offset_ms:number};
 export const DANMAKU_DURATION_MS=5000;

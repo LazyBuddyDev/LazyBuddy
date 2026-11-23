@@ -46,6 +46,22 @@ try{
   await favorites.getByRole('button',{name:'切换图标视图'}).click();
   await page.waitForFunction(()=>document.querySelectorAll('canvas:not([hidden])').length===2);
   assert.equal(await reads(),4,'favorites must retain their cover cache');
+  assert.ok(await page.evaluate(()=>window.hongguoCalls.some(c=>c.method==='progress.sync')),'entry must synchronize cloud history');
+  await page.evaluate(()=>window.setHongguoVisible(false));
+  await page.waitForFunction(()=>!document.querySelector('.media-library'));
+  await page.evaluate(()=>{
+    window.progressState={state:'signed_in',name:'样例账号',operation:'pending'};
+    window.originalObserver=window.IntersectionObserver;
+    window.IntersectionObserver=class {observe(){} disconnect(){}};
+    window.setHongguoVisible(true);
+  });
+  await page.waitForFunction(()=>document.querySelectorAll('canvas:not([hidden])').length===2);
+  assert.equal(await page.getByText('暂无封面',{exact:true}).count(),0);
+  assert.equal(await reads(),4,'returning from another page must paint cached covers without loading');
+  await page.waitForFunction(()=>window.hongguoCalls.some(c=>c.method==='account.status'));
+  await page.evaluate(()=>window.progressState={state:'signed_in',name:'样例账号',operation:null,history:{'1':{episode:7,time:12}}});
+  await page.getByText('看到第 7 集 · 共 10 集',{exact:true}).waitFor();
+  await page.evaluate(()=>{window.IntersectionObserver=window.originalObserver;delete window.progressState;});
   await page.locator('.tabs').getByRole('button',{name:'搜索',exact:true}).click();
   await page.waitForSelector('canvas:not([hidden])');
   assert.equal(await page.getByRole('textbox',{name:'搜索短剧'}).inputValue(),'搜索');

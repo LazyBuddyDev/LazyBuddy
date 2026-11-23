@@ -128,6 +128,7 @@ fn connect(direct: bool) -> Result<Session, String> {
 fn environment(direct: bool) -> Result<Vec<(String, String)>, String> {
     let isolated =
         lazybuddy_host_control::isolated_credential_scope().map_err(|e| e.to_string())?;
+    let progress_real = if isolated.is_none() { "1" } else { "0" };
     let mut environment = vec![
         (
             "LAZYBUDDY_INSTANCE".into(),
@@ -144,7 +145,7 @@ fn environment(direct: bool) -> Result<Vec<(String, String)>, String> {
         ("LAZYBUDDY_PLAYER_REAL".into(), "1".into()),
         ("LAZYBUDDY_SEARCH_REAL".into(), "1".into()),
         ("LAZYBUDDY_FAVORITES_REAL".into(), "1".into()),
-        ("LAZYBUDDY_PROGRESS_REAL".into(), "0".into()),
+        ("LAZYBUDDY_PROGRESS_REAL".into(), progress_real.into()),
     ];
     if direct {
         environment.extend(direct_environment());
@@ -263,6 +264,7 @@ fn allowed(method: &str) -> bool {
             | "favorites.read"
             | "favorites.set"
             | "progress.read"
+            | "progress.sync"
             | "cover.read"
     )
 }
@@ -499,6 +501,38 @@ fn resource_session(data: &Value) -> Option<u64> {
 mod tests {
     use super::*;
     #[test]
+    fn progress_upload_is_enabled_only_for_the_normal_instance() {
+        if std::env::var_os("LAZYBUDDY_PROGRESS_ENV_TEST").is_some() {
+            let values = environment(false).unwrap();
+            assert!(values.contains(&("LAZYBUDDY_PROGRESS_REAL".into(), "0".into())));
+            assert!(values.contains(&(
+                "LAZYBUDDY_CREDENTIAL_SCOPE".into(),
+                "isolated-progress-env-test".into()
+            )));
+            return;
+        }
+        let values = environment(false).unwrap();
+        assert!(values.contains(&("LAZYBUDDY_PROGRESS_REAL".into(), "1".into())));
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "playback::tests::progress_upload_is_enabled_only_for_the_normal_instance",
+            ])
+            .env("LAZYBUDDY_PROGRESS_ENV_TEST", "1")
+            .env("LAZYBUDDY_INSTANCE", "progress-env-test")
+            .env(
+                "LAZYBUDDY_DATA_DIR",
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .ancestors()
+                    .nth(3)
+                    .unwrap()
+                    .join("tmp/progress-env-test"),
+            )
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+    #[test]
     fn direct_mode_overrides_only_child_proxy_environment() {
         let environment = direct_environment();
         assert_eq!(environment.len(), 4);
@@ -525,7 +559,7 @@ mod tests {
         assert!(allowed("playback.prefetch_cancel"));
         assert!(allowed("account.login"));
         assert!(!allowed("media.open"));
-        assert!(!allowed("progress.sync"));
+        assert!(allowed("progress.sync"));
     }
     #[test]
     fn old_packages_cannot_silently_use_production_credentials() {
