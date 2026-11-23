@@ -40,6 +40,37 @@ New-Item -ItemType Directory -Path $temporary | Out-Null
 $originalConsoleEncoding=[Console]::OutputEncoding
 $originalOutputEncoding=$OutputEncoding
 try{
+    $dependencyFunction=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Add-DevelopmentPackage'},$true)
+    Invoke-Expression $dependencyFunction.Extent.Text
+    $developmentPackages=Join-Path $temporary 'packages'
+    function Write-Package($Id,$Dependencies){
+        $path=Join-Path $developmentPackages "$Id/0.1.0"
+        New-Item -ItemType Directory -Path $path -Force | Out-Null
+        @{id=$Id;version='0.1.0';dependencies=@($Dependencies)} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $path 'module.json')
+        return [pscustomobject]@{id=$Id;version=[version]'0.1.0';path=$path}
+    }
+    $runtime=Write-Package 'signer' @()
+    $feature=Write-Package 'sample' @(@{id='signer';version='0.1.0'})
+    $installed=@()
+    $queue=New-Object 'System.Collections.Generic.List[object]'
+    Add-DevelopmentPackage $feature $queue
+    Add-DevelopmentPackage $feature $queue
+    if(($queue.id -join ',') -ne 'signer,sample'){throw 'Dependencies must precede the feature without duplicates'}
+    $installed=@(@{id='signer';version='0.1.0'})
+    $queue=New-Object 'System.Collections.Generic.List[object]'
+    Add-DevelopmentPackage $feature $queue
+    if(($queue.id -join ',') -ne 'sample'){throw 'Installed exact dependency should be reused'}
+    $installed=@()
+    $null=Write-Package 'signer' @(@{id='sample';version='0.1.0'})
+    $queue=New-Object 'System.Collections.Generic.List[object]'
+    $rejected=$false
+    try{Add-DevelopmentPackage $feature $queue}catch{$rejected=$true}
+    if(!$rejected){throw 'Dependency cycle must fail'}
+    $null=Write-Package 'sample' @(@{id='missing';version='0.1.0'})
+    $rejected=$false
+    try{Add-DevelopmentPackage $feature $queue}catch{$rejected=$true}
+    if(!$rejected){throw 'Missing dependency must fail before installation'}
+    Write-Host 'PASS: exact dependencies install first, installed versions are reused, cycles and missing packages fail.'
     $probe=Join-Path $temporary 'utf8-json.exe'
     Add-Type -OutputAssembly $probe -OutputType ConsoleApplication -TypeDefinition @'
 using System;

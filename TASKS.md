@@ -37,6 +37,8 @@
 
 ### LB-20261115-15：修复取源空响应并完成真实账号播放验收
 
+- 2026-11-24：openhongguo-signer 本地接入与完整包已完成，服务候选 0.2.20 / signer 0.1.0 含私有 Java，已暂存 target/packages/development。74 项 Python、Go resolver、Windows 实际六头签名/鉴权/退出回收、隔离 CLI 依赖安装与 health、BAT 构建和依赖排序检查通过；正常用户配置尚未升级。详见服务 TASKS.md 和 docs/signer.md。真实账号播放与原生库公开分发条件仍待验证，尚未确认空响应恢复；未推送发布。
+
 - Windows Codex，2026-11-23，宿主 main；按用户要求恢复排查。独立服务 main，本轮验收使用暂存红果 0.2.19，源码和详细任务见 target/service-exports/lazybuddy-hongguo-service/TASKS.md。
 - `[√]` 本机红果 0.2.17 在 14:46–15:33 记录第 66 集至少 17 次播放模型 HTTP 200 空体，第 65 集也出现；声明 0 字节且读取完成。发生在获得媒体地址之前，与第 54 集此前的媒体跳转拒绝处于不同阶段。证据 tmp/verification-playback-empty/episode-66.md。
 - `[√]` 继续定位：本机 0.2.17 的解析器与发布验收包哈希一致，当前日志共 22 条空响应记录（66 集 20 条、65 集 2 条），24 项离线取源及诊断测试通过。具体验证与证据边界见 tmp/verification-playback-empty/investigation.md。

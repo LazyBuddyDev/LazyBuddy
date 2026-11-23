@@ -21,6 +21,25 @@ function Stop-BuildHost($Status){
     $quit=Invoke-Host 'app.quit'
     if(!$quit -or !$quit.ok -or !$hostProcess.WaitForExit(30000)){throw 'Host did not exit normally; files and modules were not replaced.'}
 }
+function Add-DevelopmentPackage($Package,$Queue,$Stack=@()){
+    $manifest=Get-Content -LiteralPath (Join-Path $Package.path 'module.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $key="$($manifest.id)/$($manifest.version)"
+    if($Stack -contains $key){throw 'Development dependency cycle.'}
+    $queued=$Queue | Where-Object {$_.id -eq $manifest.id} | Select-Object -First 1
+    if($queued){
+        if($queued.version -ne [version]$manifest.version){throw 'Conflicting development dependency versions.'}
+        return
+    }
+    foreach($dependency in $manifest.dependencies){
+        if($dependency.id -notmatch '^[a-z][a-z0-9-]*$' -or $dependency.version -notmatch '^\d+\.\d+\.\d+$'){throw 'Invalid development dependency.'}
+        if($installed | Where-Object {$_.id -eq $dependency.id -and $_.version -eq $dependency.version}){continue}
+        $path=Join-Path $developmentPackages "$($dependency.id)/$($dependency.version)"
+        $dependencyManifest=Get-Content -LiteralPath (Join-Path $path 'module.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        if($dependencyManifest.id -ne $dependency.id -or $dependencyManifest.version -ne $dependency.version){throw 'Development dependency identity mismatch.'}
+        Add-DevelopmentPackage ([pscustomobject]@{path=$path;id=$dependency.id;version=[version]$dependency.version}) $Queue ($Stack+@($key))
+    }
+    $Queue.Add($Package)
+}
 Push-Location $repoRoot
 $savedConsoleEncoding=[Console]::OutputEncoding
 $savedOutputEncoding=$OutputEncoding
@@ -70,6 +89,9 @@ try{
             if($choices.Count){$updates+= $choices[0]}
         }
     }
+    $ordered=New-Object 'System.Collections.Generic.List[object]'
+    foreach($package in $updates){Add-DevelopmentPackage $package $ordered}
+    $updates=$ordered
     $status=Invoke-Host 'status'
     if($status -and $status.ok){
         if([IO.Path]::GetFullPath($status.data.exe) -ne [IO.Path]::GetFullPath($application)){throw 'Another installation is running; it will not be stopped.'}
