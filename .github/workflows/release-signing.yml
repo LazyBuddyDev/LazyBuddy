@@ -1,0 +1,57 @@
+name: Sign release metadata
+on:
+  workflow_dispatch:
+    inputs:
+      catalog_base64:
+        description: Exact public catalog JSON bytes encoded as base64
+        required: false
+        type: string
+      update_base64:
+        description: Exact public application manifest JSON bytes encoded as base64
+        required: false
+        type: string
+permissions:
+  contents: read
+jobs:
+  sign:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: release-signing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install --disable-pip-version-check cryptography==46.0.3
+      - name: Decode public payloads
+        env:
+          CATALOG_BASE64: ${{ inputs.catalog_base64 }}
+          UPDATE_BASE64: ${{ inputs.update_base64 }}
+        run: |
+          python - <<'PY'
+          import os,base64,pathlib
+          for field,name in [('CATALOG_BASE64','catalog.json'),('UPDATE_BASE64','app-update.json')]:
+              value=os.environ[field]
+              if not value:continue
+              if len(value)>65536:raise ValueError('Public payload exceeds dispatch limit')
+              pathlib.Path(name).write_bytes(base64.b64decode(value,validate=True))
+          PY
+      - name: Sign with current release identity
+        env:
+          LAZYBUDDY_RELEASE_SIGNING_KEY: ${{ secrets.LAZYBUDDY_RELEASE_SIGNING_KEY }}
+        run: |
+          python - <<'PY'
+          import pathlib,sys
+          sys.path.insert(0,'scripts')
+          import runpy
+          sys.argv=['release-signing.py','sign','--output','signed-metadata']
+          for flag,name in [('--catalog','catalog.json'),('--update','app-update.json')]:
+              if pathlib.Path(name).is_file():sys.argv += [flag,name]
+          runpy.run_path('scripts/release-signing.py',run_name='__main__')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-release-metadata
+          path: signed-metadata/*
+          retention-days: 7
+          if-no-files-found: error

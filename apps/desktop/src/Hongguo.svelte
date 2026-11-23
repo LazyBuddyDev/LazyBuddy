@@ -2,10 +2,9 @@
   import {onDestroy, tick, untrack} from 'svelte';
   import {invoke} from '@tauri-apps/api/core';
   import Icon from './Icon.svelte';import Cover from './Cover.svelte';
-  import Switch from './Switch.svelte';import MediaVolume from './MediaVolume.svelte';
-  import {formatTime} from './lifecycle';
+  import Switch from './Switch.svelte';import MediaControls from './MediaControls.svelte';
   import {coverPixels,watchedLabel,filterFavorites,loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails,playerPreferences,type CoverData,type Account,type Item,type Playback} from './hongguo';
-  let {active,showing,accountOnly,notice,settingsChange}: {active:boolean;showing:boolean;accountOnly:boolean;notice:(text:string)=>void;settingsChange:(settings:boolean)=>void}=$props();
+  let {active,showing,accountOnly,generation=0,notice,settingsChange}: {active:boolean;showing:boolean;accountOnly:boolean;generation?:number;notice:(text:string)=>void;settingsChange:(settings:boolean)=>void}=$props();
   function savedPlayer(){try{return playerPreferences(JSON.parse(localStorage.getItem('lazybuddy.hongguo.player')??'null'));}catch{return playerPreferences(null);}}
   const saved=savedPlayer();let defaultFavorites=$state(saved.favorites);
   let account=$state<Account>({state:'idle',name:''});let signedOut=false;
@@ -29,6 +28,13 @@
   let watched=0;let lastCheckpoint=0;let epoch=0;let playRequest=0;let live=$state(false);let timer:ReturnType<typeof setTimeout>|undefined;let frame:number|undefined;
   let cancelMetadata:(()=>void)|undefined;let history=$state<Record<string,{episode:number;time:number}>>({});
   let opening:Promise<Playback>|undefined;
+  let prefetchedLease:number|undefined;
+  function prefetchNext(){
+    if(!live||!active||!playing||playerLoading||lease===undefined||adjacent(episodes,episode,1)===undefined||prefetchedLease===lease)return;
+    prefetchedLease=lease;void raw('playback.prefetch',{session:lease}).catch(()=>{});
+  }
+  function cancelPrefetch(){if(lease!==undefined)void raw('playback.prefetch_cancel',{session:lease}).catch(()=>{});}
+
   const coverCache=new Map<string,CoverData>();let coverEpoch=0;
   $effect(()=>{if(!(active&&live&&mode==='list'&&tab==='favorites'&&favoritesView==='grid'))coverEpoch++;});
   async function readCover(id:string){
@@ -50,11 +56,12 @@
   function resetBoost(){clearTimeout(boostTimer);boostTimer=undefined;if(boosted&&video)video.playbackRate=speed;boosted=false;}
   function hold(event:PointerEvent){if(event.button!==2||!live||!playing)return;video.setPointerCapture(event.pointerId);const ticket=epoch;boostTimer=setTimeout(()=>{if(valid(ticket)&&!video.paused){boosted=true;video.playbackRate=2;}},400);}
   function release(event:PointerEvent){if(event.button!==2)return;const accelerated=boosted;resetBoost();if(!accelerated&&live&&playing)seekRelative(5);}
-  const raw=<T,>(method:string,args:Record<string,unknown>={})=>invoke<T>('playback_call',{method,args,direct});
+  const raw=<T,>(method:string,args:Record<string,unknown>={})=>invoke<T>('playback_call',{method,args,direct,generation});
   async function changeConnection(value:boolean){
+    const previousGeneration=generation;await suspend(false);
+    if(!active||generation!==previousGeneration)return;
     signedOut=false;direct=value;localStorage.setItem('lazybuddy.hongguo.direct',String(value));
-    notice(value?'红果直连已开启':'红果已恢复跟随系统代理');
-    await suspend(false);await activate();
+    notice(value?'红果直连已开启':'红果已恢复跟随系统代理');await activate();
   }
   const valid=(ticket:number)=>live&&active&&ticket===epoch;
   function warn(error:unknown){const value=String(error);if(!/stale_|inactive_|页面已暂停/.test(value))notice(message(error));}
@@ -66,7 +73,7 @@
       frame=undefined;if(!valid(ticket)||!video)return;
       if(frameTarget!==null&&Math.abs(metadata.mediaTime-frameTarget)>.2){frame=video.requestVideoFrameCallback(next);return;}
       frameTarget=null;
-      watched=metadata.mediaTime;
+      watched=metadata.mediaTime;prefetchNext();
       if(seeking===null&&video.currentTime>=0)position=video.currentTime;
       if(playing&&performance.now()-lastCheckpoint>15000){lastCheckpoint=performance.now();void checkpoint(false);}
       if(!video.paused)frame=video.requestVideoFrameCallback(next);
@@ -205,14 +212,14 @@
     if(!live||mode!=='player'||playerLoading)return;
     if(playbackError||!source||video.error){await load(true);return;}
     if(video.paused){try{await video.play();}catch(error){warn(error);}}
-    else{video.pause();void checkpoint(true).catch(warn);}
+    else{video.pause();cancelPrefetch();void checkpoint(true).catch(warn);}
   }
   function setVolume(value:number){volume=Math.max(0,Math.min(1,Math.round(value*100)/100));}
   function volumeKey(event:KeyboardEvent){
     if(event.defaultPrevented||event.altKey||event.ctrlKey||event.metaKey||!live||mode!=='player'||event.target instanceof HTMLInputElement||event.target instanceof HTMLSelectElement||(event.target instanceof HTMLElement&&event.target.isContentEditable))return;
     if(event.code==='ArrowUp'||event.code==='ArrowDown'){event.preventDefault();setVolume(volume+(event.code==='ArrowUp'?.05:-.05));}
   }
-  export function pause(){seeking=null;resetBoost();if(video)video.pause();stopFrames();playing=false;}
+  export function pause(){cancelPrefetch();seeking=null;resetBoost();if(video)video.pause();stopFrames();playing=false;}
   function seekTo(target:number){
     position=target;frameTarget=target;seeking=null;frames();video.currentTime=target;
   }
@@ -220,7 +227,7 @@
   export function seekRelative(delta:number){if(video&&source)seekTo(Math.max(0,Math.min(duration,video.currentTime+delta)));}
   async function videoError(){
     if(!live||!source||!video?.error)return;
-    playing=false;playbackError=true;stopFrames();
+    playing=false;cancelPrefetch();playbackError=true;stopFrames();
     const ticket=epoch;const request=playRequest;const code=video.error.code;
     if(lease!==undefined)await raw('playback.report_error',{session:lease,code}).catch(()=>{});
     try{const data=await raw<Playback>('playback.status');if(!valid(ticket)||request!==playRequest)return;
@@ -231,7 +238,7 @@
     try{const session=old??(pending? (await pending).session:undefined);if(session!==undefined)await raw('playback.close',{session});}catch(error){if(String(error)!=='media_not_loaded')warn(error);}}
   async function changeEpisode(value:number){if(value===episode)return;await checkpoint(true).catch(warn);episode=value;position=watched=0;await load(true);}
   async function changeQuality(value:string){requestedQuality=quality=value;position=video?.currentTime??position;await load(!source||!!video?.error||playing);}
-  function ended(){if(!live||!active||playerLoading||!video.ended)return;playing=false;stopFrames();void checkpoint(true).catch(warn);const next=adjacent(episodes,episode,1);if(next!==undefined)void changeEpisode(next);}
+  function ended(){if(!live||!active||playerLoading||!video.ended)return;playing=false;stopFrames();const next=adjacent(episodes,episode,1);if(next!==undefined)void changeEpisode(next);}
 </script>
 
 {#snippet tabs()}<div class="tab-bar"><div class="tabs" aria-label="短剧页签"><button class:active={!accountOnly&&tab==='search'} aria-pressed={!accountOnly&&tab==='search'} title="搜索" onclick={()=>chooseTab('search')}>搜索</button><button class:active={!accountOnly&&tab==='favorites'} aria-pressed={!accountOnly&&tab==='favorites'} title="收藏" onclick={()=>chooseTab('favorites')}>收藏</button><button class:active={accountOnly} aria-pressed={accountOnly} title="短剧设置" onclick={()=>settingsChange(true)}>设置</button></div></div>{/snippet}
@@ -246,18 +253,14 @@
   {:else if mode==='player'}
     <section class="player-page"><div class="video-stage" class:paused={!playing}>
       <video class="focus-inset" role="button" tabindex="0" onclick={toggle} onkeydown={event=>{if(event.code==='Enter'&&!event.repeat){event.preventDefault();void toggle();}}} onpointerdown={hold} onpointerup={release} onpointercancel={resetBoost} onlostpointercapture={resetBoost} oncontextmenu={event=>event.preventDefault()} bind:this={video} src={source} preload="metadata" crossorigin="anonymous" playsinline bind:muted bind:volume ontimeupdate={()=>{if(video.readyState>0&&seeking===null&&frameTarget===null)position=video.currentTime;}} onplay={()=>{if(!live){video.pause();return;}playing=true;frames();}} onpause={()=>{seeking=null;resetBoost();playing=false;stopFrames();}} onended={ended} onerror={videoError} aria-label="红果短剧视频"><track kind="captions"/></video>
-      <div class="video-top"><button class="video-back" aria-label="返回列表" onclick={leavePlayer}><Icon name="arrow" size={17}/></button><span class="video-title">{selected?.title} 第{episode}集</span><button class="video-favorite" aria-label={isFavorite(selected?.id)?'取消收藏':'收藏'} onclick={()=>selected&&favorite(selected)} disabled={account.operation==='pending'}><Icon name="star" filled={isFavorite(selected?.id)}/></button></div>
-      {#if !playing}<button class="center-play" aria-label={playerLoading?'加载中':playbackError?'重试播放':'播放视频'} disabled={playerLoading} onclick={toggle}><Icon name={playbackError?'refresh':'play'} size={28}/></button>{/if}
-      <div class="video-bottom"><input class="seek" aria-label="播放进度" type="range" min="0" max={duration||1} step=".05" value={seeking??position} disabled={!source} oninput={event=>seeking=Number(event.currentTarget.value)} onchange={commitSeek} onpointercancel={()=>seeking=null} onblur={()=>seeking=null}/><div class="video-controls">
-        <button aria-label="上一集" disabled={adjacent(episodes,episode,-1)===undefined} onclick={()=>{const value=adjacent(episodes,episode,-1);if(value!==undefined)void changeEpisode(value);}}><Icon name="previous"/></button>
-        <button aria-label={playing?'暂停':'播放'} disabled={playerLoading} onclick={toggle}><Icon name={playing?'pause':'play'}/></button>
-        <button aria-label="下一集" disabled={adjacent(episodes,episode,1)===undefined} onclick={()=>{const value=adjacent(episodes,episode,1);if(value!==undefined)void changeEpisode(value);}}><Icon name="next"/></button>
-        <span class="time">{formatTime(seeking??position)} / {formatTime(duration)}</span><span class="control-spacer"></span>
-        {#if episodes.length}<select aria-label="选集" value={episode} onchange={event=>changeEpisode(Number(event.currentTarget.value))}>{#each episodes as value}<option value={value}>第{value}集</option>{/each}</select>{/if}
-        <select aria-label="清晰度" value={quality} onchange={event=>changeQuality(event.currentTarget.value)}>{#each qualities.length?qualities:['360p','480p','720p','1080p'] as value}<option value={value}>{value}</option>{/each}</select>
-        <select aria-label="倍速" value={speed} onchange={event=>{speed=Number(event.currentTarget.value);video.playbackRate=speed;}}>{#each [.5,1,1.5,2] as value}<option value={value}>{value}×</option>{/each}</select>
-        <MediaVolume {volume} {muted} onmute={()=>{muteChosen=true;muted=!muted;}} onvolume={setVolume}/>
-      </div></div>
+      <MediaControls title={`${selected?.title??''} 第${episode}集`} {playing} loading={playerLoading} failed={playbackError} {position} {duration} bind:seeking seekable={!!source} previousDisabled={adjacent(episodes,episode,-1)===undefined} nextDisabled={adjacent(episodes,episode,1)===undefined} onback={leavePlayer} ontoggle={toggle} onprevious={()=>{const value=adjacent(episodes,episode,-1);if(value!==undefined)void changeEpisode(value);}} onnext={()=>{const value=adjacent(episodes,episode,1);if(value!==undefined)void changeEpisode(value);}} onseek={commitSeek} {volume} {muted} onmute={()=>{muteChosen=true;muted=!muted;}} onvolume={setVolume}>
+        {#snippet headerActions()}<button class="video-favorite" aria-label={isFavorite(selected?.id)?'取消收藏':'收藏'} title={isFavorite(selected?.id)?'取消收藏':'收藏'} onclick={()=>selected&&favorite(selected)} disabled={account.operation==='pending'}><Icon name="star" filled={isFavorite(selected?.id)}/></button>{/snippet}
+        {#snippet menus()}
+          {#if episodes.length}<select aria-label="选集" title="选集" value={episode} onchange={event=>changeEpisode(Number(event.currentTarget.value))}>{#each episodes as value}<option value={value}>第{value}集</option>{/each}</select>{/if}
+          <select aria-label="清晰度" title="清晰度" value={quality} onchange={event=>changeQuality(event.currentTarget.value)}>{#each qualities.length?qualities:['360p','480p','720p','1080p'] as value}<option value={value}>{value}</option>{/each}</select>
+          <select aria-label="倍速" title="倍速" value={speed} onchange={event=>{speed=Number(event.currentTarget.value);video.playbackRate=speed;}}>{#each [.5,.75,1,1.25,1.5,1.75,2] as value}<option value={value}>{value}×</option>{/each}</select>
+        {/snippet}
+      </MediaControls>
     </div></section>
   {:else}
     <section class="media-library feature-page">{@render tabs()}

@@ -20,6 +20,6 @@ LazyBuddy 是 Windows x64 的 Tauri 2、WebView2、Svelte 5、TypeScript 和 Rus
 ## 构建、验证与发布
 
 - 本地统一从根目录 `start.bat` 构建和启动。目标 EXE 占用时，按[构建与 CLI](docs/cli.md)正常退出匹配路径的实例，等待后构建；退出或构建失败时停止。涉及独立服务运行内容的改动，先在所属仓库生成新版本完整包，再暂存到 `target/packages/development/<id>/<version>` 由 BAT 应用。
-- `target/service-exports/` 中已初始化的独立 Git 仓库是源码。保护未推送提交，重新导出使用新目录。构建、工具及验证产物按[文件放置规范](docs/file-layout.md)清理，禁止 `cargo clean` 或整体清空 `target`。
+- `target/service-exports/` 中已初始化的独立 Git 仓库是源码。保护未推送提交，重新导出使用新目录。构建、工具及验证产物按[文件放置规范](docs/file-layout.md)归位，验证脚本退出时回收本次产物。[工作区清理](docs/file-layout.md#工作区清理)按先预览再执行的流程进行，禁止 `cargo clean` 或整体清空 `target`。
 - 新增功能附对应单元测试。按[定向验证](docs/testing.md)覆盖受影响入口与共享边界，分别报告构建、样例、真实接口、实际媒体、视觉和发布验证。纯文档修改检查链接、相关示例入口与已签名文件的字节完整性。
 - Windows 安装与卸载按[文件归属与数据保留约定](docs/uninstall.md)执行。功能包与宿主更新分别使用[模块分发](docs/module-distribution.md)和[应用更新](docs/app-updates.md)的签名、线上验收与发布流程。已发布签名端点保留精确字节。

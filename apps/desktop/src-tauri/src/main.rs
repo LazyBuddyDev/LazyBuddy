@@ -1,7 +1,10 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
+};
 use tauri::{Emitter, Manager};
 mod bilibili;
 mod dock;
@@ -23,6 +26,26 @@ enum Root {
     Reader,
     Bilibili,
 }
+impl Root {
+    fn from_module(id: &str) -> Option<Self> {
+        Self::deserialize(serde::de::value::StrDeserializer::<serde::de::value::Error>::new(id))
+            .ok()
+    }
+
+    fn accepts_manifest(manifest: &lazybuddy_module_contract::Manifest) -> bool {
+        use lazybuddy_module_contract::Page;
+        matches!(
+            (Self::from_module(&manifest.id), manifest.page.as_ref()),
+            (Some(Self::News), Some(Page::NewsGrid { .. }))
+                | (Some(Self::Reader), Some(Page::BookLibrary { .. }))
+                | (
+                    Some(Self::Hongguo | Self::Bilibili),
+                    Some(Page::MediaLibrary { .. })
+                )
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 enum Section {
@@ -43,6 +66,7 @@ struct Model {
     view: View,
     feed_requests: u64,
     account_page: bool,
+    active_generation: Arc<AtomicU64>,
 }
 impl Model {
     fn transition(&mut self, root: Root, section: Section, visible: bool) -> View {
@@ -52,6 +76,8 @@ impl Model {
             self.view.section = section;
             self.view.visible = visible;
         }
+        self.active_generation
+            .store(self.view.generation, Ordering::Release);
         self.view.clone()
     }
     #[cfg(test)]
@@ -72,46 +98,66 @@ fn transition(
     window: tauri::WebviewWindow,
 ) -> View {
     let visible = visible && !dock::is_docked(&window);
-    let page = root == Root::Hongguo && section == Section::Content;
     let account = section == Section::Settings && account_page.unwrap_or(false);
-    let (view, changed) = {
+    let (before, view) = {
         let mut state = state.lock().unwrap();
-        let before = state.view.generation;
-        if state.account_page != account {
+        let before = state.view.clone();
+        let before_account = state.account_page;
+        if before_account != account {
             state.account_page = account;
             state.view.generation += 1;
         }
         let view = state.transition(root, section, visible);
-        let changed = before != view.generation;
-        (view, changed)
+        if before.generation != view.generation {
+            apply_view(&window, &before, before_account, &view, account);
+        }
+        (before, view)
     };
-    if changed {
+    if before.generation != view.generation {
         lazybuddy_host_control::logs::event(
             "host",
             "view_transition",
             serde_json::json!({"view":view}),
         );
     }
-    if !visible || root != Root::News || section != Section::Content {
-        window.state::<host::State>().stop_news();
-    }
-    window
-        .state::<playback::State>()
-        .context(page, account && view.root == Root::Hongguo, visible);
-    {
-        let app = window.app_handle().clone();
-        tauri::async_runtime::spawn(async move {
-            app.state::<bilibili::State>()
-                .suspend_if_inactive(&app)
-                .await;
-        });
-    }
     view
 }
+
+fn feature_active(view: &View, account: bool, root: Root) -> bool {
+    view.visible
+        && view.root == root
+        && (view.section == Section::Content || view.section == Section::Settings && account)
+}
+
+fn apply_view(
+    window: &tauri::WebviewWindow,
+    before: &View,
+    before_account: bool,
+    view: &View,
+    account: bool,
+) {
+    if feature_active(before, before_account, Root::News) {
+        window.state::<host::State>().stop_news();
+    }
+    window.state::<playback::State>().context(
+        view.root == Root::Hongguo && view.section == Section::Content,
+        view.root == Root::Hongguo && account,
+        view.visible,
+    );
+    let app = window.app_handle();
+    if feature_active(before, before_account, Root::Bilibili) {
+        app.state::<bilibili::State>()
+            .leave(view.root != Root::Bilibili || view.section != Section::Content);
+    }
+    if feature_active(before, before_account, Root::Reader) {
+        app.state::<reader::State>().leave(app, view.generation);
+    }
+}
+
 #[tauri::command]
 fn snapshot(state: tauri::State<Mutex<Model>>, window: tauri::WebviewWindow) -> serde_json::Value {
     let state = state.lock().unwrap();
-    serde_json::json!({"view":state.view,"feed_requests":state.feed_requests,"favorite_reads":window.state::<playback::State>().favorite_reads(),
+    serde_json::json!({"version":window.app_handle().package_info().version.to_string(),"view":state.view,"feed_requests":state.feed_requests,"favorite_reads":window.state::<playback::State>().favorite_reads(),
         "bilibili":window.state::<bilibili::State>().receipt(),"reader_requests":window.state::<reader::State>().requests(),"media_route":if playback::enabled(){"browser_service"}else{"unavailable"},"real_service":playback::enabled()&&std::env::var_os("LAZYBUDDY_BROWSER_FIXTURE_FILE").is_none(), "native_texture_integrated":false,"tray":window.app_handle().tray_by_id("shell").is_some(),"desktop":dock::snapshot(&window)})
 }
 #[derive(Deserialize, Serialize)]
@@ -148,42 +194,23 @@ fn dock_rendered(report: DockRender, window: tauri::WebviewWindow) -> Result<(),
 }
 fn visibility(window: &tauri::WebviewWindow, visible: bool) {
     let visible = visible && !dock::is_docked(window);
-    let state = window.state::<Mutex<Model>>();
-    let mut state = state.lock().unwrap();
-    let view = state.view.clone();
-    let changed = view.visible != visible;
-    state.transition(view.root, view.section, visible);
-    let page = state.view.root == Root::Hongguo && state.view.section == Section::Content;
-    let account = state.account_page && state.view.root == Root::Hongguo;
-    drop(state);
-    window
-        .state::<playback::State>()
-        .context(page, account, visible);
-    if !visible {
-        {
-            let app = window.app_handle().clone();
-            tauri::async_runtime::spawn(async move {
-                app.state::<bilibili::State>()
-                    .suspend_if_inactive(&app)
-                    .await;
-            });
+    let (before, view) = {
+        let state = window.state::<Mutex<Model>>();
+        let mut state = state.lock().unwrap();
+        let before = state.view.clone();
+        let view = state.transition(before.root, before.section, visible);
+        if before.generation != view.generation {
+            apply_view(
+                window,
+                &before,
+                state.account_page,
+                &view,
+                state.account_page,
+            );
         }
-        window.state::<host::State>().stop_news();
-        let app = window.app_handle().clone();
-        tauri::async_runtime::spawn(async move {
-            let inactive = {
-                let model = app.state::<Mutex<Model>>();
-                let model = model.lock().unwrap();
-                !model.view.visible || model.view.root != Root::Reader
-            };
-            if inactive {
-                if let Err(error) = app.state::<reader::State>().suspend(&app).await {
-                    let _ = app.emit("shell-error", format!("阅读进度保存失败：{error}"));
-                }
-            }
-        });
-    }
-    if changed {
+        (before, view)
+    };
+    if before.generation != view.generation {
         dock::trace(
             window,
             "visibility_changed",
@@ -192,6 +219,7 @@ fn visibility(window: &tauri::WebviewWindow, visible: bool) {
         let _ = window.emit("shell-visibility", visible);
     }
 }
+
 fn show_without_focus(window: &tauri::WebviewWindow) -> Result<(), String> {
     dock::expand(window).map_err(|_| "expand failed")?;
     let hwnd = window.hwnd().map_err(|_| "window unavailable")?;
@@ -249,16 +277,19 @@ fn window_action(action: &str, window: tauri::WebviewWindow) -> Result<(), Strin
             if !window.state::<reader::State>().begin_exit() {
                 return Ok(());
             }
+            window.state::<host::State>().set_exiting(true);
             let app = window.app_handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(error) = app.state::<bilibili::State>().disconnect(&app).await {
                     let _ = app.emit("shell-error", error);
                     app.state::<reader::State>().cancel_exit();
+                    app.state::<host::State>().set_exiting(false);
                     return;
                 }
                 if let Err(error) = app.state::<reader::State>().disconnect(&app).await {
                     let _ = app.emit("shell-error", format!("阅读进度保存失败，未退出：{error}"));
                     app.state::<reader::State>().cancel_exit();
+                    app.state::<host::State>().set_exiting(false);
                     return;
                 }
                 let Some(completed) = app.state::<playback::State>().shutdown() else {
@@ -334,6 +365,16 @@ fn resize(width: u32, height: u32, window: tauri::WebviewWindow) -> Result<(), S
 }
 
 fn main() {
+    if let Ok(exe) = std::env::current_exe() {
+        match lazybuddy_app_updater::recover_on_start(exe.parent().unwrap()) {
+            Ok(false) => {}
+            Ok(true) => return,
+            Err(error) => {
+                eprintln!("update recovery could not start: {error}");
+                return;
+            }
+        }
+    }
     let host = host::State::new().expect("host settings unavailable");
     tauri::Builder::default()
         .manage(host)
@@ -353,11 +394,11 @@ fn main() {
             bilibili::bilibili_suspend,
             reader::reader_pick,
             reader::reader_checkpoint,
-            reader::reader_suspend,
             host::settings,
             host::set_startup,
             host::open_link,
             host::check_update,
+            host::update_status,
             host::apply_update,
             window_action,
             resize,

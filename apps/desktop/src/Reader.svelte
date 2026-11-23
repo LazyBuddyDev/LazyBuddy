@@ -4,12 +4,22 @@
   import Icon from './Icon.svelte';
   import {readerSourceName,onlineSources,hasChapterTitle,pageSize,pageStart,progressLabel,readerError,matchOffsets,wrapMatch,markedRuns,visibleAnchor,restoreAnchor,viewportStep,pageOffset,type Position,type Entry,type Book,type Block,type ReadingPreferences,type OnlinePage,type OnlineEntry,type OnlineBook} from './reader';
   let {active,showing,settings,generation,notice,settingsChange}:{active:boolean;showing:boolean;settings:boolean;generation:number;notice:(text:string)=>void;settingsChange:(settings:boolean)=>void}=$props();
-  let entries=$state<Entry[]>([]),book=$state<Book>(),blocks=$state<Block[]>([]);
+  const collectionLimit=40;
+  type CollectionPage={entries:Entry[];total:number;last_book?:string|null};
+  type Collection={page:CollectionPage;start:number;query:string;revision:number};
+  let book=$state<Book>(),blocks=$state<Block[]>([]);
   let preferences=$state<ReadingPreferences>({font_size:20,line_height:1.9,width:680,page_mode:'horizontal'});
   let chapter=$state(0),start=$state(0),total=$state(0),filter=$state(''),query=$state(''),encoding=$state('auto');
   let loading=$state(false),importing=$state(false),saving=$state(false),directory=$state(false),removing=$state<string>();
   let failure=$state(''),images=$state<Record<string,string>>({});
-  let history=$state(false),historyAvailable=$state(false),historyEntries=$state<Entry[]>([]),historyFilter=$state('');
+  let history=$state(false),historyAvailable=$state(false),historyFilter=$state('');
+  let collections=$state<{shelf?:Collection;history?:Collection}>({});
+  const revision={shelf:0,history:0};
+  const collectionKey=$derived(history?'history':'shelf');
+  const collection=$derived(collections[collectionKey]);
+  const collectionQuery=()=> (history?historyFilter:filter).trim();
+  let listBusy=$state(false),listError=$state(''),filterTimer:ReturnType<typeof setTimeout>|undefined;
+  let libraryPaging=false;let refreshQueued=false;
   let libraryScroll=$state<HTMLElement>();let shelfScrollTop=0,historyScrollTop=0;
   let searchSource=$state<OnlinePage['source']>('fanqie');
   let availableSources=$state<OnlinePage['source'][]>(['fanqie']);
@@ -20,11 +30,12 @@
   let detailScroll=$state<HTMLElement>();let detailScrollTop=0;
   let shelfAvailable=$state(false),bodyAvailable=$state(false),membershipAvailable=$state(false),adding=$state(false),detailFromShelf=$state(false);
   let importDialog=$state<HTMLDialogElement>(),importPaths=$state<string[]>([]),selectingFiles=$state(false);let pickRun=0;
-  const readingFavorite=$derived(!!book&&entries.some(e=>e.id===book?.id));
+  let readingFavorite=$state(false);
   let chapterVersion:string|undefined;
-  const shelved=$derived(!!onlineSelection&&entries.some(e=>e.source.kind===(onlineDetail?.source??onlinePage?.source)&&e.source.id===onlineSelection?.id));
+  let selectedMembership=$state<Entry|null>();
+  const shelved=$derived(selectedMembership!=null);
   let onlineTicket:ReturnType<typeof lease>|undefined;
-  let scroll=$state<HTMLElement>();let epoch=0;let initialized=false;let capabilitiesLoaded=false;let needsList=true;let lastBook=$state<string|null>(null);
+  let scroll=$state<HTMLElement>();let epoch=0;let capabilitiesLoaded=false;
   let currentPosition:Position|undefined;let restoring=false;let timer:ReturnType<typeof setTimeout>|undefined;
   let stagedPosition:Position|undefined;let checkpointWrites:Promise<unknown>=Promise.resolve();
   let suspended=true;let turning=$state(false),extending=$state(false),offset=$state(0),extent=$state(0);
@@ -40,7 +51,6 @@
 
   let importRun=0;let waitTimer:ReturnType<typeof setTimeout>|undefined;let wake:(()=>void)|undefined;
   let observer:IntersectionObserver|undefined;let resourceQueue:string[]=[];let readingImages=false;
-  const filtered=$derived((history?historyEntries:entries).filter(e=>e.title.toLocaleLowerCase().includes((history?historyFilter:filter).toLocaleLowerCase())));
   const lease=()=>({epoch,generation,cancelled:false});
   const valid=(ticket:ReturnType<typeof lease>)=>!ticket.cancelled&&active&&ticket.epoch===epoch&&ticket.generation===generation;
   async function call<T>(method:string,args:Record<string,unknown>={},ticket=lease()):Promise<T>{
@@ -49,55 +59,96 @@
     if(!valid(ticket))throw Error('stale_reader_reply');return result;
   }
   function report(error:unknown,ticket=lease(),context=''){if(valid(ticket)){failure=(context?`${context}：`:'')+readerError(error);notice(failure);}}
-  async function list(ticket=lease()){
-    const all:Entry[]=[];let offset=0;
-    while(valid(ticket)){
-      const reply=await call<{entries:Entry[];total:number;last_book:string|null}>('library.list',{start:offset,limit:100},ticket);
-      all.push(...reply.entries);offset+=reply.entries.length;lastBook=reply.last_book;
-      if(offset>=reply.total)break;if(!reply.entries.length)throw Error('invalid_reader_reply');
-    }
-    if(historyAvailable&&history){
-      const recent:Entry[]=[];let start=0;
-      while(valid(ticket)){const reply=await call<{entries:Entry[];total:number}>('history.list',{start,limit:100},ticket);recent.push(...reply.entries);start+=reply.entries.length;if(start>=reply.total)break;if(!reply.entries.length)throw Error('invalid_reader_reply');}
-      if(valid(ticket))historyEntries=recent;
-    }
-    if(valid(ticket)){entries=all.sort((a,b)=>b.updated_ms-a.updated_ms);needsList=false;await tick();if(valid(ticket)&&libraryScroll&&!book&&!online)libraryScroll.scrollTop=history?historyScrollTop:shelfScrollTop;}
+  function atCollection(){return active&&!settings&&!online&&!book;}
+  async function collectionPage(method:string,start:number,limit:number,ticket:ReturnType<typeof lease>,query?:string){
+    const page=await call<CollectionPage>(method,{start,limit,...(query===undefined?{}:{query})},ticket);
+    if(!Number.isSafeInteger(page.total)||page.total<0||page.total>5000||!Array.isArray(page.entries)
+      ||page.entries.length!==Math.min(limit,Math.max(0,page.total-start)))throw Error('invalid_reader_reply');
+    return page;
+  }
+  async function readCollection(method:string,start:number,query:string,ticket:ReturnType<typeof lease>):Promise<CollectionPage>{
+    if(libraryPaging)return collectionPage(method,start,collectionLimit,ticket,query);
+    if(!query)return collectionPage(method,start,collectionLimit,ticket);
+    // Older packages only support offset pagination. Scan on an explicit filter, never on entry.
+    const matching:Entry[]=[];let response:CollectionPage,offset=0;const needle=query.toLocaleLowerCase();
+    do{
+      response=await collectionPage(method,offset,100,ticket);
+      matching.push(...response.entries.filter(e=>e.title.toLocaleLowerCase().includes(needle)));
+      offset+=response.entries.length;
+    }while(offset<response.total&&query===collectionQuery());
+    if(method==='library.list')matching.sort((a,b)=>b.updated_ms-a.updated_ms);
+    return {entries:matching.slice(start,start+collectionLimit),total:matching.length,last_book:response.last_book};
+  }
+  function scheduleFilter(){
+    clearTimeout(filterTimer);
+    filterTimer=setTimeout(()=>{filterTimer=undefined;void list();},200);
+  }
+  async function list(ticket=lease(),target?:number){
+    if(!atCollection()||!valid(ticket))return;
+    if(listBusy){refreshQueued=true;return;}
+    const key=collectionKey,query=collectionQuery(),previous=collections[key];
+    const readRevision=revision[key];
+    if(target===undefined&&previous?.revision===readRevision&&previous.query===query)return;
+    let offset=target??(previous?.query===query?previous.start:0);
+    const method=key==='history'?'history.list':'library.list';
+    listBusy=true;listError='';
+    try{
+      let page=await readCollection(method,offset,query,ticket);
+      if(offset>=page.total&&offset>0&&query===collectionQuery()){
+        offset=Math.max(0,Math.floor((page.total-1)/collectionLimit)*collectionLimit);
+        page=await readCollection(method,offset,query,ticket);
+      }
+      if(atCollection()&&key===collectionKey&&query===collectionQuery()){
+        if(previous?.start!==offset||previous.query!==query){
+          if(key==='history')historyScrollTop=0;else shelfScrollTop=0;
+        }
+        collections[key]={page,start:offset,query,revision:readRevision};
+        await restoreCollectionScroll(ticket);
+      }
+    }catch(error){if(valid(ticket)&&key===collectionKey&&query===collectionQuery()){listError=readerError(error);notice(listError);}}
+    finally{if(valid(ticket)){listBusy=false;const refresh=refreshQueued;refreshQueued=false;if(query!==collectionQuery())scheduleFilter();else if(refresh&&collections[key]?.revision!==revision[key]&&!listError)void list(ticket);}}
+  }
+  async function restoreCollectionScroll(ticket:ReturnType<typeof lease>){
+    await tick();if(valid(ticket)&&atCollection()&&libraryScroll)libraryScroll.scrollTop=history?historyScrollTop:shelfScrollTop;
   }
   async function activate(){
     suspended=false;
     const ticket=lease();failure='';
     try{
       preferences=await call<ReadingPreferences>('preferences.get',{},ticket);
-      if(!settings&&!capabilitiesLoaded){const health=await call<{capabilities:string[];sources?:OnlinePage['source'][];source_channels?:Record<string,string>}>('health',{},ticket);onlineAvailable=health.capabilities.includes('online_search');detailsAvailable=health.capabilities.includes('online_details');shelfAvailable=health.capabilities.includes('online_shelf');bodyAvailable=health.capabilities.includes('online_body');membershipAvailable=health.capabilities.includes('shelf_membership');historyAvailable=health.capabilities.includes('browsing_history');availableSources=(health.sources??['fanqie']).filter(s=>s in onlineSources&&(s==='fanqie'||health.source_channels?.[s]==='app'));capabilitiesLoaded=true;}
-      if(!settings&&online&&(needsList||!initialized))await list(ticket);
-      if(!settings&&!online){if(needsList||!initialized)await list(ticket);if(book){await tick();if(currentPosition)if(scroll)restoreAnchor(scroll,currentPosition);metrics();if(needsMore())await extend(1,ticket);watchImages();}}
+      if(!settings&&!capabilitiesLoaded){const health=await call<{capabilities:string[];sources?:OnlinePage['source'][];source_channels?:Record<string,string>}>('health',{},ticket);onlineAvailable=health.capabilities.includes('online_search');detailsAvailable=health.capabilities.includes('online_details');shelfAvailable=health.capabilities.includes('online_shelf');bodyAvailable=health.capabilities.includes('online_body');membershipAvailable=health.capabilities.includes('shelf_membership');historyAvailable=health.capabilities.includes('browsing_history');libraryPaging=health.capabilities.includes('library_paging');availableSources=(health.sources??['fanqie']).filter(s=>s in onlineSources&&(s==='fanqie'||health.source_channels?.[s]==='app'));capabilitiesLoaded=true;}
+      if(atCollection()){await restoreCollectionScroll(ticket);await list(ticket);}
+      if(!settings&&!online&&book){await tick();if(currentPosition&&scroll)restoreAnchor(scroll,currentPosition);metrics();if(needsMore())await extend(1,ticket);watchImages();}
       if(!settings&&online){await tick();if(valid(ticket)&&onlineScroll)onlineScroll.scrollTop=onlineScrollTop;}
-      if(!settings&&online&&onlineSelection){await tick();if(valid(ticket)&&detailScroll)detailScroll.scrollTop=detailScrollTop;}
-      initialized=true;
+      if(!settings&&online&&onlineSelection){await tick();if(valid(ticket)&&detailScroll)detailScroll.scrollTop=detailScrollTop;if(onlineDetail&&selectedMembership===undefined)await lookupMembership(onlineDetail.source,onlineDetail.id,ticket);}
     }catch(error){report(error,ticket);}
   }
   function stopLocal(){
     closeImport();
     suspended=true;finishTurn?.();if(scroll)scroll.scrollTo({left:scroll.scrollLeft,top:scroll.scrollTop,behavior:'instant'});turning=false;extending=false;restoring=false;swapping=false;
     epoch++;searchRun++;importRun++;clearTimeout(timer);timer=undefined;clearTimeout(waitTimer);wake?.();wake=undefined;
+    clearTimeout(filterTimer);filterTimer=undefined;listBusy=false;refreshQueued=false;
+    if(adding&&onlineDetail)selectedMembership=undefined;
     observer?.disconnect();observer=undefined;resourceQueue=[];images={};readingImages=false;importing=false;loading=false;saving=false;onlineSearching=false;onlineOpening=false;adding=false;
   }
   export async function suspend(capture=true){
-    if(capture&&active&&!settings)await checkpoint();
-    stopLocal();needsList=true;
-    await invoke('reader_suspend');
+    if(capture&&!suspended&&!settings)await checkpoint(true);
+    stopLocal();
   }
   export function resume(){if(active&&suspended)void activate();}
   $effect(()=>{const enabled=active;const gen=generation;const prefs=settings;untrack(()=>{stopLocal();if(enabled)void activate();});});
   onDestroy(()=>stopLocal());
-  async function checkpoint(){
-    if(!active||settings||online||!book||!scroll||restoring||swapping||!blocks.length)return;
+  async function checkpoint(final=false){
+    if((!active&&!final)||settings||online||!book||!scroll||restoring||swapping||!blocks.length)return;
     const anchor=visibleAnchor(scroll);if(!anchor)return;
     const position:Position={book_id:book.id,content_version:book.content_version,chapter_id:book.chapters[chapter].id,...(chapterVersion?{chapter_version:chapterVersion}:{}),...anchor};
     currentPosition=position;
     if(JSON.stringify(position)===JSON.stringify(stagedPosition)){await checkpointWrites;return;}
     stagedPosition=position;const ownerGeneration=generation;
-    const entry=entries.find(e=>e.id===position.book_id);if(entry)entry.position=position;
+    revision.shelf++;revision.history++;
+    for(const page of Object.values(collections)){
+      const entry=page?.page.entries.find(e=>e.id===position.book_id);if(entry)entry.position=position;
+    }
     const write=checkpointWrites.catch(()=>{}).then(()=>invoke('reader_checkpoint',{position,generation:ownerGeneration}));checkpointWrites=write;
     try{await write;}catch(error){if(stagedPosition===position)stagedPosition=undefined;throw error;}
   }
@@ -111,10 +162,13 @@
     if(loading||!active)return;const ticket=lease();loading=true;failure='';notice('');
     try{
       await checkpoint();await call('progress.flush',{},ticket);
-      const result=await call<{book:Book;position:Position|null}>('book.open',{book_id:entry.id},ticket);
+      revision.history++;
+      const result=await call<{book:Book;position:Position|null;in_shelf?:boolean}>('book.open',{book_id:entry.id},ticket);
+      readingFavorite=result.in_shelf??entry.in_shelf??true;
       if(entry.source.format==='online'&&!bodyAvailable){
         onlineSelection={id:entry.source.id,title:result.book.title,author:result.book.author,description:result.book.description??''};
         onlineDetail={...onlineSelection,source:entry.source.kind as OnlinePage['source'],chapters:result.book.chapters};
+        selectedMembership=readingFavorite?entry:null;
         detailFromShelf=true;online=true;directoryPage=0;detailScrollTop=0;onlineError='';return;
       }
       const target=result.book;const position=selectedChapter?undefined:result.position??undefined;
@@ -148,7 +202,7 @@
   }
   async function back(){
     if(loading||turning||extending)return;
-    const ticket=lease();try{await checkpoint();await call('progress.flush',{},ticket);book=undefined;blocks=[];observer?.disconnect();images={};needsList=true;await list(ticket);}catch(error){report(error,ticket);}
+    const ticket=lease();try{await checkpoint();await call('progress.flush',{},ticket);book=undefined;blocks=[];observer?.disconnect();images={};await restoreCollectionScroll(ticket);await list(ticket);}catch(error){report(error,ticket);}
   }
   async function extend(direction:number,ticket=lease()){
     if(!book||!scroll||extending)return;
@@ -293,16 +347,22 @@
   }
   async function setPreference<K extends keyof ReadingPreferences>(key:K,value:ReadingPreferences[K]){
     if(saving||!active)return;const ticket=lease();saving=true;
-    try{preferences=await call<ReadingPreferences>('preferences.set',{...preferences,[key]:value},ticket);if(key==='history_limit')needsList=true;}catch(error){report(error,ticket);}finally{if(valid(ticket))saving=false;}
+    if(key==='history_limit')revision.history++;
+    try{preferences=await call<ReadingPreferences>('preferences.set',{...preferences,[key]:value},ticket);}catch(error){report(error,ticket);}finally{if(valid(ticket))saving=false;}
   }
   const delay=()=>new Promise<void>(resolve=>{wake=resolve;waitTimer=setTimeout(()=>{wake=undefined;resolve();},150);});
   async function selectTab(next:boolean,nextHistory=false){
     if(changingView||!active)return;
     if(detailFromShelf){await backOnline();await selectTab(next,nextHistory);return;}
-    if(settings){if(online!==next||history!==nextHistory){book=undefined;blocks=[];}online=next;history=nextHistory;needsList=true;settingsChange(false);return;}
+    if(settings){if(online!==next||history!==nextHistory){book=undefined;blocks=[];}online=next;history=nextHistory;settingsChange(false);return;}
     if(online===next&&history===nextHistory)return;
     const ticket=lease();changingView=true;
-    try{await checkpoint();await call('progress.flush',{},ticket);await invoke('reader_suspend');if(!valid(ticket))return;stopLocal();online=next;history=nextHistory;book=undefined;blocks=[];needsList=true;failure='';notice('');resume();}
+    try{
+      if(book){await checkpoint();await call('progress.flush',{},ticket);}
+      if(importing||onlineSearching||onlineOpening||loading)await call('lifecycle.suspend',{},ticket);
+      if(!valid(ticket))return;
+      stopLocal();online=next;history=nextHistory;book=undefined;blocks=[];failure='';listError='';notice('');resume();
+    }
     catch(error){report(error,ticket);}finally{changingView=false;}
   }
   async function searchOnline(action:'search'|'next'|'previous'='search'){
@@ -326,23 +386,39 @@
     if(status.status==='failed')throw status.error;
     return status.status==='complete'?status.result:undefined;
   }
+  async function lookupMembership(source:string,id:string,ticket:ReturnType<typeof lease>){
+    let entry:Entry|null=null;
+    if(shelfAvailable&&libraryPaging){
+      entry=(await call<{entry:Entry|null}>('library.lookup',{source,book_id:id},ticket)).entry;
+    }else if(shelfAvailable){
+      let offset=0;
+      for(;;){
+        const page=await collectionPage('library.list',offset,100,ticket);
+        entry=page.entries.find(e=>e.source.kind===source&&e.source.id===id)??null;
+        offset+=page.entries.length;
+        if(entry||offset>=page.total||!online||onlineSelection?.id!==id)break;
+      }
+    }
+    if(valid(ticket)&&online&&onlineDetail?.source===source&&onlineSelection?.id===id)selectedMembership=entry;
+  }
   async function openOnline(entry:OnlineEntry){
     if(!online||!active||settings||onlineSearching||onlineOpening)return;
-    const ticket=lease();detailFromShelf=false;onlineSelection=entry;onlineDetail=undefined;directoryPage=0;detailScrollTop=0;onlineOpening=true;onlineError='';
-    try{const detail=await onlineRequest<OnlineBook>('online.detail',{source:onlinePage?.source??searchSource,book_id:entry.id},ticket);if(detail)onlineDetail=detail;}
+    const ticket=lease();detailFromShelf=false;onlineSelection=entry;onlineDetail=undefined;selectedMembership=undefined;directoryPage=0;detailScrollTop=0;onlineOpening=true;onlineError='';
+    try{const detail=await onlineRequest<OnlineBook>('online.detail',{source:onlinePage?.source??searchSource,book_id:entry.id},ticket);if(detail&&valid(ticket)){onlineDetail=detail;await lookupMembership(detail.source,detail.id,ticket);}}
     catch(error){if(valid(ticket)){onlineError=readerError(error);notice(onlineError);}}finally{if(valid(ticket))onlineOpening=false;}
   }
   async function backOnline(){
     if(onlineTicket)onlineTicket.cancelled=true;
-    const pending=onlineOpening;onlineOpening=false;onlineSelection=undefined;onlineDetail=undefined;onlineError='';notice('');
+    const ticket=lease(),pending=onlineOpening;onlineOpening=false;onlineSelection=undefined;onlineDetail=undefined;selectedMembership=undefined;onlineError='';notice('');
     clearTimeout(waitTimer);wake?.();wake=undefined;
-    if(pending)await invoke('reader_suspend');
-    if(detailFromShelf){detailFromShelf=false;online=false;return;}
+    if(pending){try{await call('lifecycle.suspend',{},ticket);}catch(error){report(error,ticket);}}
+    if(!valid(ticket))return;
+    if(detailFromShelf){detailFromShelf=false;online=false;await restoreCollectionScroll(ticket);await list(ticket);return;}
     await tick();if(onlineScroll)onlineScroll.scrollTop=onlineScrollTop;
   }
   async function readOnline(chapter?:string){
-    if(!onlineDetail||loading||adding)return;
-    const ticket=lease();let entry=entries.find(e=>e.source.kind===onlineDetail?.source&&e.source.id===onlineDetail?.id);
+    if(!onlineDetail||loading||adding||shelfAvailable&&selectedMembership===undefined)return;
+    const ticket=lease();let entry=selectedMembership;
     if(!entry){
       if(!membershipAvailable)return;
       loading=true;onlineError='';
@@ -353,22 +429,22 @@
     if(entry&&valid(ticket))await open(entry,chapter);
   }
   async function changeFavorite(bookId:string,inShelf:boolean,ticket=lease()){
-    needsList=true;await call('library.favorite',{book_id:bookId,in_shelf:inShelf},ticket);await list(ticket);
+    revision.shelf++;revision.history++;
+    return (await call<{book:Entry}>('library.favorite',{book_id:bookId,in_shelf:inShelf},ticket)).book;
   }
   async function toggleOnlineFavorite(){
-    if(adding||!onlineDetail)return;
-    const ticket=lease(),sourceId=onlineDetail.id,entry=entries.find(e=>e.source.kind===onlineDetail?.source&&e.source.id===sourceId);
-    adding=true;needsList=true;onlineError='';
+    if(adding||!onlineDetail||selectedMembership===undefined)return;
+    const ticket=lease(),{id:sourceId,source}=onlineDetail,entry=selectedMembership;
+    adding=true;revision.shelf++;revision.history++;onlineError='';
     try{
-      if(entry)await changeFavorite(entry.id,false,ticket);
-      else{await call('library.add',{source:onlineDetail.source,book_id:sourceId},ticket);await list(ticket);}
-      if(valid(ticket)&&onlineSelection?.id===sourceId)notice(entry?'已移出书架':'已加入书架');
+      const updated=entry?await changeFavorite(entry.id,false,ticket):(await call<{book:Entry}>('library.add',{source,book_id:sourceId},ticket)).book;
+      if(valid(ticket)&&onlineDetail?.source===source&&onlineSelection?.id===sourceId){selectedMembership=entry?null:updated;notice(entry?'已移出书架':'已加入书架');}
     }catch(error){if(valid(ticket)&&onlineSelection?.id===sourceId){onlineError=readerError(error);notice(onlineError);}}finally{if(valid(ticket))adding=false;}
   }
   async function toggleReadingFavorite(){
     if(!book||adding)return;
     const ticket=lease(),id=book.id,next=!readingFavorite;adding=true;
-    try{await changeFavorite(id,next,ticket);if(valid(ticket)&&book?.id===id)notice(next?'已加入书架':'已移出书架');}
+    try{await changeFavorite(id,next,ticket);if(valid(ticket)&&book?.id===id){readingFavorite=next;notice(next?'已加入书架':'已移出书架');}}
     catch(error){if(book?.id===id)report(error,ticket);}finally{if(valid(ticket))adding=false;}
   }
   function clearImport(){pickRun++;importPaths=[];selectingFiles=false;}
@@ -392,19 +468,18 @@
         notice(`正在导入：${name}`);
         const job=await call<{job:number}>('library.import',{path,encoding},ticket);
         let status:{status:string;error?:string;result?:{duplicate:boolean;restored?:boolean;warnings?:string[]}};
-        do{await delay();if(!valid(ticket)||run!==importRun)return;status=await call('import.status',{job:job.job},ticket);}while(status.status==='pending');
+        do{await delay();if(!valid(ticket)||run!==importRun)return;revision.shelf++;status=await call('import.status',{job:job.job},ticket);}while(status.status==='pending');
         if(status.status==='complete'){if(status.result?.duplicate)duplicates++;else imported++;}else failed++;
         const message=status.status==='complete'?(status.result?.restored?'已重新加入书架':status.result?.duplicate?'已在书架':'已导入'):(status.error?readerError(status.error):'已取消');
         results.push(`${name}：${message}`);
-        needsList=true;await list(ticket);
       }
       if(results.length)notice([`导入完成：成功 ${imported} 本，已存在 ${duplicates} 本，失败 ${failed} 本`,...results].join('\n'));
-    }catch(error){if(valid(ticket)){failure=readerError(error);notice([`导入未完成：${failure}`,...results].join('\n'));}}finally{if(valid(ticket)&&run===importRun)importing=false;}
+    }catch(error){if(valid(ticket)){failure=readerError(error);notice([`导入未完成：${failure}`,...results].join('\n'));}}finally{if(valid(ticket)&&run===importRun){importing=false;revision.shelf++;await list(ticket);}}
   }
   async function remove(entry:Entry){
-    const ticket=lease();
-    try{if(membershipAvailable)await changeFavorite(entry.id,false,ticket);else{await call('library.remove',{book_id:entry.id},ticket);await list(ticket);}removing=undefined;}
-    catch(error){report(error,ticket);if(!membershipAvailable&&String(error)==='removal_cleanup_pending'){removing=undefined;await list(ticket);}}
+    const ticket=lease();revision.shelf++;revision.history++;
+    try{if(membershipAvailable)await changeFavorite(entry.id,false,ticket);else await call('library.remove',{book_id:entry.id},ticket);removing=undefined;revision.shelf++;await list(ticket);}
+    catch(error){report(error,ticket);if(!membershipAvailable&&String(error)==='removal_cleanup_pending'){removing=undefined;revision.shelf++;await list(ticket);}}
   }
 
 </script>
@@ -422,13 +497,13 @@
   </div></section>
 {:else if online}
   {#if onlineSelection}
-    <div class="collection-toolbar"><button class="icon-button" aria-label={detailFromShelf?'返回书架':'返回搜索结果'} title={detailFromShelf?'返回书架':'返回搜索结果'} onclick={backOnline}><Icon name="arrow" size={16}/></button><strong class="reader-title" title={onlineDetail?.title??onlineSelection.title}>{onlineDetail?.title??onlineSelection.title}</strong>{#if shelfAvailable}<button class="icon-button" aria-label={shelved?'移出书架':'加入书架'} title={shelved?'移出书架':'加入书架'} aria-pressed={shelved} disabled={!onlineDetail||adding||shelved&&!membershipAvailable} onclick={toggleOnlineFavorite}><Icon name="star" size={16} filled={shelved}/></button>{/if}{#if bodyAvailable}<button title="阅读此书" disabled={loading||adding||!membershipAvailable&&!shelved} onclick={()=>readOnline()}>{loading?'载入中…':shelved?'继续阅读':'开始阅读'}</button>{/if}</div>
+    <div class="collection-toolbar"><button class="icon-button" aria-label={detailFromShelf?'返回书架':'返回搜索结果'} title={detailFromShelf?'返回书架':'返回搜索结果'} onclick={backOnline}><Icon name="arrow" size={16}/></button><strong class="reader-title" title={onlineDetail?.title??onlineSelection.title}>{onlineDetail?.title??onlineSelection.title}</strong>{#if shelfAvailable}<button class="icon-button" aria-label={shelved?'移出书架':'加入书架'} title={shelved?'移出书架':'加入书架'} aria-pressed={shelved} disabled={!onlineDetail||selectedMembership===undefined||adding||shelved&&!membershipAvailable} onclick={toggleOnlineFavorite}><Icon name="star" size={16} filled={shelved}/></button>{/if}{#if bodyAvailable}<button title="阅读此书" disabled={loading||adding||shelfAvailable&&selectedMembership===undefined||!membershipAvailable&&!shelved} onclick={()=>readOnline()}>{loading?'载入中…':shelved?'继续阅读':'开始阅读'}</button>{/if}</div>
     <div class="reader-library" bind:this={detailScroll} aria-label="书籍详情与目录" aria-busy={onlineOpening} onscroll={e=>{if(active&&!settings&&online&&e.currentTarget===detailScroll)detailScrollTop=e.currentTarget.scrollTop;}}>
       <span class="item-description">{onlineDetail?.author??onlineSelection.author} · {onlineSources[onlineDetail?.source??onlinePage?.source??searchSource]}</span>
       <p class="item-description">{onlineDetail?.description??onlineSelection.description}</p>
       {#if onlineError}<p role="alert" class="reader-online-error">{onlineError}</p>{/if}
       {#if onlineDetail}<p class="item-description">目录 · 共 {onlineDetail.chapters.length} 章{bodyAvailable?'':' · 暂不能读取正文'}</p>
-        {#each onlineDetail.chapters.slice(directoryPage*100,(directoryPage+1)*100) as item (item.id)}<div class="collection-row"><span class="item-title" title={item.title}>{item.title}</span>{#if bodyAvailable}<button aria-label={`阅读《${item.title}》`} title={`阅读《${item.title}》`} disabled={loading||adding||!membershipAvailable&&!shelved} onclick={()=>readOnline(item.id)}>阅读</button>{/if}</div>{/each}
+        {#each onlineDetail.chapters.slice(directoryPage*100,(directoryPage+1)*100) as item (item.id)}<div class="collection-row"><span class="item-title" title={item.title}>{item.title}</span>{#if bodyAvailable}<button aria-label={`阅读《${item.title}》`} title={`阅读《${item.title}》`} disabled={loading||adding||shelfAvailable&&selectedMembership===undefined||!membershipAvailable&&!shelved} onclick={()=>readOnline(item.id)}>阅读</button>{/if}</div>{/each}
         {#if !onlineDetail.chapters.length}<div class="list-empty">暂无章节</div>{/if}
       {:else if onlineOpening}<div class="list-empty" role="status">正在载入目录…</div>
       {:else}<button title="重新载入书籍详情与目录" onclick={()=>openOnline(onlineSelection!)}>载入目录</button>{/if}
@@ -463,11 +538,20 @@
   </div>
   <div class="reader-navigation row-actions"><button title="上一页（←）" disabled={chapter===0&&start===0&&offset<=1} aria-disabled={loading||turning||extending||chapter===0&&start===0&&offset<=1} onclick={()=>turn(-1)}>上一页</button><span>{chapter+1} / {book.chapters.length} 章</span><button title="下一页（→）" disabled={chapter===book.chapters.length-1&&start+blocks.length>=total&&offset>=extent-1} aria-disabled={loading||turning||extending||chapter===book.chapters.length-1&&start+blocks.length>=total&&offset>=extent-1} onclick={()=>turn(1)}>下一页</button></div>
 {:else}
-  <div class="collection-toolbar"><label class="search-box"><Icon name="search" size={16}/>{#if history}<input aria-label="筛选浏览记录" placeholder="筛选书名" bind:value={historyFilter}/>{:else}<input aria-label="筛选书名" placeholder="筛选书名" bind:value={filter}/>{/if}</label>{#if !history}<button title="导入TXT或EPUB文件" onclick={openImport} disabled={importing}>导入小说</button>{/if}</div>
+  <div class="collection-toolbar"><label class="search-box"><Icon name="search" size={16}/>{#if history}<input aria-label="筛选浏览记录" placeholder="筛选书名" maxlength="200" bind:value={historyFilter} oninput={scheduleFilter}/>{:else}<input aria-label="筛选书名" placeholder="筛选书名" maxlength="200" bind:value={filter} oninput={scheduleFilter}/>{/if}</label>{#if !history}<button title="导入TXT或EPUB文件" onclick={openImport} disabled={importing}>导入小说</button>{/if}</div>
 
-  {#if !(history?historyEntries:entries).length}<div class="list-empty">{failure?'列表暂未载入':history?'暂无浏览记录':'导入TXT或EPUB，开始阅读'}{#if failure}<button title="重新读取书库" onclick={()=>{needsList=true;void activate();}}>重试</button>{/if}</div>
-  {:else}{#key history}<div class="reader-library" bind:this={libraryScroll} onscroll={e=>{if(active&&!settings&&!online&&!book&&e.currentTarget===libraryScroll){if(history)historyScrollTop=e.currentTarget.scrollTop;else shelfScrollTop=e.currentTarget.scrollTop;}}}>{#each filtered as entry (entry.id)}<div class="reader-book collection-row"><button class="reader-book-open" aria-label={`${entry.source.format==='online'&&!bodyAvailable?'查看目录':'继续阅读'}《${entry.title}》`} title={`${entry.source.format==='online'&&!bodyAvailable?'查看目录':'继续阅读'}《${entry.title}》`} disabled={loading} onclick={()=>open(entry)}><strong class="item-title">{entry.title}</strong><span class="item-description">{entry.author?`${entry.author} · `:''}{entry.source.format==='online'?readerSourceName(entry.source.kind):entry.source.format.toUpperCase()} · {progressLabel(entry)}{history&&entry.visited_ms?` · ${new Date(entry.visited_ms).toLocaleString()}`:lastBook===entry.id?' · 最近阅读':''}</span></button>
-    {#if !history}{#if removing===entry.id}<div class="reader-remove row-actions"><span>{membershipAvailable?'从书架移除此书？阅读记录和本地副本保留。':'移除书库副本和阅读记录？原文件保留。'}</span><button title="确认移除书籍" onclick={()=>remove(entry)}>确认移除</button><button title="取消移除书籍" onclick={()=>removing=undefined}>取消</button></div>{:else}<div class="row-actions"><button aria-label={`移除《${entry.title}》`} title={`移除《${entry.title}》`} onclick={()=>removing=entry.id}>移除</button></div>{/if}{/if}</div>{/each}{#if !filtered.length}<div class="list-empty">没有匹配的书籍</div>{/if}</div>{/key}{/if}
+  {#if listError}<div role="alert" class="reader-online-error">{listError} <button onclick={()=>{revision[collectionKey]++;void list();}}>重试</button></div>{/if}
+  {#if !collection?.page.entries.length}
+    <div class="list-empty">{listBusy?'正在读取…':listError?'列表暂未载入':collection?.query?'没有匹配的书籍':history?'暂无浏览记录':'导入TXT或EPUB，开始阅读'}</div>
+  {:else}{#key history}<div class="reader-library" aria-busy={listBusy} bind:this={libraryScroll} onscroll={e=>{if(active&&!settings&&!online&&!book&&e.currentTarget===libraryScroll){if(history)historyScrollTop=e.currentTarget.scrollTop;else shelfScrollTop=e.currentTarget.scrollTop;}}}>{#each collection.page.entries as entry (entry.id)}<div class="reader-book collection-row"><button class="reader-book-open" aria-label={`${entry.source.format==='online'&&!bodyAvailable?'查看目录':'继续阅读'}《${entry.title}》`} title={`${entry.source.format==='online'&&!bodyAvailable?'查看目录':'继续阅读'}《${entry.title}》`} disabled={loading} onclick={()=>open(entry)}><strong class="item-title">{entry.title}</strong><span class="item-description">{entry.author?`${entry.author} · `:''}{entry.source.format==='online'?readerSourceName(entry.source.kind):entry.source.format.toUpperCase()} · {progressLabel(entry)}{history&&entry.visited_ms?` · ${new Date(entry.visited_ms).toLocaleString()}`:collection.page.last_book===entry.id?' · 最近阅读':''}</span></button>
+    {#if !history}{#if removing===entry.id}<div class="reader-remove row-actions"><span>{membershipAvailable?'从书架移除此书？阅读记录和本地副本保留。':'移除书库副本和阅读记录？原文件保留。'}</span><button title="确认移除书籍" onclick={()=>remove(entry)}>确认移除</button><button title="取消移除书籍" onclick={()=>removing=undefined}>取消</button></div>{:else}<div class="row-actions"><button aria-label={`移除《${entry.title}》`} title={`移除《${entry.title}》`} onclick={()=>removing=entry.id}>移除</button></div>{/if}{/if}</div>{/each}</div>{/key}{/if}
+  {#if collection&&collection.page.total>collectionLimit}
+    <nav class="reader-navigation row-actions" aria-label={history?'浏览记录分页':'书架分页'}>
+      <button title="上一页" disabled={listBusy||collection.start===0||collection.query!==collectionQuery()} onclick={()=>list(lease(),collection!.start-collectionLimit)}>上一页</button>
+      <span>{collection.start+1}–{collection.start+collection.page.entries.length} / {collection.page.total} 本</span>
+      <button title="下一页" disabled={listBusy||collection.start+collectionLimit>=collection.page.total||collection.query!==collectionQuery()} onclick={()=>list(lease(),collection!.start+collectionLimit)}>下一页</button>
+    </nav>
+  {/if}
 {/if}
 <dialog class="dialog-surface import-dialog" bind:this={importDialog} aria-labelledby="reader-import-title" oncancel={closeImport} onclose={()=>{if(!importDialog?.open)clearImport();}}>
   <div class="dialog-header"><h2 id="reader-import-title">导入小说</h2><button class="icon-button" aria-label="关闭导入弹窗" title="关闭导入弹窗" onclick={closeImport}><Icon name="close" size={16}/></button></div>

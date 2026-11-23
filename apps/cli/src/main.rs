@@ -24,7 +24,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             return Err("unexpected argument".into());
         }
         let request = serde_json::from_str(&request)?;
-        let launch = manager.launch(&id)?;
+        let mut launch = manager.launch(&id)?;
+        if let Some(scope) = lazybuddy_host_control::isolated_credential_scope()? {
+            let data = root
+                .join("services")
+                .join(&id)
+                .to_string_lossy()
+                .into_owned();
+            launch.environment.extend([
+                ("LAZYBUDDY_CREDENTIAL_SCOPE".into(), scope),
+                ("LAZYBUDDY_DATA_DIR".into(), data.clone()),
+                ("LAZYBUDDY_NEWS_DATA_DIR".into(), data),
+            ]);
+        }
         let mut client = lazybuddy_service_client::Client::start_with_environment(
             &launch.executable,
             &launch.arguments,
@@ -40,14 +52,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if matches!(
         operation.as_deref(),
         Some("install-local" | "install" | "uninstall")
-    ) && lazybuddy_host_control::call_sync(&lazybuddy_host_control::Request {
-        version: 1,
-        command: "status".into(),
-        args: serde_json::json!({}),
-    })
-    .is_ok_and(|reply| reply["ok"] == true)
-    {
-        return Err("LazyBuddy is running; manage modules in the app or quit it before changing packages with the CLI".into());
+    ) {
+        let status = lazybuddy_host_control::call_sync(&lazybuddy_host_control::Request {
+            version: 1,
+            command: "status".into(),
+            args: serde_json::json!({}),
+        });
+        match status {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            _ => return Err("LazyBuddy is running or its state cannot be confirmed; quit it before changing packages with the CLI".into()),
+        }
     }
     match operation.as_deref() {
         Some("list") => {

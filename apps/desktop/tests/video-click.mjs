@@ -24,9 +24,19 @@ try{
   await page.waitForFunction(()=>{const v=document.querySelector('video');return v&&!v.paused&&v.currentTime>0;});
   await video.click({position:{x:15,y:200}});
   await page.waitForFunction(()=>document.querySelector('video').paused);
+  await page.mouse.move(-20,-20);
+  await page.waitForFunction(()=>[...document.querySelectorAll('.video-top,.video-bottom')].every(el=>getComputedStyle(el).opacity==='1'));
   const opens=await page.evaluate(()=>window.hongguoCalls.filter(c=>c.method==='playback.open').length);
   await video.click({position:{x:15,y:200}});
   await page.waitForFunction(()=>!document.querySelector('video').paused);
+  await page.mouse.move(-20,-20);
+  await page.waitForFunction(()=>[...document.querySelectorAll('.video-top,.video-bottom')].every(el=>getComputedStyle(el).opacity==='0'),null,{timeout:2500});
+  await video.focus();await page.keyboard.press('Tab');
+  await page.waitForFunction(()=>document.activeElement.matches(':focus-visible')&&[...document.querySelectorAll('.video-top,.video-bottom')].every(el=>getComputedStyle(el).opacity==='1'));
+  await page.getByRole('button',{name:'暂停',exact:true}).click();
+  await page.getByRole('button',{name:'播放',exact:true}).click();
+  await page.mouse.move(-20,-20);
+  await page.waitForFunction(()=>[...document.querySelectorAll('.video-top,.video-bottom')].every(el=>getComputedStyle(el).opacity==='0'),null,{timeout:2500});
   await video.click({button:'right',position:{x:15,y:200}});
   assert.equal(await video.evaluate(v=>v.paused),false,'right click must not pause');
   await page.getByRole('button',{name:'暂停',exact:true}).click();
@@ -34,6 +44,18 @@ try{
   await video.focus();await page.keyboard.press('Enter');
   await page.waitForFunction(()=>!document.querySelector('video').paused);
   assert.equal(await page.evaluate(()=>window.hongguoCalls.filter(c=>c.method==='playback.open').length),opens,'toggle must reuse the current source');
+  const speed=page.getByRole('combobox',{name:'倍速',exact:true});
+  await speed.click();
+  await page.waitForFunction(()=>document.querySelector('select[aria-label="倍速"]').matches(':open'));
+  await page.mouse.move(-20,-20);
+  await page.waitForFunction(()=>[...document.querySelectorAll('.video-top,.video-bottom')].every(el=>getComputedStyle(el).opacity==='1'));
+  await page.keyboard.press('Escape');
+  assert.deepEqual(await speed.locator('option').evaluateAll(options=>options.map(o=>Number(o.value))),[.5,.75,1,1.25,1.5,1.75,2]);
+  for(const value of [1.25,1.75]){
+    await speed.selectOption(String(value));assert.equal(await video.evaluate(v=>v.playbackRate),value);
+    await page.waitForFunction(value=>JSON.parse(localStorage.getItem('lazybuddy.hongguo.player')).speed===value,value);
+  }
+  await speed.selectOption('1');
   await page.setViewportSize({width:400,height:600});
   await video.focus();await page.keyboard.press('ArrowDown');
   await page.waitForFunction(()=>Math.abs(document.querySelector('video').volume-.45)<.001);
@@ -56,7 +78,16 @@ try{
   await page.keyboard.press('ArrowDown');assert.equal(await video.evaluate(v=>v.volume),0);
   const stored=await page.evaluate(()=>JSON.parse(localStorage.getItem('lazybuddy.hongguo.player')));
   assert.equal(stored.volume,0);assert.equal(stored.mute,true);
-  console.log('Video clicks and volume popup, slider, arrow keys, limits and mute persistence passed.');
+  if(process.argv.includes('--capture-layout')){
+    const captures=fileURLToPath(new URL('../../../tmp/verification-media-controls/',import.meta.url));await mkdir(captures,{recursive:true});
+    for(const width of [780,400]){
+      await page.setViewportSize({width,height:600});await page.evaluate(dark=>document.querySelector('.app-shell').classList.toggle('dark',dark),width===780);
+      await page.getByRole('button',{name:'返回列表',exact:true}).focus();
+      assert.equal(await page.locator('.video-controls').evaluate(el=>{const stage=el.closest('.video-stage').getBoundingClientRect();return [...el.children].some(child=>{const r=child.getBoundingClientRect();return r.left<stage.left||r.right>stage.right;});}),false);
+      await page.screenshot({path:`${captures}/hongguo-${width}.png`});
+    }
+  }
+  console.log('Video/control-button clicks, pointer-exit hiding, paused/keyboard-focus visibility, quarter-step speed, volume popup, slider, arrow keys, limits and mute persistence passed.');
 }finally{
   await browser?.close();await server.close();await rm(scratch,{recursive:true,force:true});
 }

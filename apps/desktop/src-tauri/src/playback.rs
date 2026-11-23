@@ -14,18 +14,25 @@ struct Connection {
     service: Session,
     direct: bool,
     lease: Option<u64>,
-    account_pending: bool,
 }
 #[derive(Default)]
 pub struct State {
     connection: Mutex<Option<Connection>>,
+    connecting: tokio::sync::Mutex<()>,
     epoch: AtomicU64,
     closing: AtomicBool,
     view: Mutex<(bool, bool, bool)>,
     favorite_reads: AtomicU64,
 }
+pub fn development_packages() -> Option<PathBuf> {
+    lazybuddy_host_control::isolated()
+        .then(|| std::env::var_os("LAZYBUDDY_BROWSER_PACKAGES"))
+        .flatten()
+        .map(PathBuf::from)
+}
+
 pub fn enabled() -> bool {
-    std::env::var_os("LAZYBUDDY_BROWSER_PACKAGES").is_some()
+    development_packages().is_some()
         || lazybuddy_host_control::data_dir().is_ok_and(|data| {
             lazybuddy_module_manager::Manager::new(data.join("modules"))
                 .manifest("hongguo")
@@ -33,14 +40,7 @@ pub fn enabled() -> bool {
         })
 }
 pub(crate) fn scoped_package(version: &str) -> bool {
-    let Ok(parts) = version
-        .split('.')
-        .map(str::parse::<u32>)
-        .collect::<Result<Vec<_>, _>>()
-    else {
-        return false;
-    };
-    parts.len() == 3 && parts.as_slice() >= &[0, 2, 1]
+    lazybuddy_module_contract::parse_version(version).is_some_and(|parts| parts >= [0, 2, 1])
 }
 fn direct_environment() -> Vec<(String, String)> {
     [
@@ -61,32 +61,26 @@ pub fn data_directory() -> Result<PathBuf, String> {
     }
     let base = PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or("local_data_unavailable")?)
         .join("LazyBuddyShellPreview");
-    if std::env::var_os("LAZYBUDDY_BROWSER_FIXTURE_FILE").is_some() {
-        Ok(std::env::var_os("LAZYBUDDY_PROTOTYPE_DATA_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| base.join("fixture-hongguo")))
-    } else {
-        Ok(base.join("hongguo"))
-    }
+    Ok(base.join("hongguo"))
 }
 fn connect(direct: bool) -> Result<Session, String> {
     // Explicit development package directory; never load sibling service source.
-    let Some(root) = std::env::var_os("LAZYBUDDY_BROWSER_PACKAGES").map(PathBuf::from) else {
+    let Some(root) = development_packages() else {
         let manager = lazybuddy_module_manager::Manager::new(
             lazybuddy_host_control::data_dir()
                 .map_err(|e| e.to_string())?
                 .join("modules"),
         );
-        let manifest = manager.manifest("hongguo").map_err(|e| e.to_string())?;
-        if !scoped_package(&manifest.version) {
+        let mut launch = manager.launch("hongguo").map_err(|e| e.to_string())?;
+        if !scoped_package(&launch.manifest.version) {
             return Err("service_package_upgrade_required".into());
         }
-        let mut launch = manager.launch("hongguo").map_err(|e| e.to_string())?;
         launch.environment.extend(environment(direct)?);
-        return Ok(Session::with_environment(
+        return Ok(Session::with_lease(
             launch.executable,
             launch.arguments,
             launch.environment,
+            Some(launch.lease),
         ));
     };
     let read = |id: &str| -> Result<lazybuddy_module_contract::Manifest, String> {
@@ -106,6 +100,16 @@ fn connect(direct: bool) -> Result<Session, String> {
         return Err("service_package_upgrade_required".into());
     }
     let python = read("python-runtime")?;
+    if python.kind != lazybuddy_module_contract::Kind::Runtime
+        || feature.runtime.as_deref() != Some(python.id.as_str())
+        || feature.dependencies.len() != 1
+        || !feature
+            .dependencies
+            .iter()
+            .any(|dependency| dependency.id == python.id && dependency.version == python.version)
+    {
+        return Err("invalid_service_package".into());
+    }
     let mut arguments = vec![
         "-I".into(),
         "-B".into(),
@@ -122,14 +126,17 @@ fn connect(direct: bool) -> Result<Session, String> {
     ))
 }
 fn environment(direct: bool) -> Result<Vec<(String, String)>, String> {
-    let scope = if lazybuddy_host_control::isolated() {
-        lazybuddy_host_control::instance().map_err(|e| e.to_string())?
-    } else {
-        "shell-preview".into()
-    };
+    let isolated =
+        lazybuddy_host_control::isolated_credential_scope().map_err(|e| e.to_string())?;
     let mut environment = vec![
-        ("LAZYBUDDY_INSTANCE".into(), scope.clone()),
-        ("LAZYBUDDY_CREDENTIAL_SCOPE".into(), scope),
+        (
+            "LAZYBUDDY_INSTANCE".into(),
+            isolated.clone().unwrap_or_else(|| "default".into()),
+        ),
+        (
+            "LAZYBUDDY_CREDENTIAL_SCOPE".into(),
+            isolated.unwrap_or_else(|| "shell-preview".into()),
+        ),
         (
             "LAZYBUDDY_DATA_DIR".into(),
             data_directory()?.to_string_lossy().into_owned(),
@@ -167,6 +174,17 @@ impl State {
         }
         self.epoch.fetch_add(1, Ordering::AcqRel);
         let mut slot = self.connection.lock().unwrap();
+        if let Some(connection) = slot.as_ref()
+            && (page || account)
+            && (visible || connection.lease.is_some())
+        {
+            let pending = connection.service.lifecycle(
+                json!({"version":1,"id":"cancel-playback-work","method":"work.cancel","args":{}}),
+            );
+            tauri::async_runtime::spawn(async move {
+                let _ = pending.await;
+            });
+        }
         if (page || account) && visible {
             if previous.0 != page || previous.1 != account {
                 if slot
@@ -174,11 +192,7 @@ impl State {
                     .is_some_and(|connection| connection.lease.is_none())
                 {
                     if let Some(connection) = slot.take() {
-                        if connection.account_pending {
-                            tauri::async_runtime::spawn(connection.service.shutdown());
-                        } else {
-                            connection.service.stop();
-                        }
+                        tauri::async_runtime::spawn(connection.service.shutdown());
                     }
                 }
             }
@@ -186,7 +200,7 @@ impl State {
                 if let Some(connection) = slot.as_mut() {
                     if let Some(lease) = connection.lease.take() {
                         self.epoch.fetch_add(1, Ordering::AcqRel);
-                        let future=connection.service.request(json!({"version":1,"id":"leave-player","method":"playback.close","args":{"session":lease}}));
+                        let future=connection.service.lifecycle(json!({"version":1,"id":"leave-player","method":"playback.close","args":{"session":lease}}));
                         tauri::async_runtime::spawn(async move {
                             let _ = future.await;
                         });
@@ -197,20 +211,19 @@ impl State {
         }
         if !page && !account {
             if let Some(connection) = slot.take() {
-                if connection.lease.is_none() && !connection.account_pending {
-                    connection.service.stop();
-                } else {
-                    tauri::async_runtime::spawn(connection.service.shutdown());
-                }
+                tauri::async_runtime::spawn(connection.service.shutdown());
             }
         } else if let Some(connection) = slot.as_ref() {
             if let Some(lease) = connection.lease {
                 let service = connection.service.clone();
+                let pending = service.lifecycle(json!({"version":1,"id":"visibility","method":"playback.suspend","args":{"session":lease}}));
                 tauri::async_runtime::spawn(async move {
-                    if !service.request(json!({"version":1,"id":"visibility","method":"playback.suspend","args":{"session":lease}})).await.is_ok_and(|reply|reply["ok"]==true) {service.stop();}
+                    if !pending.await.is_ok_and(|reply| reply["ok"] == true) {
+                        service.shutdown().await;
+                    }
                 });
             } else if let Some(connection) = slot.take() {
-                connection.service.stop();
+                tauri::async_runtime::spawn(connection.service.shutdown());
             }
         }
     }
@@ -231,6 +244,8 @@ fn allowed(method: &str) -> bool {
     matches!(
         method,
         "playback.open"
+            | "playback.prefetch"
+            | "playback.prefetch_cancel"
             | "playback.report_error"
             | "playback.status"
             | "playback.close"
@@ -254,6 +269,7 @@ pub async fn playback_call(
     method: String,
     args: Value,
     direct: Option<bool>,
+    generation: u64,
     window: tauri::WebviewWindow,
     state: tauri::State<'_, State>,
 ) -> Result<Value, String> {
@@ -265,21 +281,28 @@ pub async fn playback_call(
     }
     let checkpoint = method == "playback.checkpoint";
     let account_method = method.starts_with("account.");
-    {
-        let model = window.state::<Mutex<crate::Model>>();
-        let model = model.lock().unwrap();
+    let model = window.state::<Mutex<crate::Model>>();
+    let admissible = |model: &crate::Model| {
         let content = model.view.section == crate::Section::Content;
-        let account_settings =
+        let account =
             model.view.section == crate::Section::Settings && model.account_page && account_method;
-        if model.view.root != crate::Root::Hongguo
-            || (!(content || account_settings) && !checkpoint)
-            || (!model.view.visible && !checkpoint)
-        {
+        let same_activation = model.view.generation == generation
+            || checkpoint
+                && !model.view.visible
+                && model.view.generation.checked_sub(1) == Some(generation);
+        same_activation
+            && model.view.root == crate::Root::Hongguo
+            && (content || account || checkpoint)
+            && (model.view.visible || checkpoint)
+            && !state.closing.load(Ordering::Acquire)
+    };
+    let direct = direct.unwrap_or(true);
+    let connecting = state.connecting.lock().await;
+    let (epoch, previous) = {
+        let model = model.lock().unwrap();
+        if !admissible(&model) {
             return Err("inactive_media_page".into());
         }
-    }
-    let direct = direct.unwrap_or(true);
-    let previous = {
         let mut slot = state.connection.lock().unwrap();
         if slot
             .as_ref()
@@ -288,18 +311,24 @@ pub async fn playback_call(
             if checkpoint {
                 return Err("stale_playback_request".into());
             }
-            state.epoch.fetch_add(1, Ordering::AcqRel);
-            slot.take()
+            (state.epoch.fetch_add(1, Ordering::AcqRel) + 1, slot.take())
         } else {
-            None
+            (state.epoch.load(Ordering::Acquire), None)
         }
     };
     if let Some(connection) = previous {
         connection.service.shutdown().await;
     }
-    let epoch = state.epoch.load(Ordering::Acquire);
-    let service = {
+    let deferred = matches!(
+        method.as_str(),
+        "search" | "cover.read" | "account.restore" | "account.cancel"
+    );
+    let (service, pending, scope, scope_generation) = {
+        let model = model.lock().unwrap();
         let mut slot = state.connection.lock().unwrap();
+        if !admissible(&model) || epoch != state.epoch.load(Ordering::Acquire) {
+            return Err("stale_playback_request".into());
+        }
         if slot.is_none() {
             if checkpoint {
                 return Err("stale_playback_request".into());
@@ -308,26 +337,51 @@ pub async fn playback_call(
                 service: connect(direct)?,
                 direct,
                 lease: None,
-                account_pending: false,
             });
         }
-        slot.as_ref().unwrap().service.clone()
+        let service = slot.as_ref().unwrap().service.clone();
+        let scope = model.active_generation.clone();
+        let scope_generation = model.view.generation;
+        let request = if deferred {
+            json!({"version":1,"id":"web-playback","method":"work.begin","args":{"method":method,"args":args}})
+        } else {
+            json!({"version":1,"id":"web-playback","method":method,"args":args})
+        };
+        let pending = service.request_scoped(request, scope.clone(), scope_generation);
+        (service, pending, scope, scope_generation)
     };
+    drop(connecting);
     if method == "favorites.read" {
         state.favorite_reads.fetch_add(1, Ordering::Relaxed);
     }
     let request_id = lazybuddy_host_control::logs::next_id();
     let began = std::time::Instant::now();
-    let reply = service
-        .request(json!({"version":1,"id":"web-playback","method":method,"args":args}))
-        .await;
-    if epoch != state.epoch.load(Ordering::Acquire) {
+    let reply = pending.await;
+    let reply = if deferred {
+        finish_work(&service, scope, scope_generation, &method, args, reply).await
+    } else {
+        reply
+    };
+    let model = model.lock().unwrap();
+    let mut slot = state.connection.lock().unwrap();
+    if !admissible(&model)
+        || epoch != state.epoch.load(Ordering::Acquire)
+        || !slot
+            .as_ref()
+            .is_some_and(|c| c.service.same_connection(&service))
+    {
         return Err("stale_playback_request".into());
     }
     let reply = match reply {
         Ok(value) => value,
+        Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+            return Err("stale_playback_request".into());
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+            return Err("request_busy".into());
+        }
         Err(_) => {
-            if let Some(connection) = state.connection.lock().unwrap().take() {
+            if let Some(connection) = slot.take() {
                 connection.service.stop();
             }
             lazybuddy_host_control::logs::record(
@@ -375,15 +429,62 @@ pub async fn playback_call(
             .unwrap_or("playback_failed")
             .to_owned());
     }
-    if let Some(connection) = state.connection.lock().unwrap().as_mut() {
+    if let Some(connection) = slot.as_mut() {
         if method.starts_with("playback.") {
             connection.lease = resource_session(&reply["data"]);
         }
-        if account_method || method.starts_with("favorites.") {
-            connection.account_pending = reply["data"]["operation"] == "pending";
-        }
     }
     Ok(reply["data"].clone())
+}
+
+async fn finish_work(
+    service: &Session,
+    scope: std::sync::Arc<AtomicU64>,
+    generation: u64,
+    method: &str,
+    args: Value,
+    reply: std::io::Result<Value>,
+) -> std::io::Result<Value> {
+    let reply = reply?;
+    if reply["error"]["code"] == "unknown_method" {
+        return service
+            .request_scoped(
+                json!({"version":1,"id":"web-playback","method":method,"args":args}),
+                scope,
+                generation,
+            )
+            .await;
+    }
+    if reply["ok"] != true {
+        return Ok(reply);
+    }
+    let job = reply["data"]["job"]
+        .as_u64()
+        .ok_or_else(|| std::io::Error::other("invalid media work receipt"))?;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(65);
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let mut result = service
+            .request_scoped(
+                json!({"version":1,"id":"web-playback","method":"work.status","args":{"job":job}}),
+                scope.clone(),
+                generation,
+            )
+            .await?;
+        if result["ok"] != true {
+            return Ok(result);
+        }
+        if result["data"]["pending"] == true {
+            if tokio::time::Instant::now() >= deadline {
+                return Ok(json!({"ok":false,"error":{"code":"work_cancelled"}}));
+            }
+            continue;
+        }
+        return result["data"]
+            .get_mut("reply")
+            .map(Value::take)
+            .ok_or_else(|| std::io::Error::other("missing media work result"));
+    }
 }
 fn resource_session(data: &Value) -> Option<u64> {
     if data["loading"] == true || data["prepared"] == true {
@@ -418,6 +519,8 @@ mod tests {
     #[test]
     fn browser_bridge_only_exposes_media_session_operations() {
         assert!(allowed("playback.open"));
+        assert!(allowed("playback.prefetch"));
+        assert!(allowed("playback.prefetch_cancel"));
         assert!(allowed("account.login"));
         assert!(!allowed("media.open"));
         assert!(!allowed("progress.sync"));

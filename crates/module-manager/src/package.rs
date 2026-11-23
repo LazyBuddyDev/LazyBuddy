@@ -162,7 +162,7 @@ pub fn download_signed_payload(url: &str, public_key: &[u8]) -> io::Result<(Vec<
 
 /// Download a bounded archive. Consumers verify its signed digest before unpacking.
 pub fn download_archive(url: &str, destination: &Path, bytes: u64) -> io::Result<()> {
-    download_archive_progress(url, destination, bytes, &mut |_| {})
+    download_archive_progress(url, destination, bytes, &mut |_| {}, &|| false)
 }
 
 fn copy_download(
@@ -170,12 +170,14 @@ fn copy_download(
     mut destination: impl Write,
     bytes: u64,
     progress: &mut impl FnMut(u64),
+    cancelled: &impl Fn() -> bool,
 ) -> io::Result<()> {
     let mut source = source.take(bytes + 1);
     let mut buffer = [0u8; 65536];
     let mut downloaded = 0;
     let mut reported = Instant::now();
     loop {
+        check_cancelled(cancelled)?;
         let count = source.read(&mut buffer)?;
         if count == 0 {
             break;
@@ -190,8 +192,19 @@ fn copy_download(
             reported = Instant::now();
         }
     }
+    check_cancelled(cancelled)?;
     if downloaded != bytes {
         return Err(invalid("archive download incomplete"));
+    }
+    Ok(())
+}
+
+fn check_cancelled(cancelled: &impl Fn() -> bool) -> io::Result<()> {
+    if cancelled() {
+        return Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "module download cancelled",
+        ));
     }
     Ok(())
 }
@@ -201,6 +214,7 @@ fn download_archive_progress(
     destination: &Path,
     bytes: u64,
     progress: &mut impl FnMut(u64),
+    cancelled: &impl Fn() -> bool,
 ) -> io::Result<()> {
     if !url.starts_with("https://") || bytes == 0 || bytes > 1024 * 1024 * 1024 {
         return Err(invalid("invalid archive download"));
@@ -210,11 +224,18 @@ fn download_archive_progress(
         .create_new(true)
         .open(destination)?;
     let result = (|| {
+        check_cancelled(cancelled)?;
         let mut response = download_agent(Duration::from_secs(1800))
             .get(url)
             .call()
             .map_err(|error| download_error("archive", error))?;
-        copy_download(response.body_mut().as_reader(), &mut file, bytes, progress)?;
+        copy_download(
+            response.body_mut().as_reader(),
+            &mut file,
+            bytes,
+            progress,
+            cancelled,
+        )?;
         file.sync_all()
     })();
     drop(file);
@@ -233,13 +254,14 @@ pub fn verify_catalog(bytes: &[u8], signature: &[u8], public_key: &[u8]) -> io::
         .map_err(|_| invalid("catalog signature invalid"))?;
     let catalog: Catalog =
         serde_json::from_slice(bytes).map_err(|_| invalid("catalog JSON invalid"))?;
-    if catalog.schema != 1 {
+    if catalog.schema != 1 || catalog.packages.len() > 64 {
         return Err(invalid("unsupported catalog version"));
     }
     let mut ids = std::collections::BTreeSet::new();
     for package in &catalog.packages {
         if !valid_id(&package.id)
             || !ids.insert(&package.id)
+            || !lazybuddy_module_contract::version(&package.version)
             || package.target != "windows-x86_64"
             || !package.url.starts_with("https://")
             || package.bytes == 0
@@ -264,8 +286,20 @@ impl Manager {
         &self,
         catalog: &Catalog,
         id: &str,
-        mut progress: impl FnMut(&str, u64, u64),
+        progress: impl FnMut(&str, u64, u64),
     ) -> io::Result<Manifest> {
+        self.install_from_catalog_controlled(catalog, id, progress, || false, |_| Ok(()))
+    }
+
+    pub fn install_from_catalog_controlled<G>(
+        &self,
+        catalog: &Catalog,
+        id: &str,
+        mut progress: impl FnMut(&str, u64, u64),
+        cancelled: impl Fn() -> bool,
+        begin_commit: impl FnOnce(&[Manifest]) -> io::Result<G>,
+    ) -> io::Result<Manifest> {
+        check_cancelled(&cancelled)?;
         let _lock = self.lock()?;
         let mut staged = Vec::new();
         let result = (|| {
@@ -282,12 +316,21 @@ impl Manager {
             let mut downloaded = 0;
             for package in packages {
                 progress("download", downloaded, total);
-                staged.push(self.download_staged(package, &mut |stage, bytes| {
-                    progress(stage, downloaded + bytes, total)
-                })?);
+                staged.push(self.download_staged(
+                    package,
+                    &mut |stage, bytes| progress(stage, downloaded + bytes, total),
+                    &cancelled,
+                )?);
                 downloaded += package.bytes;
             }
+            check_cancelled(&cancelled)?;
             if !staged.is_empty() {
+                let manifests = staged
+                    .iter()
+                    .map(|p| p.manifest.clone())
+                    .collect::<Vec<_>>();
+                let _commit = begin_commit(&manifests)?;
+                check_cancelled(&cancelled)?;
                 progress("install", downloaded, total);
                 self.activate_many(&staged)?;
             }
@@ -301,7 +344,7 @@ impl Manager {
 
     pub fn download_and_install(&self, package: &Package) -> io::Result<Manifest> {
         let _lock = self.lock()?;
-        let staged = self.download_staged(package, &mut |_, _| {})?;
+        let staged = self.download_staged(package, &mut |_, _| {}, &|| false)?;
         let result = self
             .activate_many(std::slice::from_ref(&staged))
             .map(|mut manifests| manifests.remove(0));
@@ -313,6 +356,7 @@ impl Manager {
         &self,
         package: &Package,
         progress: &mut impl FnMut(&str, u64),
+        cancelled: &impl Fn() -> bool,
     ) -> io::Result<crate::Staged> {
         if !valid_id(&package.id) || !package.url.starts_with("https://") {
             return Err(invalid("invalid package download"));
@@ -320,9 +364,14 @@ impl Manager {
         fs::create_dir_all(self.root())?;
         let archive = self.root().join(format!(".download-{}.zip", package.id));
         let result = (|| {
-            download_archive_progress(&package.url, &archive, package.bytes, &mut |bytes| {
-                progress("download", bytes)
-            })?;
+            download_archive_progress(
+                &package.url,
+                &archive,
+                package.bytes,
+                &mut |bytes| progress("download", bytes),
+                cancelled,
+            )?;
+            check_cancelled(cancelled)?;
             progress("verify", package.bytes);
             self.unpack_verified(&archive, package)
         })();
@@ -434,13 +483,23 @@ mod tests {
             &mut output,
             source.len() as u64,
             &mut |n| progress.push(n),
+            &|| false,
         )
         .unwrap();
         assert_eq!(output, source);
         assert_eq!(progress.last(), Some(&150_000));
         assert!(progress.windows(2).all(|p| p[0] < p[1]));
         for expected in [149_999, 150_001] {
-            assert!(copy_download(source.as_slice(), io::sink(), expected, &mut |_| {}).is_err());
+            assert!(
+                copy_download(
+                    source.as_slice(),
+                    io::sink(),
+                    expected,
+                    &mut |_| {},
+                    &|| false
+                )
+                .is_err()
+            );
         }
         struct FailedWriter;
         impl Write for FailedWriter {
@@ -452,12 +511,30 @@ mod tests {
             }
         }
         assert!(
-            copy_download(source.as_slice(), FailedWriter, 150_000, &mut |_| panic!(
-                "failed writes must not report progress"
-            ))
+            copy_download(
+                source.as_slice(),
+                FailedWriter,
+                150_000,
+                &mut |_| panic!("failed writes must not report progress"),
+                &|| false
+            )
             .is_err()
         );
     }
+    #[test]
+    fn cancelled_download_cannot_report_completion() {
+        let mut output = Vec::new();
+        let result = copy_download(
+            &b"data"[..],
+            &mut output,
+            4,
+            &mut |_| panic!("unexpected progress"),
+            &|| true,
+        );
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Interrupted);
+        assert!(output.is_empty());
+    }
+
     #[test]
     fn existing_archive_target_is_preserved_without_network() {
         let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -541,6 +618,22 @@ mod tests {
         assert!(verify_catalog(data, signature.as_ref(), other.public_key().as_ref()).is_err());
     }
 
+    #[test]
+    fn signed_catalog_rejects_noncanonical_versions() {
+        let signer = Ed25519KeyPair::from_seed_unchecked(&[7u8; 32]).unwrap();
+        for version in ["1.00.0", "4294967296.0.0", "1.0.0"] {
+            let bytes = serde_json::to_vec(&serde_json::json!({"schema":1,"packages":[{
+                "id":"news","name":"News","version":version,"target":"windows-x86_64",
+                "url":"https://example.invalid/package.zip","bytes":1,"sha256":"a".repeat(64)
+            }]}))
+            .unwrap();
+            let signature = signer.sign(&bytes);
+            assert_eq!(
+                verify_catalog(&bytes, signature.as_ref(), signer.public_key().as_ref()).is_ok(),
+                version == "1.0.0"
+            );
+        }
+    }
     #[test]
     fn dependencies_are_installed_first_and_cycles_are_rejected() {
         let mut catalog: Catalog = serde_json::from_value(serde_json::json!({"schema":1,"packages":[

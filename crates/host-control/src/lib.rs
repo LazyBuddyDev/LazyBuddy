@@ -40,41 +40,73 @@ fn valid_instance(value: &str) -> bool {
 pub fn isolated() -> bool {
     instance().is_ok_and(|id| id != "default")
 }
+pub fn isolated_credential_scope() -> io::Result<Option<String>> {
+    let name = instance()?;
+    Ok((name != "default").then(|| format!("isolated-{name}")))
+}
+
 pub fn data_dir() -> io::Result<PathBuf> {
-    if instance()? != "default" {
-        let path =
-            PathBuf::from(std::env::var_os("LAZYBUDDY_DATA_DIR").ok_or_else(|| {
-                io::Error::other("isolated instance requires LAZYBUDDY_DATA_DIR")
-            })?);
-        if !path.is_absolute() {
-            return Err(io::Error::other("isolated data directory must be absolute"));
-        }
-        let production = default_data_dir()?;
-        let normalize = |p: &std::path::Path| {
-            std::fs::canonicalize(p)
-                .unwrap_or_else(|_| p.to_path_buf())
-                .to_string_lossy()
-                .replace('\\', "/")
-                .to_ascii_lowercase()
-        };
-        let target = normalize(&path);
-        let production = normalize(&production);
-        if target == production || target.starts_with(&(production + "/")) {
+    let instance = instance()?;
+    if instance == "default" {
+        if std::env::var_os("LAZYBUDDY_DATA_DIR").is_some() {
             return Err(io::Error::other(
-                "isolated data must not use the production data directory",
+                "data directory override requires an isolated instance",
             ));
         }
-        return Ok(path);
+        return default_data_dir();
     }
-    if let Some(path) = std::env::var_os("LAZYBUDDY_DATA_DIR") {
-        let path = PathBuf::from(path);
-        if !path.is_absolute() {
-            return Err(io::Error::other("absolute data directory required"));
+    let path = PathBuf::from(
+        std::env::var_os("LAZYBUDDY_DATA_DIR")
+            .ok_or_else(|| io::Error::other("isolated instance requires LAZYBUDDY_DATA_DIR"))?,
+    );
+    let target = resolve_data_path(&path)?;
+    let production = default_data_dir()?;
+    let preview = production.with_file_name("LazyBuddyShellPreview");
+    for protected in [production, preview] {
+        let protected = resolve_data_path(&protected)?;
+        if PathBuf::from(target.to_string_lossy().to_lowercase())
+            .starts_with(PathBuf::from(protected.to_string_lossy().to_lowercase()))
+        {
+            return Err(io::Error::other(
+                "isolated data must not use a production data directory",
+            ));
         }
-        return Ok(path);
     }
-    default_data_dir()
+    Ok(target)
 }
+
+fn resolve_data_path(path: &std::path::Path) -> io::Result<PathBuf> {
+    use std::path::Component;
+    if !path.is_absolute() || path.components().any(|part| part == Component::ParentDir) {
+        return Err(io::Error::other(
+            "data directory must be absolute without parent components",
+        ));
+    }
+    for parent in path.ancestors() {
+        match std::fs::symlink_metadata(parent) {
+            Ok(_) => {
+                let canonical = parent.canonicalize()?;
+                if !canonical.is_dir() {
+                    return Err(io::Error::other(
+                        "data directory ancestor is not a directory",
+                    ));
+                }
+                let suffix = path.strip_prefix(parent).map_err(io::Error::other)?;
+                return Ok(if suffix.as_os_str().is_empty() {
+                    canonical
+                } else {
+                    canonical.join(suffix)
+                });
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(io::Error::other(
+        "data directory has no accessible ancestor",
+    ))
+}
+
 fn default_data_dir() -> io::Result<PathBuf> {
     #[cfg(windows)]
     let path = std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("LazyBuddy"));
@@ -298,6 +330,27 @@ mod tests {
         assert!(valid_instance("qa_123-ABC"));
         assert!(valid_instance(&"a".repeat(64)));
     }
+    #[test]
+    fn unresolved_children_use_the_real_existing_ancestor() {
+        use std::os::windows::fs::symlink_dir;
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tmp")
+            .canonicalize()
+            .unwrap()
+            .join(format!("qa-host-path-{}", std::process::id()));
+        let actual = dir.join("actual");
+        std::fs::create_dir_all(&actual).unwrap();
+        let alias = dir.join("alias");
+        symlink_dir(&actual, &alias).unwrap();
+        assert_eq!(
+            resolve_data_path(&alias.join("missing/child")).unwrap(),
+            actual.canonicalize().unwrap().join("missing/child")
+        );
+        std::fs::remove_dir(alias).unwrap();
+        std::fs::remove_dir(actual).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
+
     #[test]
     fn protocol_rejects_unknown_fields_and_keeps_explicit_version() {
         assert!(

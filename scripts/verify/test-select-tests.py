@@ -14,6 +14,14 @@ spec.loader.exec_module(selection)
 
 
 class Selection(unittest.TestCase):
+    def test_build_entry_changes_run_windows_powershell_regression_only(self):
+        for path in ('start.bat', 'scripts/build-and-run.ps1', 'scripts/verify/test-build-entry.ps1'):
+            self.assertEqual(selection.plan([path]), [['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/verify/test-build-entry.ps1']])
+
+    def test_cleanup_changes_run_only_the_isolated_cleanup_regression(self):
+        for path in ('cleanup.bat', 'scripts/cleanup.ps1', 'scripts/verify/test-cleanup.ps1'):
+            self.assertEqual(selection.plan([path]), [['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/verify/test-cleanup.ps1']])
+
     def repository(self):
         temporary = tempfile.TemporaryDirectory(prefix='qa-selection-', dir=TMP)
         self.addCleanup(temporary.cleanup)

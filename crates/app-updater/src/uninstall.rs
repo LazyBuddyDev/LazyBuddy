@@ -4,42 +4,86 @@ use lazybuddy_host_control::{Request, call_sync};
 use std::time::SystemTime;
 use windows_sys::{Win32::UI::WindowsAndMessaging::*, core::w};
 
-fn inventory(install: &Path) -> io::Result<Vec<PathBuf>> {
-    let info = build_info(install)?;
-    let mut files = info
-        .files
-        .keys()
-        .map(|name| destination(install, name))
-        .collect::<io::Result<Vec<_>>>()?;
-    files.push(destination(install, INFO)?);
-    Ok(files)
+const PENDING: &str = ".lazybuddy-uninstall.json";
+
+pub(super) fn removal_pending(install: &Path) -> io::Result<bool> {
+    match fs::symlink_metadata(install.join(PENDING)) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
 }
 
-fn remove_files(install: &Path) -> io::Result<()> {
-    // Validate the complete inventory before removing any file; never recurse on the install root.
-    let files = inventory(install)?;
-    let mut directories = std::collections::BTreeSet::new();
-    for file in &files {
-        let mut parent = file.parent();
-        while let Some(directory) = parent {
-            if directory == install {
-                break;
-            }
-            directories.insert(directory.to_owned());
-            parent = directory.parent();
+fn inventory(install: &Path) -> io::Result<BuildInfo> {
+    plain(install)?;
+    if !removal_pending(install)? {
+        return build_info(install);
+    }
+    let journal = install.join(PENDING);
+    plain(&journal)?;
+    let info = read_build_info(&journal)?;
+    for (name, expected) in &info.files {
+        let file = destination(install, name)?;
+        match file_digest(&file) {
+            Ok(actual) if actual == *expected => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            _ => return Err(invalid("remaining installation file changed")),
         }
     }
-    for file in files {
-        fs::remove_file(file)?;
+    let marker = destination(install, INFO)?;
+    match fs::symlink_metadata(&marker) {
+        Ok(_) if read_build_info(&marker)? != info => {
+            return Err(invalid("installation inventory changed"));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    Ok(info)
+}
+
+fn remove_if_present(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        result => result,
+    }
+}
+
+fn remove_files(install: &Path, before_final: impl FnOnce() -> io::Result<()>) -> io::Result<()> {
+    let info = inventory(install)?;
+    let journal = install.join(PENDING);
+    if !removal_pending(install)? {
+        atomic_write(&journal, |file| {
+            serde_json::to_writer(file, &info).map_err(io::Error::other)
+        })?;
+    }
+    let mut directories = std::collections::BTreeSet::new();
+    for name in info
+        .files
+        .keys()
+        .filter(|name| name.as_str() != "uninstall.exe")
+    {
+        let file = destination(install, name)?;
+        for parent in file.ancestors().skip(1).take_while(|path| *path != install) {
+            directories.insert(parent.to_owned());
+        }
+        remove_if_present(&file)?;
     }
     for directory in directories.iter().rev() {
         match fs::remove_dir(directory) {
             Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::DirectoryNotEmpty => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::DirectoryNotEmpty | io::ErrorKind::NotFound
+                ) => {}
             Err(error) => return Err(error),
         }
     }
-    Ok(())
+    remove_if_present(&destination(install, INFO)?)?;
+    before_final()?;
+    remove_if_present(&destination(install, "uninstall.exe")?)?;
+    remove_if_present(&journal)
 }
 
 fn stop_host(install: &Path, stage: &Path) -> io::Result<()> {
@@ -219,6 +263,7 @@ struct Removal {
 
 pub fn start(quiet: bool, mut modules: bool) -> io::Result<()> {
     let install = std::env::current_exe()?.parent().unwrap().canonicalize()?;
+    let resuming = removal_pending(&install)?;
     inventory(&install)?;
     if !quiet {
         if dialog(
@@ -228,13 +273,15 @@ pub fn start(quiet: bool, mut modules: bool) -> io::Result<()> {
         {
             return Ok(());
         }
-        match dialog(
-            "是否同时移除已下载的功能模块和运行时？\n这些资源由当前用户的所有 LazyBuddy 安装共享。\n选择“否”仅卸载主程序，仍保留账号和设置。",
-            MB_YESNOCANCEL | MB_DEFBUTTON2 | MB_ICONQUESTION,
-        ) {
-            IDYES => modules = true,
-            IDNO => modules = false,
-            _ => return Ok(()),
+        if !resuming {
+            match dialog(
+                "是否同时移除已下载的功能模块和运行时？\n这些资源由当前用户的所有 LazyBuddy 安装共享。\n选择“否”仅卸载主程序，仍保留账号和设置。",
+                MB_YESNOCANCEL | MB_DEFBUTTON2 | MB_ICONQUESTION,
+            ) {
+                IDYES => modules = true,
+                IDNO => modules = false,
+                _ => return Ok(()),
+            }
         }
     }
     let nonce = SystemTime::now()
@@ -292,19 +339,31 @@ pub fn apply(job: &Path) -> io::Result<()> {
     plain(&stage)?;
     let removal: Removal = read_json(job)?;
     let result = (|| {
+        plain(&removal.install)?;
+        let lock_path = removal.install.join(INSTALL_LOCK);
+        let lock = windows::lock(&lock_path)?;
+        if removal.install.join(RECOVERY).join(JOURNAL).exists() {
+            return Err(invalid("finish update recovery before uninstalling"));
+        }
         inventory(&removal.install)?;
+        let resuming = removal_pending(&removal.install)?;
         windows::wait_parent(
             removal.parent,
             &removal.install.join("uninstall.exe"),
             &stage.join("ready"),
         )?;
         stop_host(&removal.install, &stage)?;
-        if removal.modules {
-            remove_modules(&removal.install)?;
+        if !resuming {
+            if removal.modules {
+                remove_modules(&removal.install)?;
+            }
+            clear_startup(&removal.install)?;
         }
-        clear_startup(&removal.install)?;
-        remove_files(&removal.install)?;
-        clear_install_registration(&removal.install)?;
+        remove_files(&removal.install, || {
+            clear_install_registration(&removal.install)
+        })?;
+        drop(lock);
+        let _ = remove_if_present(&lock_path);
         match fs::remove_dir(&removal.install) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == io::ErrorKind::DirectoryNotEmpty => Ok(()),
@@ -391,7 +450,7 @@ mod tests {
         let install = root.0.join("app");
         fixture(&install, "fixture");
         fs::write(install.join("personal.txt"), b"keep").unwrap();
-        remove_files(&install).unwrap();
+        remove_files(&install, || Ok(())).unwrap();
         assert_eq!(fs::read(install.join("personal.txt")).unwrap(), b"keep");
         assert!(!install.join("lazybuddy.exe").exists());
         assert!(!install.join("uninstall.exe").exists());
@@ -403,7 +462,7 @@ mod tests {
         let install = root.0.join("app");
         fixture(&install, "fixture");
         fs::write(install.join("lazybuddy-cli.exe"), b"changed").unwrap();
-        assert!(remove_files(&install).is_err());
+        assert!(remove_files(&install, || Ok(())).is_err());
         assert!(install.join("lazybuddy.exe").exists());
         fs::remove_file(install.join("lazybuddy-cli.exe")).unwrap();
         symlink_file(
@@ -411,7 +470,7 @@ mod tests {
             install.join("lazybuddy-cli.exe"),
         )
         .unwrap();
-        assert!(remove_files(&install).is_err());
+        assert!(remove_files(&install, || Ok(())).is_err());
         assert!(install.join("lazybuddy.exe").exists());
         fs::remove_file(install.join("lazybuddy-cli.exe")).unwrap();
     }
@@ -421,8 +480,30 @@ mod tests {
         let install = root.0.join("app");
         fixture(&install, "fixture");
         fs::write(install.join("uninstall.exe"), b"changed").unwrap();
-        assert!(remove_files(&install).is_err());
+        assert!(remove_files(&install, || Ok(())).is_err());
         assert!(install.join("lazybuddy.exe").exists());
+    }
+    #[test]
+    fn locked_file_can_be_retried_from_the_verified_inventory() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = Temporary::new();
+        let install = root.0.join("app");
+        fixture(&install, "fixture");
+        let locked = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(install.join("module-catalog.json"))
+            .unwrap();
+        assert!(remove_files(&install, || Ok(())).is_err());
+        assert!(removal_pending(&install).unwrap());
+        assert!(!install.join("lazybuddy.exe").exists());
+        assert!(install.join("uninstall.exe").exists());
+        drop(locked);
+        fs::write(install.join("personal.txt"), b"keep").unwrap();
+        remove_files(&install, || Ok(())).unwrap();
+        assert!(!removal_pending(&install).unwrap());
+        assert!(!install.join("uninstall.exe").exists());
+        assert_eq!(fs::read(install.join("personal.txt")).unwrap(), b"keep");
     }
     #[test]
     fn startup_cleanup_matches_only_this_installation() {

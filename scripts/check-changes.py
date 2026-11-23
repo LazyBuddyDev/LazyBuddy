@@ -24,6 +24,8 @@ def plan(paths, root=ROOT):
                 python_tests.add(name)
         if name in ('scripts/check-changes.py', '.github/workflows/checks.yml'):
             python_tests.add('scripts/verify/test-select-tests.py')
+        if name in ('scripts/release-signing.py', '.github/workflows/release-signing.yml', 'scripts/verify/test-release-signing.py'):
+            python_tests.add('scripts/verify/test-release-signing.py')
         if name in ('scripts/package_base.py', 'scripts/create-app-update.py', 'scripts/sign-update.py'):
             python_tests.add('scripts/verify/test-app-release.py')
         if name.startswith('docs/updates/') or name == 'app-update-source.json':
@@ -53,6 +55,10 @@ def plan(paths, root=ROOT):
     if 'Cargo.lock' in paths or 'Cargo.toml' in paths:
         checks.update(members.values())  # Compile interfaces; do not run unrelated tests.
     commands = []
+    if any(name in paths for name in ('start.bat', 'scripts/build-and-run.ps1', 'scripts/verify/test-build-entry.ps1')):
+        commands.append(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/verify/test-build-entry.ps1'])
+    if any(name in paths for name in ('cleanup.bat', 'scripts/cleanup.ps1', 'scripts/verify/test-cleanup.ps1')):
+        commands.append(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/verify/test-cleanup.ps1'])
     if checks:
         commands.append(['cargo', 'check', '--locked', *[arg for package in sorted(checks) for arg in ('-p', package)]])
     for package, module in sorted(units):

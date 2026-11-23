@@ -1,3 +1,7 @@
+.attention-anchor { position: relative; }
+.attention-dot { position:absolute;right:2px;top:2px;width:7px;height:7px;border-radius:50%;background:#e34b4b;visibility:hidden;pointer-events:none; }
+.attention-dot.attention-inline { position:relative;right:auto;top:auto;display:inline-block;flex-shrink:0;width:7px;height:7px;margin-left:6px;align-self:center; }
+.attention-dot.attention-unread { visibility:visible; }
 :root {
   font-family: "Segoe UI Variable Text", "Microsoft YaHei UI", sans-serif;
   color: #27352f;
@@ -690,12 +694,13 @@ li button:hover {
 }
 .video-stage:hover .video-top,
 .video-stage:hover .video-bottom,
-.video-stage:focus-within .video-top,
-.video-stage:focus-within .video-bottom,
+.video-stage:has(:focus-visible) .video-top,
+.video-stage:has(:focus-visible) .video-bottom,
 .video-stage.paused .video-top,
 .video-stage.paused .video-bottom {
   opacity: 1;
 }
+.video-stage:has(select:open) :is(.video-top, .video-bottom) { opacity: 1; }
 .seek {
   width: 100%;
   height: 3px;
@@ -845,7 +850,7 @@ li button:hover {
   .toolbar nav {
     margin-left: auto;
   }
-  .toolbar nav button span {
+  .toolbar nav button span:not(.attention-dot) {
     display: none;
   }
   .toolbar .divider {
@@ -1109,3 +1114,5 @@ dialog.dialog-surface::backdrop{background:#0005}
 .video-controls{flex-wrap:wrap}.video-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .feature-error{font-size:12px;margin:12px 14px;overflow-wrap:anywhere;color:var(--danger)}
+
+.video-top .video-title { flex: 1; min-width: 0; }

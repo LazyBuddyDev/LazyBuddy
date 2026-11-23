@@ -1,5 +1,6 @@
 param([switch]$BuildOnly,[switch]$Release,[switch]$LaunchOnly,[string]$ServicePackages,[string]$ModulePackages)
 $ErrorActionPreference='Stop'
+if($ServicePackages -and (!$env:LAZYBUDDY_INSTANCE -or $env:LAZYBUDDY_INSTANCE -eq 'default' -or !$env:LAZYBUDDY_DATA_DIR)){throw 'ServicePackages requires an isolated instance and data directory.'}
 if($BuildOnly -and $LaunchOnly){throw 'BuildOnly and LaunchOnly cannot be combined.'}
 $repoRoot=Split-Path -Parent $PSScriptRoot
 $profile=if($Release){'release'}else{'debug'}
@@ -21,7 +22,12 @@ function Stop-BuildHost($Status){
     if(!$quit -or !$quit.ok -or !$hostProcess.WaitForExit(30000)){throw 'Host did not exit normally; files and modules were not replaced.'}
 }
 Push-Location $repoRoot
+$savedConsoleEncoding=[Console]::OutputEncoding
+$savedOutputEncoding=$OutputEncoding
 try{
+    # Windows PowerShell otherwise decodes native UTF-8 JSON with the console code page.
+    [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
+    $OutputEncoding=[Console]::OutputEncoding
     if(!$LaunchOnly){
         if(!(Test-Path apps/desktop/node_modules/.bin/vite.cmd)){
             npm.cmd --prefix apps/desktop ci --legacy-peer-deps --no-audit --no-fund
@@ -94,4 +100,4 @@ try{
         Write-Host 'LazyBuddy started. Optional functions are managed in the app.'
     }finally{$env:LAZYBUDDY_BROWSER_PACKAGES=$savedPackages}
 }catch{Write-Host ('ERROR: '+$_.Exception.Message) -ForegroundColor Red;exit 1}
-finally{Pop-Location}
+finally{[Console]::OutputEncoding=$savedConsoleEncoding;$OutputEncoding=$savedOutputEncoding;Pop-Location}

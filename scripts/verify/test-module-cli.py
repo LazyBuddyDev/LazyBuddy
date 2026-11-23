@@ -21,7 +21,7 @@ class ModuleTests(unittest.TestCase):
             package = directory / 'package'
             (package / 'bin').mkdir(parents=True)
             shutil.copyfile(ROOT / 'contracts/fixtures/feature.json', package / 'module.json')
-            environment = dict(os.environ, LAZYBUDDY_DATA_DIR=str(directory / 'data'))
+            environment = dict(os.environ, LAZYBUDDY_INSTANCE='qa-module-cli', LAZYBUDDY_DATA_DIR=str(directory / 'data'))
 
             def run(*args, success=True):
                 result = subprocess.run([str(CLI), *args], env=environment, capture_output=True,

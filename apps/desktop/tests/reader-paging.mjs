@@ -30,7 +30,7 @@ try{
     return {x:e.scrollLeft,y:e.scrollTop,w:e.getBoundingClientRect().width,h:e.clientHeight,sw:e.scrollWidth,sh:e.scrollHeight,anchor:visibleAnchor(e),ids:[...e.querySelectorAll('[data-block]')].map(n=>Number(n.dataset.block.slice(1)))};
   });
   const key=async direction=>{await scroll.focus();await page.keyboard.press(direction>0?'ArrowRight':'ArrowLeft');await page.waitForFunction(()=>document.querySelector('.reader-scroll')?.getAttribute('aria-busy')==='false');};
-  await page.getByRole('button',{name:'目录',exact:true}).focus();await page.keyboard.press('Tab');
+  await page.getByRole('button',{name:'章节目录',exact:true}).focus();await page.keyboard.press('Tab');
   assert.equal(await scroll.evaluate(e=>document.activeElement===e),true);
   assert.equal(await scroll.evaluate(e=>getComputedStyle(e).outlineWidth),'2px','Tab retains a visible keyboard focus cue');
   await scroll.click({position:{x:5,y:5}});
@@ -59,7 +59,7 @@ try{
   let bounded=await state();assert.equal(bounded.ids.length,288);assert.equal(bounded.ids[0],96);assert.equal(bounded.ids.at(-1),383);
   await edge(-1);bounded=await state();assert.equal(bounded.ids[0],0);assert.equal(bounded.ids.length,288);
   assert.ok(bounded.ids.every((id,i)=>id===bounded.ids[0]+i),'rendered chunks are contiguous');
-  await page.getByRole('button',{name:'目录',exact:true}).click();
+  await page.getByRole('button',{name:'章节目录',exact:true}).click();
   await page.getByRole('navigation',{name:'章节目录'}).getByRole('button',{name:'第2章 布局检查',exact:true}).click();
   await page.getByRole('heading',{name:'第2章 布局检查',exact:true}).waitFor();
   await key(-1);await page.getByRole('heading',{name:'第1章 布局检查',exact:true}).waitFor();
@@ -109,13 +109,16 @@ try{
   const chapterTwo=page.getByRole('navigation',{name:'章节目录'}).getByRole('button',{name:'第2章 布局检查',exact:true});
   await chapterTwo.click();await page.getByRole('heading',{name:'第2章 布局检查',exact:true}).waitFor();
   await page.waitForFunction(()=>document.querySelector('.reader-scroll')?.getAttribute('aria-busy')==='false');
+  const buttonAppearance=()=>page.locator('main .reader-content button').evaluateAll(
+    buttons=>buttons.map(b=>({disabled:b.disabled,opacity:getComputedStyle(b).opacity})),
+  );
+  const readyButtons=await buttonAppearance();
   await page.evaluate(()=>window.fixtureHoldChapter=true);
   await scroll.focus();await page.keyboard.press('ArrowLeft');
   await page.waitForFunction(()=>window.fixtureChapterPending?.length===1);
   assert.equal(await page.locator('[data-reader-snapshot]').count(),1,'one old page remains visible while the next chapter loads');
   assert.match(await page.locator('[data-reader-snapshot]').textContent(),/第2章 布局检查/);
-  const busyButtons=await page.locator('main .reader-content button').evaluateAll(buttons=>buttons.map(b=>({disabled:b.disabled,opacity:getComputedStyle(b).opacity})));
-  assert.ok(busyButtons.every(b=>!b.disabled&&b.opacity==='1'),'turning does not gray buttons or remove their focusability');
+  assert.deepEqual(await buttonAppearance(),readyButtons,'turning does not change button appearance or focusability');
   const pendingBefore=await page.evaluate(()=>window.fixtureCalls.filter(c=>c.command==='reader_call').length);
   await page.evaluate(()=>{document.querySelector('.reader-navigation button:last-child').click();document.querySelector('.reader-directory button').click();document.querySelector('.reader-content .collection-toolbar button').click();});
   assert.equal(await page.evaluate(()=>window.fixtureCalls.filter(c=>c.command==='reader_call').length),pendingBefore,'busy guards still prevent duplicate or conflicting actions');

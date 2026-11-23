@@ -4,6 +4,7 @@ use std::{fs, io, path::Path};
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Preferences {
+    pub attention_receipts: std::collections::BTreeMap<String, String>,
     #[serde(default = "enabled")]
     pub auto_update: bool,
     pub window: Option<[i32; 4]>,
@@ -25,6 +26,7 @@ fn default_opacity() -> f32 {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            attention_receipts: Default::default(),
             auto_update: true,
             window: None,
             shortcut: Default::default(),
@@ -89,6 +91,16 @@ impl Drop for Writer {
 }
 
 impl Preferences {
+    pub fn valid_attention(&self) -> bool {
+        self.attention_receipts.len() <= 2048
+            && self.attention_receipts.iter().all(|(key, value)| {
+                !key.is_empty()
+                    && key.len() <= 240
+                    && !value.is_empty()
+                    && value.len() <= 160
+                    && !key.chars().chain(value.chars()).any(char::is_control)
+            })
+    }
     pub fn load(path: &Path) -> io::Result<Self> {
         if fs::metadata(path).is_ok_and(|metadata| metadata.len() > 1024 * 1024) {
             return Err(io::Error::other("preferences file too large"));
@@ -97,6 +109,7 @@ impl Preferences {
             Ok(bytes) if bytes.len() <= 1024 * 1024 => {
                 let value: Self = serde_json::from_slice(&bytes).map_err(io::Error::other)?;
                 if value.shortcut.supported()
+                    && value.valid_attention()
                     && value.window.is_none_or(|[x, y, w, h]| {
                         (-100_000..=100_000).contains(&x)
                             && (-100_000..=100_000).contains(&y)
@@ -137,6 +150,23 @@ mod tests {
         assert!(old.auto_update && old.dark);
         let disabled: Preferences = serde_json::from_str(r#"{"auto_update":false}"#).unwrap();
         assert!(!disabled.auto_update);
+        assert!(old.attention_receipts.is_empty());
+    }
+    #[test]
+    fn attention_receipts_round_trip_and_reject_oversized_or_control_data() {
+        let mut p = Preferences::default();
+        p.attention_receipts
+            .insert("modules/update:sample".into(), "1.2.3".into());
+        let restored: Preferences =
+            serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(p.attention_receipts, restored.attention_receipts);
+        assert!(restored.valid_attention());
+        p.attention_receipts
+            .insert("invalid\nkey".into(), "1".into());
+        assert!(!p.valid_attention());
+        p.attention_receipts.clear();
+        p.attention_receipts.insert("key".into(), "x".repeat(161));
+        assert!(!p.valid_attention());
     }
     #[test]
     fn malformed_settings_are_not_replaced_with_defaults() {

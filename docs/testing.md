@@ -2,6 +2,8 @@
 
 新增功能带对应单元测试，只跑受影响范围，不默认执行全工作区或全量界面回归。主仓库测试宿主和 API 边界，独立服务维护业务与媒体处理测试。
 
+提醒核心用`node --experimental-strip-types --test apps/desktop/tests/attention.test.ts`；保存边界用`cargo test --locked -p lazybuddy preferences::tests`。无头入口`node apps/desktop/tests/attention-page.mjs`检查来源聚合、悬停/键盘确认、重载持久化、新版本/构建、保存失败回滚和隐藏隔离，使用本地样例，不访问账号；报告与浅深主题截图在`tmp/verification-attention`。应用更新就绪与目录变化样例不代替真实线上下载验收。
+
 ```powershell
 npm.cmd --prefix apps/desktop run check
 npm.cmd --prefix apps/desktop test
@@ -25,6 +27,7 @@ cargo test --locked -p lazybuddy host::tests
 | 画面点击、音量浮层与媒体快捷键 | `apps/desktop/tests/video-click.mjs` |
 | 公共焦点输入方式、指针+按键、Tab/ShiftTab、编辑/录入与监听清理 | `apps/desktop/tests/focus-navigation.mjs`、`apps/desktop/tests/focus-navigation.test.ts` |
 | 来源选择、分页重置、同书号隔离、正文派发及App接入端声明（旧网页试读来源隐藏） | `apps/desktop/tests/reader-sources.mjs` |
+| 书架和浏览记录按页读取、跨页筛选、返回缓存、旧包兼容与迟到隔离 | `apps/desktop/tests/reader-library.mjs` |
 | 书页方向键、三种模式、重排锚点、有界分块、章节边界与静默 | `apps/desktop/tests/reader-paging.mjs` |
 | 内容及设置的公共行、标签、下拉框、工具栏、宽窄窗口和浅深主题 | `apps/desktop/tests/ui-consistency.mjs` |
 | 功能设置页签、全局设置隔离、局部透明度保存与静默 | `apps/desktop/tests/feature-settings.mjs` |
@@ -59,4 +62,8 @@ host 驱动安装外部新闻包，预置新鲜合成新闻缓存，验证 API�
 
 生命周期改动定向覆盖 A→B、A→B→A、设置切换与隐藏恢复。核对旧视图不再派发、迟到结果隔离、恢复无重复请求，且托盘、热键及相关宿主订阅继续工作。清理验证产物按[文件放置规范](file-layout.md#命名和迁移)执行。
 
-轻量视频页面的定向入口：`node apps/desktop/tests/bilibili-page.mjs`使用显式样例媒体状态，检查页签缓存、选集CID派发、设置、隐藏和迟到隔离。`node apps/desktop/tests/bilibili-live.mjs <独立服务EXE绝对路径> <已明确授权的隔离凭据scope>`使用实际组件与官方服务，验证推荐/动态、真实画面与PCM、倍速、第二P和隐藏断流；此入口访问真实账号，不能默认运行或传入生产scope，音频输出在测试音频图中静默，报告不包含账号名或资源地址。它不代替原生宿主的实机视觉/扬声器验收。
+轻量视频页面的定向入口：`node apps/desktop/tests/bilibili-page.mjs`使用显式样例媒体状态，检查未登录零内容请求、登录恢复/过期清除、公共播放器按钮顺序、进度预览/提交、手动重试保留位置、浅深/窄窗/长标题截图、页签缓存、选集CID派发、设置、隐藏和迟到隔离。`node apps/desktop/tests/video-click.mjs --capture-layout`核对另一媒体页面使用相同控制组件后的本地播放、音量和布局，截图统一输出至`tmp/verification-media-controls/`。`node apps/desktop/tests/bilibili-live.mjs <独立服务EXE绝对路径> <已明确授权的隔离凭据scope>`使用实际组件与官方服务，验证推荐/动态、真实画面与PCM、倍速、第二P和隐藏断流；此入口访问真实账号，不能默认运行或传入生产scope，音频输出在测试音频图中静默，报告不包含账号名或资源地址。它不代替原生宿主的实机视觉/扬声器验收。
+
+`node apps/desktop/tests/hongguo-prefetch.mjs`使用本地真实媒体与固定600ms模拟准备延迟，对比普通打开和预加载接用时真实EOS到下一集首帧的耗时，检查单次预加载、最终断点只提交一次、隐藏零派发及恢复不自播。结果位于`tmp/verification-hongguo-prefetch/timings.json`；模拟延迟不是线上性能数据，来源和权限边界由独立服务测试维护。
+
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify/test-build-entry.ps1`使用与BAT相同的Windows PowerShell5.1，验证正常退出边界，并以原生UTF-8 JSON复现CP936解码失败及构建入口编码修复；无需真实账号或媒体请求。
