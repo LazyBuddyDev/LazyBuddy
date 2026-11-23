@@ -4,7 +4,7 @@
 
 | 要做什么 | 说明 |
 | --- | --- |
-| 判断一个文件应该放哪里 | [文件放置规范](file-layout.md) |
+| 判断一个文件应该放哪里 | [文件放置规范](file-layout.md)，含[开发方案模板](file-layout.md#开发方案) |
 | 理解宿主、模块和独立服务的边界 | [架构](architecture.md) |
 | 开发一致的外观、控件和公共交互 | [UI规范](ui-guidelines.md) |
 | 本地构建、启动、管理模块或调用CLI | [构建与CLI](cli.md) |
@@ -14,7 +14,9 @@
 | 维护主程序更新与替换 | [应用更新](app-updates.md) |
 | 构建安装向导、安装及卸载主程序 | [Windows安装与卸载](uninstall.md) |
 
-业务接口分别由[新闻服务](https://github.com/LazyBuddyDev/news-service/blob/main/docs/module-api.md)、[红果服务](https://github.com/LazyBuddyDev/hongguo-service/blob/main/docs/module-api.md)、[阅读服务](https://github.com/LazyBuddyDev/reader-service/blob/main/docs/module-api.md)及[B站服务](https://github.com/LazyBuddyDev/bilibili-service/blob/main/docs/module-api.md)维护，宿主不保留整份副本。
+## 服务契约
+
+业务接口分别由[新闻服务](https://github.com/LazyBuddyDev/news-service/blob/main/docs/module-api.md)、[红果服务](https://github.com/LazyBuddyDev/hongguo-service/blob/main/docs/module-api.md)、[阅读服务](https://github.com/LazyBuddyDev/reader-service/blob/main/docs/module-api.md)及[B站服务](https://github.com/LazyBuddyDev/bilibili-service/blob/main/docs/module-api.md)维护，宿主不保留整份副本。红果的资源会话与取源约束另见[浏览器播放契约](https://github.com/LazyBuddyDev/hongguo-service/blob/main/docs/browser-playback.md)。
 
 新增小说来源前，遵循阅读服务的[来源接入与验收规范](https://github.com/LazyBuddyDev/reader-service/blob/main/docs/module-api.md#来源接入与验收规范)，分别验证网页、App等实际接入端的免费范围与章节权限。
 
