@@ -3,6 +3,7 @@
   import {invoke} from '@tauri-apps/api/core';
   import Icon from './Icon.svelte';import Cover from './Cover.svelte';
   import Switch from './Switch.svelte';import MediaControls from './MediaControls.svelte';
+  import {danmakuTimeline,DANMAKU_DURATION_MS,type Danmaku} from './hongguo';
   import {coverPixels,watchedLabel,filterFavorites,loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails,playerPreferences,type CoverData,type Account,type Item,type Playback} from './hongguo';
   let {active,showing,accountOnly,generation=0,notice,settingsChange}: {active:boolean;showing:boolean;accountOnly:boolean;generation?:number;notice:(text:string)=>void;settingsChange:(settings:boolean)=>void}=$props();
   function savedPlayer(){try{return playerPreferences(JSON.parse(localStorage.getItem('lazybuddy.hongguo.player')??'null'));}catch{return playerPreferences(null);}}
@@ -21,6 +22,8 @@
   let visibleItems=$derived(tab==='search'?items:visibleFavorites);
   let selected=$state<Item>();let episode=$state(1);let episodes=$state<number[]>([]);let quality=$state('720p');let qualities=$state<string[]>([]);
   let source=$state<string>();let lease:number|undefined;let video=$state<HTMLVideoElement>(undefined!);
+  let danmakuEnabled=$state(false);let danmakuSession=$state<number>();
+  let danmakuItems=$state<ReturnType<typeof danmakuTimeline>>([]);
   let playing=$state(false);let position=$state(0);let duration=$state(0);let muted=$state(saved.mute);let volume=$state(saved.volume);let speed=$state(saved.speed);
   let muteChosen=$state(saved.muteChosen);
   let playerLoading=$state(false);let seeking=$state<number|null>(null);
@@ -57,6 +60,31 @@
   function hold(event:PointerEvent){if(event.button!==2||!live||!playing)return;video.setPointerCapture(event.pointerId);const ticket=epoch;boostTimer=setTimeout(()=>{if(valid(ticket)&&!video.paused){boosted=true;video.playbackRate=2;}},400);}
   function release(event:PointerEvent){if(event.button!==2)return;const accelerated=boosted;resetBoost();if(!accelerated&&live&&playing)seekRelative(5);}
   const raw=<T,>(method:string,args:Record<string,unknown>={})=>invoke<T>('playback_call',{method,args,direct,generation});
+  $effect(()=>{
+    const session=danmakuSession;
+    danmakuItems=[];
+    if(!active||!live||!danmakuEnabled||session===undefined)return;
+    let cancelled=false;
+    let retry:ReturnType<typeof setTimeout>|undefined;
+    async function pollDanmaku(){
+      try{
+        const data=await raw<{pending?:boolean;items?:Danmaku[];error?:string}>('danmaku.read',{session});
+        if(cancelled||!active||!live||!danmakuEnabled||session!==danmakuSession)return;
+        if(data.pending){retry=setTimeout(pollDanmaku,200);return;}
+        if(data.error)throw new Error(data.error);
+        danmakuItems=danmakuTimeline(data.items??[]);
+        if(!danmakuItems.length)notice('本集暂无弹幕');
+      }catch{
+        if(!cancelled&&active&&live&&danmakuEnabled&&session===danmakuSession)notice('弹幕加载失败');
+      }
+    }
+    untrack(()=>void pollDanmaku());
+    return ()=>{cancelled=true;clearTimeout(retry);};
+  });
+  function toggleDanmaku(){
+    danmakuEnabled=!danmakuEnabled;
+    if(!danmakuEnabled&&danmakuSession!==undefined)void raw('danmaku.cancel',{session:danmakuSession}).catch(()=>{});
+  }
   async function changeConnection(value:boolean){
     const previousGeneration=generation;await suspend(false);
     if(!active||generation!==previousGeneration)return;
@@ -86,7 +114,7 @@
     const data=await raw<Playback>('playback.checkpoint',{session:lease,position:watched,duration,final});
     if(data.progress_error)notice('观看进度保存失败');
   }
-  function detach(){seeking=null;resetBoost();cancelMetadata?.();stopFrames();frameTarget=null;playing=false;if(video){video.pause();video.removeAttribute('src');video.load();}source=undefined;}
+  function detach(){danmakuSession=undefined;seeking=null;resetBoost();cancelMetadata?.();stopFrames();frameTarget=null;playing=false;if(video){video.pause();video.removeAttribute('src');video.load();}source=undefined;}
   export async function suspend(retain=false){
     const wasLive=live;resetBoost();live=false;epoch++;playRequest++;clearTimeout(timer);timer=undefined;
     if(favoritesPending){favoritesReady=false;favoritesPending=false;favoriteChange=null;}
@@ -113,6 +141,7 @@
     duration=element.duration;element.playbackRate=speed;position=Math.min(position,Math.max(0,duration-.05));frameTarget=position;frames();element.currentTime=position;
     const actual=qualities.find(value=>Number.parseInt(value)===Math.min(element.videoWidth,element.videoHeight));
     if(actual)quality=actual;
+    danmakuSession=data.danmaku?data.session:undefined;
   }
   async function activate(){
     live=true;const ticket=++epoch;
@@ -253,8 +282,19 @@
   {:else if mode==='player'}
     <section class="player-page"><div class="video-stage" class:paused={!playing}>
       <video class="focus-inset" role="button" tabindex="0" onclick={toggle} onkeydown={event=>{if(event.code==='Enter'&&!event.repeat){event.preventDefault();void toggle();}}} onpointerdown={hold} onpointerup={release} onpointercancel={resetBoost} onlostpointercapture={resetBoost} oncontextmenu={event=>event.preventDefault()} bind:this={video} src={source} preload="metadata" crossorigin="anonymous" playsinline bind:muted bind:volume ontimeupdate={()=>{if(video.readyState>0&&seeking===null&&frameTarget===null)position=video.currentTime;}} onplay={()=>{if(!live){video.pause();return;}playing=true;frames();}} onpause={()=>{seeking=null;resetBoost();playing=false;stopFrames();}} onended={ended} onerror={videoError} aria-label="红果短剧视频"><track kind="captions"/></video>
+      {#if active&&live&&danmakuEnabled&&danmakuSession!==undefined&&danmakuItems.length}
+        <div class="danmaku-overlay" aria-hidden="true">
+          {#each danmakuItems.filter(item=>position*1000>=item.offset_ms&&position*1000<item.offset_ms+DANMAKU_DURATION_MS) as item (item)}
+            {@const progress=(position*1000-item.offset_ms)/DANMAKU_DURATION_MS*100}
+            <span style:top={`${item.lane*22}px`} style:left={`${100-progress}%`} style:transform={`translateX(-${progress}%)`}>{item.text}</span>
+          {/each}
+        </div>
+      {/if}
       <MediaControls title={`${selected?.title??''} 第${episode}集`} {playing} loading={playerLoading} failed={playbackError} {position} {duration} bind:seeking seekable={!!source} previousDisabled={adjacent(episodes,episode,-1)===undefined} nextDisabled={adjacent(episodes,episode,1)===undefined} onback={leavePlayer} ontoggle={toggle} onprevious={()=>{const value=adjacent(episodes,episode,-1);if(value!==undefined)void changeEpisode(value);}} onnext={()=>{const value=adjacent(episodes,episode,1);if(value!==undefined)void changeEpisode(value);}} onseek={commitSeek} {volume} {muted} onmute={()=>{muteChosen=true;muted=!muted;}} onvolume={setVolume}>
-        {#snippet headerActions()}<button class="video-favorite" aria-label={isFavorite(selected?.id)?'取消收藏':'收藏'} title={isFavorite(selected?.id)?'取消收藏':'收藏'} onclick={()=>selected&&favorite(selected)} disabled={account.operation==='pending'}><Icon name="star" filled={isFavorite(selected?.id)}/></button>{/snippet}
+        {#snippet headerActions()}
+          <button class="video-danmaku" aria-label="弹幕" aria-pressed={danmakuEnabled} title={danmakuEnabled?'隐藏弹幕':'显示弹幕'} disabled={danmakuSession===undefined} onclick={toggleDanmaku}>弹幕</button>
+          <button class="video-favorite" aria-label={isFavorite(selected?.id)?'取消收藏':'收藏'} title={isFavorite(selected?.id)?'取消收藏':'收藏'} onclick={()=>selected&&favorite(selected)} disabled={account.operation==='pending'}><Icon name="star" filled={isFavorite(selected?.id)}/></button>
+        {/snippet}
         {#snippet menus()}
           {#if episodes.length}<select aria-label="选集" title="选集" value={episode} onchange={event=>changeEpisode(Number(event.currentTarget.value))}>{#each episodes as value}<option value={value}>第{value}集</option>{/each}</select>{/if}
           <select aria-label="清晰度" title="清晰度" value={quality} onchange={event=>changeQuality(event.currentTarget.value)}>{#each qualities.length?qualities:['360p','480p','720p','1080p'] as value}<option value={value}>{value}</option>{/each}</select>
@@ -280,5 +320,9 @@
 {/if}
 
 <style>
+  .danmaku-overlay{position:absolute;inset:52px 0 auto;height:88px;overflow:hidden;pointer-events:none}
+  .danmaku-overlay span{position:absolute;white-space:nowrap;color:#fff;font-size:14px;font-weight:600;line-height:22px;text-shadow:0 1px 3px #000,0 0 2px #000}
+  .video-danmaku{flex:none;color:#fff;font-size:12px}
+  .video-danmaku[aria-pressed=true]{background:#fff3}
   .qr-dialog{align-items:center}.qr-dialog img{width:220px;height:220px;object-fit:contain;background:white}.qr-dialog button{align-self:stretch}
 </style>

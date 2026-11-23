@@ -1,6 +1,11 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {coverPixels,watchedLabel,filterFavorites,loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails,playerPreferences} from '../src/hongguo.ts';
+import {coverPixels,watchedLabel,filterFavorites,loginPending,adjacent,message,qualityLabels,favoriteValue,playbackDetails,playerPreferences,danmakuTimeline} from '../src/hongguo.ts';
+test('danmaku assigns four lanes in time order and reuses a lane once clear',()=>{
+  const rows=[5000,0,0,0,0,1].map((offset_ms,index)=>({offset_ms,text:String(index)}));
+  assert.deepEqual(danmakuTimeline(rows).map(({text,lane})=>[text,lane]),[['1',0],['2',1],['3',2],['4',3],['0',0]]);
+  assert.equal(rows[0].offset_ms,5000);
+});
 test('player preferences preserve mute independently of volume and reject damaged storage',()=>{
   assert.deepEqual(playerPreferences({volume:0,mute:false,muteChosen:true,speed:1.5,quality:'1080p',favorites:true}),{volume:0,mute:false,muteChosen:true,speed:1.5,quality:'1080p',favorites:true});
   assert.deepEqual(playerPreferences({volume:2,speed:NaN,quality:720}),playerPreferences(null));

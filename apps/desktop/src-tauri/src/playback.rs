@@ -252,6 +252,8 @@ fn allowed(method: &str) -> bool {
             | "playback.suspend"
             | "playback.resume"
             | "playback.checkpoint"
+            | "danmaku.read"
+            | "danmaku.cancel"
             | "account.restore"
             | "account.status"
             | "account.login"

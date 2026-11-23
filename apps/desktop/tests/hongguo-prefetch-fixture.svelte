@@ -5,7 +5,7 @@
   let session=0,current=1,readyAt=0,next:number|undefined,warmAt=0;
   const fixture={calls:[] as any[],async visible(value:boolean){active=value;await tick();},async settings(value:boolean){active=false;await tick();accountOnly=value;active=true;},nextReady:()=>next===current+1&&performance.now()>=warmAt};
   (window as any).fixture=fixture;
-  const snapshot=()=>({session,series:'1',episode:current,loading:performance.now()<readyAt,prepared:performance.now()>=readyAt,episodes:[1,2,3],available_qualities:[360],resource:performance.now()>=readyAt?{url:`/tests/prefetch-fixture.mp4?episode=${current}`,mime:'video/mp4'}:null});
+  const snapshot=()=>({session,series:'1',episode:current,loading:performance.now()<readyAt,prepared:performance.now()>=readyAt,episodes:[1,2,3],available_qualities:[360],danmaku:true,resource:performance.now()>=readyAt?{url:`/tests/prefetch-fixture.mp4?episode=${current}`,mime:'video/mp4'}:null});
   (window as any).__TAURI_INTERNALS__={invoke:async(command:string,request:any)=>{
     const {method,args}=request;fixture.calls.push({method,args,at:performance.now()});
     if(method==='account.restore')return {state:'signed_in',name:'样例'};
@@ -17,6 +17,10 @@
     if(method==='playback.prefetch'){if(enabled&&next===undefined){next=current+1;warmAt=performance.now()+delay;}return snapshot();}
     if(method==='playback.prefetch_cancel'||method==='playback.suspend'||method==='playback.close'){next=undefined;return snapshot();}
     if(method==='playback.status'||method==='playback.checkpoint'||method==='playback.resume')return snapshot();
+    if(method==='danmaku.read'){
+      const text=`第${current}集弹幕`;await new Promise(resolve=>setTimeout(resolve,150));
+      return {items:[{text,offset_ms:0},{text:'稍后出现',offset_ms:500}]};
+    }
     return {};
   }};
 </script>
