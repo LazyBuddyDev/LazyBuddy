@@ -35,17 +35,8 @@
 - 交付/边界：独立源码target/service-exports/reader-service（https://github.com/LazyBuddyDev/reader-service）是待交付Git仓库，不得清理；正式资产为https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v1.0.6，1.0.6客户端使用stable-v5-catalog.json及reader0.1.16，1.0.7/v6复用同一阅读包；开发包target/packages/development/reader/0.1.16仍由正常start.bat应用，BuildOnly只构建、不安装或启动。旧0.1.14/0.1.15暂存包及ZIP已由0.1.16替代并在核对后清理；旧1.0.5客户端保留0.1.11/v4，旧模块目录和资源不改写。新包附helper0.1.3完整GPL对应源码及依赖许可，正文仅3章内存；无会员激活、身份轮换、降级、未授权CDN探测或第三方正文代理。
 - 阻塞：无；当前免费来源扩展已完成，后续继续目录增量/追更等剩余阅读器需求。
 
-### LB-20261115-15：修复取源空响应并完成真实账号播放验收
+### LB-20261115-15：修复红果取源与发布完整本地签名运行时
 
-- 2026-11-24：openhongguo-signer 本地接入与完整包已完成，服务候选 0.2.20 / signer 0.1.0 含私有 Java，已暂存 target/packages/development。74 项 Python、Go resolver、Windows 实际六头签名/鉴权/退出回收、隔离 CLI 依赖安装与 health、BAT 构建和依赖排序检查通过；正常用户配置尚未升级。详见服务 TASKS.md 和 docs/signer.md。真实账号播放与原生库公开分发条件仍待验证，尚未确认空响应恢复；未推送发布。
-
-- Windows Codex，2026-11-23，宿主 main；按用户要求恢复排查。独立服务 main，本轮验收使用暂存红果 0.2.19，源码和详细任务见 target/service-exports/lazybuddy-hongguo-service/TASKS.md。
-- `[√]` 本机红果 0.2.17 在 14:46–15:33 记录第 66 集至少 17 次播放模型 HTTP 200 空体，第 65 集也出现；声明 0 字节且读取完成。发生在获得媒体地址之前，与第 54 集此前的媒体跳转拒绝处于不同阶段。证据 tmp/verification-playback-empty/episode-66.md。
-- `[√]` 继续定位：本机 0.2.17 的解析器与发布验收包哈希一致，当前日志共 22 条空响应记录（66 集 20 条、65 集 2 条），24 项离线取源及诊断测试通过。具体验证与证据边界见 tmp/verification-playback-empty/investigation.md。
-- `[√]` 用户确认官方红果 App 可播；今后排查同类错误默认以官方可播为对照。SDK 兼容性仍是待验证线索。
-- `[√]` 0.2.19、同一已保存账号、直连 1080p，同剧第 40（此前可播）、65、66 集、《道印入体》第 1 集和历史剧目 7689716417968491544 第 1 集均重现取源 HTTP/2 200 空体。证据 tmp/verification-playback-empty/account-0.2.19.json，未写入收藏、观看进度或设备档案。
-- `[√]` 复验 0.2.16，取源入口和解析器 SHA-256 均与第 40 集曾实播通过的验收包一致。当前用同一账号直连 1080p 测第 40、66 集及《道印入体》第 1 集，均复现同样空体，回退到 0.2.16 无法恢复。证据 tmp/verification-playback-empty/account-0.2.16.json。
-- `[√]` 用户确认系统代理可信并授权一次只读对照。0.2.19 用同一账号跟随系统代理请求《道印入体》第 1 集 720p，仍得到 HTTP/2 200、正文 0 字节，未取得媒体资源。证据 tmp/verification-playback-empty/account-0.2.19-system-proxy.json。
-- `[√]` 隔离试验使用上游 `88182cd` 的本地 V5 SDK、同一账号与原设备，直连单次请求《道印入体》第 1 集 720p，亦完整读取到 HTTP/2 200 空体，未取得媒体资源。证据 tmp/verification-playback-empty/account-0.2.19-candidate.json。
-- `[√]` 官方账号查询确认已保存会话，原设备档案有效。原验收日期 11-16 在同账号本机历史中仅留两项第 6 集，剧目 7689289660794670105 和 7707970704821472280；按这两个样本同账号直连 1080p 复现空体。证据 tmp/verification-playback-empty/account-read-preflight.json 和 account-0.2.19-episode-6.json。
-- `[x]` 取得平台支持的播放接口或可验证的服务端诊断后修正取源。用原账号验证上述失败集与正常对照，包括两个历史收藏第 6 集，观察实际视频帧推进，再完成独立包交付。历史 1.0.3 的验收豁免仍只适用于该次发布。
+- Windows Codex，2026-11-24，宿主 main；宿主 1.0.11、红果 0.2.20 / signer 0.1.0 正在发布。用户已授权推送、完整发布及所附原生库再分发，使用既有发布身份。
+- `[√]` 原账号原设备：第 40、65、66 集、两部历史剧首集、两个历史收藏第 6 集均真实解码推进 2 秒；六项 1080p、一项实际最高 720p。79 条云端观看记录可解析，7 条真实待同步断点上传并官方读回，待同步归零；封面跨页返回零新增请求。证据 tmp/verification-release-1.0.11/media-summary.json、tmp/verification-hongguo-sync。
+- `[x]` 完成两仓 CI、线上包与签名端点、隔离 HTTPS 依赖安装/回收、安装器及 1.0.10→1.0.11 更新验收。源码已推送，候选完整包已构建；完成后删除本条。
