@@ -294,7 +294,7 @@
         {#snippet headerActions()}
           <button class="video-favorite" aria-label={isFavorite(selected?.id)?'取消收藏':'收藏'} title={isFavorite(selected?.id)?'取消收藏':'收藏'} onclick={()=>selected&&favorite(selected)} disabled={account.operation==='pending'}><Icon name="star" filled={isFavorite(selected?.id)}/></button>
         {/snippet}
-        {#snippet footerActions()}<Switch label="弹幕" thumbText="弹" checked={danmakuEnabled} disabled={danmakuSession===undefined} onchange={toggleDanmaku}/>{/snippet}
+        {#snippet timeActions()}<Switch label="弹幕" thumbText="弹" checked={danmakuEnabled} disabled={danmakuSession===undefined} onchange={toggleDanmaku}/>{/snippet}
         {#snippet menus()}
           {#if episodes.length}<select aria-label="选集" title="选集" value={episode} onchange={event=>changeEpisode(Number(event.currentTarget.value))}>{#each episodes as value}<option value={value}>第{value}集</option>{/each}</select>{/if}
           <select aria-label="清晰度" title="清晰度" value={quality} onchange={event=>changeQuality(event.currentTarget.value)}>{#each qualities.length?qualities:['360p','480p','720p','1080p'] as value}<option value={value}>{value}</option>{/each}</select>

@@ -46,8 +46,17 @@ try{
  await page.waitForFunction(()=>document.querySelector('video')?.currentTime>.05);
  assert.equal(await toggle.getAttribute('aria-checked'),'false');
  assert.equal(await toggle.textContent(),'弹');
- const controlsBounds=await page.locator('.video-controls').boundingBox(),offBounds=await toggle.locator('span').boundingBox();
- assert.ok(offBounds.y>=controlsBounds.y+controlsBounds.height,'danmaku switch is below playback controls');
+ for(const width of [780,440]){
+  await page.setViewportSize({width,height:650});
+  const time=await page.locator('.video-controls .time').boundingBox(),bounds=await toggle.boundingBox();
+  assert.ok(bounds.x>=time.x+time.width&&bounds.x-time.x-time.width<=6,'switch is immediately to the right of the timestamp');
+  assert.ok(Math.abs(bounds.y+bounds.height/2-time.y-time.height/2)<1,'switch and timestamp share a row');
+  assert.ok(await page.locator('.video-controls').evaluate(row=>Array.from(row.children).every(el=>{
+   const rect=el.getBoundingClientRect(),line=row.getBoundingClientRect();
+   return Math.abs(rect.y+rect.height/2-line.y-line.height/2)<1;
+  })),'all controls fit on the same row');
+ }
+ const offBounds=await toggle.locator('span').boundingBox();
  assert.equal(await page.evaluate(()=>fixture.calls.some(c=>c.method.startsWith('danmaku.'))),false);
  await toggle.click();
  assert.equal(await toggle.getAttribute('aria-checked'),'true');

@@ -3,10 +3,10 @@
   import Icon from './Icon.svelte';
   import MediaVolume from './MediaVolume.svelte';
   import {formatTime} from './lifecycle';
-  let {title,playing,loading,failed,position,duration,seeking=$bindable(null),seekable,previousDisabled,nextDisabled,onback,ontoggle,onprevious,onnext,onseek,volume,muted,onvolume,onmute,menus,headerActions,footerActions}: {
+  let {title,playing,loading,failed,position,duration,seeking=$bindable(null),seekable,previousDisabled,nextDisabled,onback,ontoggle,onprevious,onnext,onseek,volume,muted,onvolume,onmute,menus,headerActions,timeActions}: {
     title:string;playing:boolean;loading:boolean;failed:boolean;position:number;duration:number;seeking?:number|null;seekable:boolean;
     previousDisabled:boolean;nextDisabled:boolean;onback:()=>void;ontoggle:()=>void;onprevious:()=>void;onnext:()=>void;onseek:()=>void;
-    volume:number;muted:boolean;onvolume:(value:number)=>void;onmute:()=>void;menus?:Snippet;headerActions?:Snippet;footerActions?:Snippet;
+    volume:number;muted:boolean;onvolume:(value:number)=>void;onmute:()=>void;menus?:Snippet;headerActions?:Snippet;timeActions?:Snippet;
   }=$props();
 </script>
 <div class="video-top">
@@ -21,12 +21,10 @@
     <button aria-label="上一集" title="上一集" disabled={previousDisabled||loading} onclick={onprevious}><Icon name="previous"/></button>
     <button aria-label={playing?'暂停':'播放'} title={failed?'重试播放':playing?'暂停':'播放'} disabled={loading} onclick={ontoggle}><Icon name={failed?'refresh':playing?'pause':'play'}/></button>
     <button aria-label="下一集" title="下一集" disabled={nextDisabled||loading} onclick={onnext}><Icon name="next"/></button>
-    <span class="time">{formatTime(seeking??position)} / {formatTime(duration)}</span><span class="control-spacer"></span>
+    <span class="time">{formatTime(seeking??position)} / {formatTime(duration)}</span>
+    {#if timeActions}{@render timeActions()}{/if}
+    <span class="control-spacer"></span>
     {#if menus}{@render menus()}{/if}
     <MediaVolume {volume} {muted} {onmute} {onvolume}/>
   </div>
-  {#if footerActions}<div class="video-controls-footer">{@render footerActions()}</div>{/if}
 </div>
-<style>
-  .video-controls-footer{margin-top:4px}
-</style>

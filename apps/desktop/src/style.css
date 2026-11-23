@@ -714,17 +714,17 @@ li button:hover {
   align-items: center;
   margin-top: 6px;
 }
-.video-controls button {
+.video-controls button:not([role="switch"]) {
   padding: 5px;
   border: 0;
   color: #fff;
   background: transparent;
   min-height: 30px;
 }
-.video-controls button:hover {
+.video-controls button:not([role="switch"]):hover {
   background: #ffffff20;
 }
-.video-controls button:disabled {
+.video-controls button:not([role="switch"]):disabled {
   opacity: 0.3;
 }
 .time {
@@ -919,7 +919,7 @@ li button:hover {
   .video-controls {
     gap: 3px;
   }
-  .video-controls button {
+  .video-controls button:not([role="switch"]) {
     padding: 3px;
   }
   .media-caption .tag {
