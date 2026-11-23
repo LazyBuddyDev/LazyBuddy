@@ -733,7 +733,7 @@ li button:hover {
   margin-left: 6px;
 }
 .video-controls .time:has(+ [role="switch"]) {
-  margin-left: 0;
+  margin-right: 6px;
 }
 .time span {
   color: #fff9;

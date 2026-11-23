@@ -50,8 +50,9 @@ try{
   await page.setViewportSize({width,height:650});
   const time=await page.locator('.video-controls .time').boundingBox(),bounds=await toggle.boundingBox();
   const next=await page.getByRole('button',{name:'下一集',exact:true}).boundingBox();
-  assert.ok(bounds.x>=time.x+time.width&&bounds.x-time.x-time.width<=6,'switch is immediately to the right of the timestamp');
-  assert.ok(Math.abs((time.x-next.x-next.width)-(bounds.x-time.x-time.width))<1,'next, timestamp and switch have equal gaps');
+  const originalGap=width===780?12:9;
+  assert.ok(Math.abs(time.x-next.x-next.width-originalGap)<1,'next and timestamp preserve their original gap');
+  assert.ok(Math.abs(bounds.x-time.x-time.width-originalGap)<1,'switch matches the original gap to the right of the timestamp');
   assert.ok(Math.abs(bounds.y+bounds.height/2-time.y-time.height/2)<1,'switch and timestamp share a row');
   assert.ok(await page.locator('.video-controls').evaluate(row=>Array.from(row.children).every(el=>{
    const rect=el.getBoundingClientRect(),line=row.getBoundingClientRect();
