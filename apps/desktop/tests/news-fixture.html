@@ -26,7 +26,11 @@
         if(args.method==='search')return {items:[{id:'3',title:'搜索样例',episodes:12,has_cover:true}],has_more:false};
         if(args.method==='progress.read')return {history:{'1':{episode:3,time:20}}};
         if(args.method==='cover.read'){if(window.failCover)throw new Error('cover_unavailable');if(window.holdCover)await new Promise(resolve=>(window.pendingCovers??=[]).push(resolve));return {series:args.args.series,width:1,height:1,rgba:args.args.series==='1'?'/wAA/w==':'AAD//w=='};}
-        if(args.method==='favorites.read')return {state:'signed_in',name:'样例账号',operation:null,favorites:[{id:'1',title:'春日',episodes:10},{id:'2',title:'Summer',episodes:20}]};
+        if(args.method==='favorites.read'){
+          if(window.holdFavorites)await new Promise(resolve=>window.releaseFavorites=resolve);
+          return window.favoritesState??{state:'signed_in',name:'样例账号',operation:null,favorites:[{id:'1',title:'春日',episodes:10},{id:'2',title:'Summer',episodes:20}]};
+        }
+        if(args.method==='account.status'&&window.favoritesState)return window.favoritesState;
         return {};
       };
       component=mount(Hongguo,{target:document.querySelector('#app'),props:{active:true,showing:true,accountOnly:false,notice:()=>{},settingsChange:()=>{}}});

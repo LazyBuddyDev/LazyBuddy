@@ -59,5 +59,27 @@ try{
   await page.evaluate(()=>window.failCover=false);
   await favorites.getByRole('button',{name:'刷新收藏'}).click();
   await page.waitForFunction(()=>document.querySelectorAll('canvas:not([hidden])').length===2);
-  console.log('Shared views, cache boundaries and recovery of failed covers after refresh passed.');
+  await page.evaluate(async()=>{window.holdFavorites=true;window.favoritesState={state:'signed_in',name:'样例账号',operation:'pending'};await window.showHongguo();});
+  await page.locator('.tabs').getByRole('button',{name:'收藏',exact:true}).click();
+  await page.getByText('正在获取收藏…',{exact:true}).waitFor({timeout:3000});
+  assert.equal(await page.getByText('暂无收藏',{exact:true}).count(),0);
+  assert.equal(await page.getByText('没有匹配的收藏',{exact:true}).count(),0);
+  await page.evaluate(()=>{window.holdFavorites=false;window.releaseFavorites();});
+  await page.waitForFunction(()=>window.hongguoCalls.some(c=>c.method==='account.status'));
+  assert.equal(await page.getByText('正在获取收藏…',{exact:true}).count(),1);
+  await page.evaluate(()=>window.favoritesState={state:'signed_in',name:'样例账号',operation:null,favorites:[]});
+  await page.getByText('暂无收藏',{exact:true}).waitFor();
+  await page.evaluate(()=>window.favoritesState={state:'signed_in',name:'样例账号',operation:null,favorites_error:'favorites_unavailable'});
+  await favorites.getByRole('button',{name:'刷新收藏'}).click();
+  await page.getByText('收藏列表读取失败',{exact:true}).waitFor();
+  assert.equal(await page.getByText('暂无收藏',{exact:true}).count(),0);
+  await page.evaluate(()=>{window.holdFavorites=true;window.favoritesState={state:'signed_in',name:'样例账号',operation:'pending'};});
+  await favorites.getByRole('button',{name:'刷新收藏'}).click();
+  await page.getByText('正在获取收藏…',{exact:true}).waitFor();
+  assert.equal(await page.getByText('暂无收藏',{exact:true}).count(),0);
+  await page.evaluate(()=>{window.holdFavorites=false;window.favoritesState={state:'signed_in',name:'样例账号',operation:null,favorites:[{id:'3',title:'加载完成样例',episodes:10}]};window.releaseFavorites();});
+  await page.getByText('加载完成样例',{exact:true}).waitFor();
+  await page.getByRole('textbox',{name:'筛选收藏'}).fill('不存在的名称');
+  await page.getByText('没有匹配的收藏',{exact:true}).waitFor();
+  console.log('Shared views, cache recovery and delayed/pending/empty/filtered favorites states passed.');
 }finally{await browser?.close();await server.close();await rm(scratch,{recursive:true,force:true});}

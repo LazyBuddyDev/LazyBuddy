@@ -48,7 +48,7 @@
     if(cache&&valid(ticket)&&generation===coverEpoch){coverCache.set(id,data);if(coverCache.size>64)coverCache.delete(coverCache.keys().next().value!);}
     return data;
   }
-  let favoritesReady=false;let favoritesPending=false;
+  let favoritesReady=$state(false);let favoritesPending=$state(false);
   let favoriteChange=$state<{id:string;value:boolean}|null>(null);
   function isFavorite(id:string|undefined){return favoriteValue(favorites,favoriteChange,id);}
   let requestedQuality=$state(saved.quality);
@@ -313,7 +313,14 @@
       {/if}
       {/key}
       {#if tab==='search'&&hasMore}<button disabled={busy} onclick={()=>search(true)}>更多</button>{/if}
-      {#if tab==='favorites'&&favorites.length===0&&account.operation!=='pending'}<div class="list-empty">暂无收藏</div>{:else if tab==='favorites'&&visibleFavorites.length===0}<div class="list-empty">没有匹配的收藏</div>{:else if tab==='search'&&searched&&items.length===0}<div class="list-empty">没有搜索结果</div>{/if}
+      {#if tab==='favorites'}
+        {#if favoritesPending||(busy&&!favoritesReady)}<div class="list-empty" role="status">正在获取收藏…</div>
+        {:else if account.state!=='signed_in'}<div class="list-empty">请先登录红果账号</div>
+        {:else if account.favorites_error}<div class="list-empty">{message(account.favorites_error)}</div>
+        {:else if !favoritesReady}<div class="list-empty">收藏尚未获取，请刷新</div>
+        {:else if favorites.length===0}<div class="list-empty">暂无收藏</div>
+        {:else if visibleFavorites.length===0}<div class="list-empty">没有匹配的收藏</div>{/if}
+      {:else if searched&&items.length===0}<div class="list-empty">没有搜索结果</div>{/if}
     </section>
   {/if}
   {#if loginPending(account.state)}<div class="dialog-backdrop"><div class="dialog-surface qr-dialog" role="dialog" aria-modal="true" aria-label="扫码登录" tabindex="-1"><h2>使用红果短剧 App 扫码</h2>{#if account.qr_png}<img src={`data:image/png;base64,${account.qr_png}`} alt="红果登录二维码"/>{/if}<button onclick={cancelLogin}>取消</button></div></div>{/if}
