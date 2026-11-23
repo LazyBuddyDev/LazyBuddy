@@ -3,10 +3,10 @@
   import Icon from './Icon.svelte';
   import MediaVolume from './MediaVolume.svelte';
   import {formatTime} from './lifecycle';
-  let {title,playing,loading,failed,position,duration,seeking=$bindable(null),seekable,previousDisabled,nextDisabled,onback,ontoggle,onprevious,onnext,onseek,volume,muted,onvolume,onmute,menus,headerActions}: {
+  let {title,playing,loading,failed,position,duration,seeking=$bindable(null),seekable,previousDisabled,nextDisabled,onback,ontoggle,onprevious,onnext,onseek,volume,muted,onvolume,onmute,menus,headerActions,footerActions}: {
     title:string;playing:boolean;loading:boolean;failed:boolean;position:number;duration:number;seeking?:number|null;seekable:boolean;
     previousDisabled:boolean;nextDisabled:boolean;onback:()=>void;ontoggle:()=>void;onprevious:()=>void;onnext:()=>void;onseek:()=>void;
-    volume:number;muted:boolean;onvolume:(value:number)=>void;onmute:()=>void;menus?:Snippet;headerActions?:Snippet;
+    volume:number;muted:boolean;onvolume:(value:number)=>void;onmute:()=>void;menus?:Snippet;headerActions?:Snippet;footerActions?:Snippet;
   }=$props();
 </script>
 <div class="video-top">
@@ -25,4 +25,8 @@
     {#if menus}{@render menus()}{/if}
     <MediaVolume {volume} {muted} {onmute} {onvolume}/>
   </div>
+  {#if footerActions}<div class="video-controls-footer">{@render footerActions()}</div>{/if}
 </div>
+<style>
+  .video-controls-footer{margin-top:4px}
+</style>

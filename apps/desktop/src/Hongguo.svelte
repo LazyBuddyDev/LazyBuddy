@@ -81,9 +81,9 @@
     untrack(()=>void pollDanmaku());
     return ()=>{cancelled=true;clearTimeout(retry);};
   });
-  function toggleDanmaku(){
-    danmakuEnabled=!danmakuEnabled;
-    if(!danmakuEnabled&&danmakuSession!==undefined)void raw('danmaku.cancel',{session:danmakuSession}).catch(()=>{});
+  function toggleDanmaku(enabled:boolean){
+    danmakuEnabled=enabled;
+    if(!enabled&&danmakuSession!==undefined)void raw('danmaku.cancel',{session:danmakuSession}).catch(()=>{});
   }
   async function changeConnection(value:boolean){
     const previousGeneration=generation;await suspend(false);
@@ -292,9 +292,9 @@
       {/if}
       <MediaControls title={`${selected?.title??''} 第${episode}集`} {playing} loading={playerLoading} failed={playbackError} {position} {duration} bind:seeking seekable={!!source} previousDisabled={adjacent(episodes,episode,-1)===undefined} nextDisabled={adjacent(episodes,episode,1)===undefined} onback={leavePlayer} ontoggle={toggle} onprevious={()=>{const value=adjacent(episodes,episode,-1);if(value!==undefined)void changeEpisode(value);}} onnext={()=>{const value=adjacent(episodes,episode,1);if(value!==undefined)void changeEpisode(value);}} onseek={commitSeek} {volume} {muted} onmute={()=>{muteChosen=true;muted=!muted;}} onvolume={setVolume}>
         {#snippet headerActions()}
-          <button class="video-danmaku" aria-label="弹幕" aria-pressed={danmakuEnabled} title={danmakuEnabled?'隐藏弹幕':'显示弹幕'} disabled={danmakuSession===undefined} onclick={toggleDanmaku}>弹幕</button>
           <button class="video-favorite" aria-label={isFavorite(selected?.id)?'取消收藏':'收藏'} title={isFavorite(selected?.id)?'取消收藏':'收藏'} onclick={()=>selected&&favorite(selected)} disabled={account.operation==='pending'}><Icon name="star" filled={isFavorite(selected?.id)}/></button>
         {/snippet}
+        {#snippet footerActions()}<Switch label="弹幕" thumbText="弹" checked={danmakuEnabled} disabled={danmakuSession===undefined} onchange={toggleDanmaku}/>{/snippet}
         {#snippet menus()}
           {#if episodes.length}<select aria-label="选集" title="选集" value={episode} onchange={event=>changeEpisode(Number(event.currentTarget.value))}>{#each episodes as value}<option value={value}>第{value}集</option>{/each}</select>{/if}
           <select aria-label="清晰度" title="清晰度" value={quality} onchange={event=>changeQuality(event.currentTarget.value)}>{#each qualities.length?qualities:['360p','480p','720p','1080p'] as value}<option value={value}>{value}</option>{/each}</select>
@@ -322,7 +322,5 @@
 <style>
   .danmaku-overlay{position:absolute;inset:52px 0 auto;height:88px;overflow:hidden;pointer-events:none}
   .danmaku-overlay span{position:absolute;white-space:nowrap;color:#fff;font-size:14px;font-weight:600;line-height:22px;text-shadow:0 1px 3px #000,0 0 2px #000}
-  .video-danmaku{flex:none;color:#fff;font-size:12px}
-  .video-danmaku[aria-pressed=true]{background:#fff3}
   .qr-dialog{align-items:center}.qr-dialog img{width:220px;height:220px;object-fit:contain;background:white}.qr-dialog button{align-self:stretch}
 </style>
