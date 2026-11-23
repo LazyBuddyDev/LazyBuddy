@@ -34,9 +34,3 @@
 - `[x]` 后续功能配套升级、长期章节可用性及数据保留验证；当前新增来源已随1.0.6发布，后续新版本推送/发布另按授权。
 - 交付/边界：独立源码target/service-exports/reader-service（https://github.com/LazyBuddyDev/reader-service）是待交付Git仓库，不得清理；正式资产为https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v1.0.6，1.0.6客户端使用stable-v5-catalog.json及reader0.1.16，1.0.7/v6复用同一阅读包；开发包target/packages/development/reader/0.1.16仍由正常start.bat应用，BuildOnly只构建、不安装或启动。旧0.1.14/0.1.15暂存包及ZIP已由0.1.16替代并在核对后清理；旧1.0.5客户端保留0.1.11/v4，旧模块目录和资源不改写。新包附helper0.1.3完整GPL对应源码及依赖许可，正文仅3章内存；无会员激活、身份轮换、降级、未授权CDN探测或第三方正文代理。
 - 阻塞：无；当前免费来源扩展已完成，后续继续目录增量/追更等剩余阅读器需求。
-
-### LB-20261115-15：修复红果取源与发布完整本地签名运行时
-
-- Windows Codex，2026-11-24，宿主 main；宿主 1.0.11、红果 0.2.20 / signer 0.1.0 正在发布。用户已授权推送、完整发布及所附原生库再分发，使用既有发布身份。
-- `[√]` 原账号原设备：第 40、65、66 集、两部历史剧首集、两个历史收藏第 6 集均真实解码推进 2 秒；六项 1080p、一项实际最高 720p。79 条云端观看记录可解析，7 条真实待同步断点上传并官方读回，待同步归零；封面跨页返回零新增请求。证据 tmp/verification-release-1.0.11/media-summary.json、tmp/verification-hongguo-sync。
-- `[x]` 完成两仓 CI、线上包与签名端点、隔离 HTTPS 依赖安装/回收、安装器及 1.0.10→1.0.11 更新验收。源码已推送，候选完整包已构建；完成后删除本条。
