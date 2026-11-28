@@ -34,3 +34,8 @@
 - `[x]` 后续功能配套升级、长期章节可用性及数据保留验证；当前新增来源已随1.0.6发布，后续新版本推送/发布另按授权。
 - 交付/边界：独立源码target/service-exports/reader-service（https://github.com/LazyBuddyDev/reader-service）是待交付Git仓库，不得清理；正式资产为https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v1.0.6，1.0.6客户端使用stable-v5-catalog.json及reader0.1.16，1.0.7/v6复用同一阅读包；开发包target/packages/development/reader/0.1.16仍由正常start.bat应用，BuildOnly只构建、不安装或启动。旧0.1.14/0.1.15暂存包及ZIP已由0.1.16替代并在核对后清理；旧1.0.5客户端保留0.1.11/v4，旧模块目录和资源不改写。新包附helper0.1.3完整GPL对应源码及依赖许可，正文仅3章内存；无会员激活、身份轮换、降级、未授权CDN探测或第三方正文代理。
 - 阻塞：无；当前免费来源扩展已完成，后续继续目录增量/追更等剩余阅读器需求。
+
+### LB-20261128-02：发布已验证的红果 POST 取源修复
+
+- Windows Codex，2026-11-28；宿主1.0.12、红果0.2.22。原失败第60集与对照第40集实播通过，用户已授权推送与公开发布。
+- `[x]` 完成CI、签名端点、公开资产、隔离HTTPS依赖安装与1.0.11→1.0.12更新验收。复用原身份、signer0.1.0和Python0.1.0，不覆盖旧不可变资产。证据tmp/verification-release-1.0.12及tmp/verification-pr25。
