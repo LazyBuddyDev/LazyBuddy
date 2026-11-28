@@ -34,8 +34,3 @@
 - `[x]` 后续功能配套升级、长期章节可用性及数据保留验证；当前新增来源已随1.0.6发布，后续新版本推送/发布另按授权。
 - 交付/边界：独立源码target/service-exports/reader-service（https://github.com/LazyBuddyDev/reader-service）是待交付Git仓库，不得清理；正式资产为https://github.com/LazyBuddyDev/LazyBuddy/releases/tag/v1.0.6，1.0.6客户端使用stable-v5-catalog.json及reader0.1.16，1.0.7/v6复用同一阅读包；开发包target/packages/development/reader/0.1.16仍由正常start.bat应用，BuildOnly只构建、不安装或启动。旧0.1.14/0.1.15暂存包及ZIP已由0.1.16替代并在核对后清理；旧1.0.5客户端保留0.1.11/v4，旧模块目录和资源不改写。新包附helper0.1.3完整GPL对应源码及依赖许可，正文仅3章内存；无会员激活、身份轮换、降级、未授权CDN探测或第三方正文代理。
 - 阻塞：无；当前免费来源扩展已完成，后续继续目录增量/追更等剩余阅读器需求。
-
-### LB-20261128-02：定位 signer 已调用时再次出现的播放空响应
-
-- Windows Codex，2026-11-28，宿主 main / 红果 b14c39b。第 60 集、旧包 0.2.20 同集及原正常对照第 40 集均只读复现 HTTP 200 空体；新启动 signer 的六头生成、时间与原设备匹配均通过。没有账号、设备或进度写入。
-- `[x]` 尚未确立具体拒绝原因；继续核对当前官方请求或有实证的协议修复。源码和证据边界见服务 TASKS.md 及 tmp/verification-empty-20261128，不把生成签名成功等同于上游接受，也不以回退版本作为已验证修复。
